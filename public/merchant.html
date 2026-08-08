@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>POS ร้านค้า</title>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+:root{--p:#FF5722;--g:#4CAF50;--bg:#E8E8E8;--s:#fff;--t:#333;--m:#777;--d:#F44336;--i:#2196F3;--w:#FFC107}
+*{box-sizing:border-box;margin:0;padding:0;font-family:Prompt,sans-serif}
+body{background:var(--bg);color:var(--t)}
+button{border:none;background:none;cursor:pointer;font-family:inherit}
+input,select{font-family:inherit;font-size:16px;padding:10px;border:1px solid #ccc;border-radius:8px;width:100%}
+header{background:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08);position:sticky;top:0;z-index:30;flex-wrap:wrap;gap:8px}
+.logo{font-weight:700;color:var(--p);display:flex;align-items:center;gap:8px}
+.nav{display:flex;gap:6px;flex-wrap:wrap}
+.nav button{padding:7px 12px;border-radius:16px;background:#eee;font-size:13px;font-weight:500;position:relative}
+.nav button.on{background:var(--p);color:#fff}
+.badge-n{position:absolute;top:-6px;right:-6px;background:var(--d);color:#fff;font-size:11px;font-weight:700;min-width:20px;height:20px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 5px}
+.wrap{padding:12px;padding-bottom:40px}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px}
+.st{background:#fff;border-radius:10px;padding:10px 6px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.st .n{font-size:1.35rem;font-weight:700}.st .l{font-size:11px;color:var(--m)}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.fc{padding:6px 12px;background:#fff;border-radius:16px;font-size:13px;border:1px solid #ddd}
+.fc.on{background:var(--p);color:#fff;border-color:var(--p)}
+.og{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:10px}
+.oc{background:#fff;border-radius:12px;padding:14px;border-left:6px solid var(--p);box-shadow:0 2px 8px rgba(0,0,0,.06);cursor:pointer}
+.oc.Cooking{border-left-color:var(--i)}.oc.Ready{border-left-color:var(--g)}
+.q{font-size:1.6rem;font-weight:700}
+.btn{padding:10px 14px;border-radius:8px;font-weight:600;font-size:14px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.btn-p{background:var(--p);color:#fff}.btn-g{background:var(--g);color:#fff}.btn-i{background:var(--i);color:#fff}
+.btn-d{background:var(--d);color:#fff}.btn-o{border:1px solid var(--p);color:var(--p);background:#fff}
+.btn-block{width:100%}
+.login-box{max-width:360px;margin:60px auto;background:#fff;padding:28px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.1)}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:80;display:none;align-items:center;justify-content:center;padding:12px}
+.ov.on{display:flex}.md{background:#fff;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;border-radius:14px;padding:18px}
+.toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(30,30,30,.95);color:#fff;padding:10px 18px;border-radius:20px;z-index:200;display:none;font-size:14px}
+.list-item{display:flex;justify-content:space-between;align-items:center;background:#fff;padding:12px;border-radius:10px;margin-bottom:8px;gap:8px}
+.audio-bar{background:#FFF3E0;padding:8px;text-align:center;border-radius:8px;margin-bottom:10px;border:1px dashed var(--p);font-size:13px}
+.hide{display:none!important}
+.tabs{display:flex;gap:4px;overflow-x:auto;margin-bottom:12px}
+.tab{padding:8px 14px;background:#fff;border-radius:8px;font-size:13px;white-space:nowrap}
+.tab.on{background:var(--p);color:#fff}
+.rpt{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rc{background:#fff;padding:12px;border-radius:10px;text-align:center}
+.rc .v{font-size:1.3rem;font-weight:700;color:var(--p)}.rc .l{font-size:12px;color:var(--m)}
+</style>
+</head>
+<body>
+<div id="loginView" class="login-box">
+  <h2 style="text-align:center;color:var(--p);margin-bottom:8px"><i class="fa-solid fa-mortar-pestle"></i> POS ร้านค้า</h2>
+  <p style="text-align:center;color:#777;font-size:13px;margin-bottom:16px">เข้าสู่ระบบพนักงาน</p>
+  <label>ชื่อผู้ใช้</label>
+  <input id="lu" value="admin" class="mb" style="margin:6px 0 12px">
+  <label>รหัสผ่าน</label>
+  <input id="lp" type="password" value="1234" style="margin:6px 0 16px">
+  <button class="btn btn-p btn-block" onclick="M.login()">เข้าสู่ระบบ</button>
+  <p style="text-align:center;font-size:12px;color:#999;margin-top:12px">ค่าเริ่มต้น: admin / 1234</p>
+</div>
+
+<div id="appView" class="hide">
+<header>
+  <div class="logo"><i class="fa-solid fa-mortar-pestle"></i> <span id="shopTitle">POS</span>
+    <span id="orderBadge" class="badge-n hide">0</span>
+  </div>
+  <div class="nav">
+    <button class="on" id="navOrders" onclick="M.tab('orders')">🧾 ออเดอร์ <span id="navBadge" class="badge-n hide">0</span></button>
+    <button id="navMenu" onclick="M.tab('menu')">🍽️ เมนู</button>
+    <button id="navReport" onclick="M.tab('report')">📊 รายงาน</button>
+    <button id="navSet" onclick="M.tab('settings')">⚙️ ตั้งค่า</button>
+    <button onclick="M.logout()" style="background:#fee;color:var(--d)">ออก</button>
+  </div>
+</header>
+<div class="wrap">
+  <div id="panelOrders">
+    <div class="audio-bar" id="audioBar">
+      <strong>🔔 เปิดเสียงแจ้งเตือน</strong>
+      <button class="btn btn-p" style="padding:4px 10px;margin-left:8px;font-size:12px" onclick="M.enableAudio()">เปิด</button>
+    </div>
+    <div class="stats">
+      <div class="st"><div class="n" style="color:var(--p)" id="sPending">0</div><div class="l">รอทำ</div></div>
+      <div class="st"><div class="n" style="color:var(--i)" id="sCooking">0</div><div class="l">กำลังทำ</div></div>
+      <div class="st"><div class="n" style="color:var(--g)" id="sReady">0</div><div class="l">รอรับ</div></div>
+      <div class="st"><div class="n" style="color:var(--d)" id="sUnpaid">0</div><div class="l">ไม่ชำระ</div></div>
+      <div class="st"><div class="n" style="color:var(--w)" id="sSlip">0</div><div class="l">รอสลิป</div></div>
+    </div>
+    <div class="filters">
+      <button class="fc on" data-f="active" onclick="M.filter('active',this)">กำลังทำ</button>
+      <button class="fc" data-f="unpaid" onclick="M.filter('unpaid',this)">ยังไม่ชำระ</button>
+      <button class="fc" data-f="slip" onclick="M.filter('slip',this)">รอตรวจสลิป</button>
+      <button class="fc" data-f="today" onclick="M.filter('today',this)">วันนี้</button>
+      <button class="fc" data-f="completed" onclick="M.filter('completed',this)">เสร็จแล้ว</button>
+      <button class="btn btn-o" style="padding:6px 10px" onclick="M.loadOrders()"><i class="fa-solid fa-rotate"></i></button>
+    </div>
+    <div class="og" id="orderGrid"></div>
+  </div>
+  <div id="panelMenu" class="hide">
+    <div class="tabs">
+      <button class="tab on" onclick="M.menuTab('menus',this)">อาหาร</button>
+      <button class="tab" onclick="M.menuTab('categories',this)">หมวด</button>
+      <button class="tab" onclick="M.menuTab('spice',this)">เผ็ด</button>
+      <button class="tab" onclick="M.menuTab('toppings',this)">ท็อปปิ้ง</button>
+    </div>
+    <div id="menuAdmin"></div>
+  </div>
+  <div id="panelReport" class="hide">
+    <h3 style="margin-bottom:10px">รายงานวันนี้</h3>
+    <div class="rpt" id="reportBox"></div>
+    <h3 style="margin:16px 0 8px">เมนูขายดี</h3>
+    <div id="topMenus"></div>
+  </div>
+  <div id="panelSettings" class="hide">
+    <div style="background:#fff;padding:16px;border-radius:12px;margin-bottom:12px">
+      <h3 style="margin-bottom:10px">ร้านค้า</h3>
+      <label>ชื่อร้าน</label><input id="setName" style="margin:6px 0 10px">
+      <label>PromptPay</label><input id="setPP" style="margin:6px 0 10px" placeholder="0812345678">
+      <button class="btn btn-p btn-block" onclick="M.saveSettings()">บันทึก</button>
+    </div>
+    <div style="background:#fff;padding:16px;border-radius:12px;margin-bottom:12px">
+      <h3 style="margin-bottom:10px">ตรวจสอบสลิปอัตโนมัติ</h3>
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><input type="checkbox" id="setSlipOn"> เปิดใช้ API</label>
+      <label>Provider</label>
+      <select id="setSlipProv" style="margin:6px 0 10px">
+        <option value="manual">manual (พนักงานยืนยัน)</option>
+        <option value="easyslip">EasySlip</option>
+        <option value="slipok">SlipOK</option>
+      </select>
+      <label>API Key</label><input id="setSlipKey" type="password" style="margin:6px 0 10px" placeholder="ใส่ถ้ามี">
+      <button class="btn btn-o btn-block" onclick="M.saveSettings()">บันทึกการตั้งค่าสลิป</button>
+      <p style="font-size:12px;color:#777;margin-top:8px">ถ้าไม่ใส่ API Key ระบบจะรอให้พนักงานกดยืนยันสลิป</p>
+    </div>
+    <div style="background:#fff;padding:16px;border-radius:12px;text-align:center">
+      <h3>QR ลูกค้าสั่งอาหาร</h3>
+      <p style="font-size:13px;color:#777;margin:8px 0">พิมพ์ติดโต๊ะ — ลูกค้าเห็นเฉพาะหน้าสั่งอาหาร</p>
+      <div id="qrBox" style="display:flex;justify-content:center;margin:12px 0"></div>
+      <button class="btn btn-g" onclick="window.print()">พิมพ์ QR</button>
+      <p style="font-size:12px;margin-top:8px;word-break:break-all" id="qrUrl"></p>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="ov" id="detailModal"><div class="md" id="detailBody"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const money=n=>'฿'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const token=()=>localStorage.getItem('somtum_token')||'';
+const authH=()=>({'Authorization':'Bearer '+token(),'Content-Type':'application/json'});
+
+const M={
+  filterKey:'active', orders:[], stats:{}, audio:null, audioOn:false, socket:null, lastActive:0,
+
+  toast(m){const t=document.getElementById('toast');t.textContent=m;t.style.display='block';setTimeout(()=>t.style.display='none',2800)},
+  async login(){
+    const username=document.getElementById('lu').value.trim();
+    const password=document.getElementById('lp').value;
+    const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});
+    const d=await r.json();
+    if(!r.ok){this.toast(d.error||'เข้าสู่ระบบไม่สำเร็จ');return}
+    localStorage.setItem('somtum_token',d.token);
+    localStorage.setItem('somtum_user',JSON.stringify(d.user));
+    this.enter();
+  },
+  logout(){localStorage.removeItem('somtum_token');location.reload()},
+  async enter(){
+    if(!token())return;
+    document.getElementById('loginView').classList.add('hide');
+    document.getElementById('appView').classList.remove('hide');
+    if (this._es) try { this._es.close(); } catch(e) {}
+    this._es = new EventSource('/api/events');
+    this._es.addEventListener('orders:update', (ev) => {
+      try { this.applyStats(JSON.parse(ev.data)); } catch(e) {}
+    });
+    this._es.addEventListener('order:new', (ev) => {
+      try {
+        const o = JSON.parse(ev.data);
+        this.beep();
+        this.toast('🔔 ออเดอร์ใหม่ ' + o.queue);
+        if (this.filterKey === 'active' || this.filterKey === 'unpaid' || this.filterKey === 'slip') this.loadOrders();
+      } catch(e) {}
+    });
+    this._es.addEventListener('order:updated', () => this.loadOrders());
+    await this.loadOrders();
+    await this.loadSettingsUI();
+  },
+  applyStats(s){
+    this.stats=s||{};
+    document.getElementById('sPending').textContent=s.pending||0;
+    document.getElementById('sCooking').textContent=s.cooking||0;
+    document.getElementById('sReady').textContent=s.ready||0;
+    document.getElementById('sUnpaid').textContent=s.unpaid||0;
+    document.getElementById('sSlip').textContent=s.slipPending||0;
+    const n=s.active||0;
+    const badge=document.getElementById('orderBadge');
+    const navB=document.getElementById('navBadge');
+    if(n>0){badge.textContent=n;badge.classList.remove('hide');navB.textContent=n;navB.classList.remove('hide')}
+    else{badge.classList.add('hide');navB.classList.add('hide')}
+    if(n>this.lastActive) this.beep();
+    this.lastActive=n;
+  },
+  enableAudio(){
+    this.audio=new (window.AudioContext||window.webkitAudioContext)();
+    this.audio.resume().then(()=>{this.audioOn=true;document.getElementById('audioBar').classList.add('hide');this.toast('เปิดเสียงแล้ว');this.beep()});
+  },
+  beep(){
+    if(!this.audioOn||!this.audio)return;
+    try{const o=this.audio.createOscillator(),g=this.audio.createGain();o.connect(g);g.connect(this.audio.destination);o.frequency.value=880;g.gain.value=.12;o.start();o.stop(this.audio.currentTime+.2);if(navigator.vibrate)navigator.vibrate([200,60,200])}catch{}
+  },
+  filter(f,el){this.filterKey=f;document.querySelectorAll('.fc').forEach(x=>x.classList.remove('on'));el.classList.add('on');this.loadOrders()},
+  async loadOrders(){
+    const r=await fetch('/api/orders?filter='+this.filterKey,{headers:authH()});
+    if(r.status===401){this.logout();return}
+    const d=await r.json();
+    this.orders=d.orders||[];
+    this.applyStats(d.stats||{});
+    const g=document.getElementById('orderGrid');
+    if(!this.orders.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#888">ไม่มีออเดอร์</div>';return}
+    g.innerHTML=this.orders.map(o=>{
+      let prev=o.items.map(i=>i.name+' x'+i.qty).join(', ');
+      if(prev.length>40)prev=prev.slice(0,40)+'…';
+      const pay=o.paymentStatus==='PAID'?'<span style="background:#E8F5E9;color:#2E7D32;padding:2px 8px;border-radius:4px;font-size:12px">ชำระแล้ว</span>':'<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px">ยังไม่ชำระ</span>';
+      const slip=o.slipStatus&&o.slipStatus.includes('pending')?' <span style="background:#FFF8E1;color:#F57F17;padding:2px 6px;border-radius:4px;font-size:11px">สลิป</span>':'';
+      return `<div class="oc ${esc(o.status)}" onclick="M.openDetail('${esc(o.id)}')">
+        <div style="display:flex;justify-content:space-between"><div class="q">${esc(o.queue)}</div><div style="color:#888;font-size:13px">${new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})}</div></div>
+        <div style="margin:8px 0;color:#444">${esc(prev)}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center"><strong style="color:var(--p);font-size:1.3rem">${money(o.total)}</strong><div>${pay}${slip}</div></div>
+      </div>`;
+    }).join('');
+  },
+  openDetail(id){
+    const o=this.orders.find(x=>x.id===id); if(!o)return;
+    const items=o.items.map(i=>{
+      const meta=[i.spiceName,...(i.toppings||[])].filter(Boolean).join(', ');
+      return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #eee"><div><strong>${esc(i.name)} × ${i.qty}</strong>${meta?`<div style="font-size:12px;color:#777">${esc(meta)}</div>`:''}</div><div>${money(i.total)}</div></div>`;
+    }).join('');
+    const slipHtml=o.slipPath?`<div style="margin:10px 0"><div style="font-weight:600;margin-bottom:6px">สลิป</div><img src="${esc(o.slipPath)}" style="max-width:100%;border-radius:8px;border:1px solid #eee"><div style="font-size:12px;color:#777;margin-top:4px">สถานะสลิป: ${esc(o.slipStatus||'-')}</div>
+      ${o.paymentStatus!=='PAID'?`<button class="btn btn-g btn-block" style="margin-top:8px" onclick="M.confirmSlip('${esc(o.id)}')">ยืนยันสลิป / รับเงินโอน</button>`:''}</div>`:'';
+    document.getElementById('detailBody').innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <button class="btn btn-o" onclick="document.getElementById('detailModal').classList.remove('on')">← กลับ</button>
+        <h2 style="color:var(--p)">คิว ${esc(o.queue)}</h2><div style="width:60px"></div>
+      </div>
+      <div style="text-align:center;margin-bottom:12px"><div style="color:#777">ยอดรวม</div><div style="font-size:2.2rem;font-weight:700;color:var(--p)">${money(o.total)}</div>
+      <div style="margin-top:6px">${o.paymentStatus==='PAID'?'<span style="color:var(--g)">ชำระแล้ว ('+esc(o.paymentMethod)+')</span>':'<span style="color:var(--d)">ยังไม่ชำระ</span>'}</div></div>
+      ${items}${slipHtml}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+        <button class="btn btn-o" onclick="M.setStatus('${esc(o.id)}','Pending')">รอรับ</button>
+        <button class="btn btn-i" onclick="M.setStatus('${esc(o.id)}','Cooking')">กำลังทำ</button>
+        <button class="btn btn-g" onclick="M.setStatus('${esc(o.id)}','Ready')">พร้อมรับ</button>
+        <button class="btn btn-p" onclick="M.setStatus('${esc(o.id)}','Completed')">เสร็จสิ้น</button>
+      </div>
+      ${o.paymentStatus!=='PAID'?`<div style="margin-top:12px"><label>รับเงินสด</label><input type="number" id="cashIn" placeholder="จำนวนที่รับ" style="margin:6px 0"><button class="btn btn-g btn-block" onclick="M.payCash('${esc(o.id)}')">ยืนยันรับเงินสด</button>
+      <button class="btn btn-i btn-block" style="margin-top:8px" onclick="M.payPP('${esc(o.id)}')">ยืนยันรับโอน (ไม่มีสลิป)</button></div>`:''}
+    `;
+    document.getElementById('detailModal').classList.add('on');
+  },
+  async setStatus(id,status){
+    const r=await fetch('/api/orders/'+id+'/status',{method:'PATCH',headers:authH(),body:JSON.stringify({status})});
+    const d=await r.json(); if(!r.ok){this.toast(d.error);return}
+    this.toast('อัปเดต '+status); this.loadOrders();
+    if(d.order) this.openDetail(id);
+  },
+  async payCash(id){
+    const paid=Number(document.getElementById('cashIn').value);
+    const r=await fetch('/api/orders/'+id+'/pay',{method:'POST',headers:authH(),body:JSON.stringify({method:'CASH',paidAmount:paid})});
+    const d=await r.json(); if(!r.ok){this.toast(d.error);return}
+    this.toast('รับเงินสดแล้ว'); this.loadOrders(); this.openDetail(id);
+  },
+  async payPP(id){
+    const r=await fetch('/api/orders/'+id+'/pay',{method:'POST',headers:authH(),body:JSON.stringify({method:'PROMPTPAY'})});
+    const d=await r.json(); if(!r.ok){this.toast(d.error);return}
+    this.toast('ยืนยันรับโอนแล้ว'); this.loadOrders(); this.openDetail(id);
+  },
+  async confirmSlip(id){
+    const r=await fetch('/api/orders/'+id+'/confirm-slip',{method:'POST',headers:authH()});
+    const d=await r.json(); if(!r.ok){this.toast(d.error);return}
+    this.toast('ยืนยันสลิปแล้ว'); this.loadOrders(); this.openDetail(id);
+  },
+  tab(name){
+    ['orders','menu','report','settings'].forEach(n=>{
+      document.getElementById('panel'+n.charAt(0).toUpperCase()+n.slice(1)).classList.toggle('hide',n!==name);
+    });
+    document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('on'));
+    const map={orders:'navOrders',menu:'navMenu',report:'navReport',settings:'navSet'};
+    document.getElementById(map[name])?.classList.add('on');
+    if(name==='report')this.loadReport();
+    if(name==='menu')this.loadCatalog();
+    if(name==='settings')this.loadSettingsUI();
+  },
+  async loadReport(){
+    const r=await fetch('/api/admin/reports/today',{headers:authH()});
+    const d=await r.json();
+    document.getElementById('reportBox').innerHTML=`
+      <div class="rc"><div class="v">${money(d.sales)}</div><div class="l">ยอดขาย (ชำระแล้ว)</div></div>
+      <div class="rc"><div class="v">${d.orderCount}</div><div class="l">ออเดอร์</div></div>
+      <div class="rc"><div class="v">${d.paidCount}</div><div class="l">ชำระแล้ว</div></div>
+      <div class="rc"><div class="v">${d.unpaidCount}</div><div class="l">ยังไม่ชำระ</div></div>`;
+    document.getElementById('topMenus').innerHTML=(d.topMenus||[]).map((m,i)=>`<div class="list-item"><span>${i+1}. ${esc(m.name)}</span><strong>${m.qty} จาน</strong></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>';
+  },
+  async loadCatalog(){
+    const r=await fetch('/api/admin/catalog',{headers:authH()});
+    const d=await r.json();
+    this._catalog=d;
+    this.menuTab('menus',document.querySelector('#panelMenu .tab'));
+  },
+  menuTab(which,el){
+    document.querySelectorAll('#panelMenu .tab').forEach(t=>t.classList.remove('on'));
+    if(el)el.classList.add('on');
+    const d=this._catalog||{menus:[],categories:[],spiceLevels:[],toppings:[]};
+    const box=document.getElementById('menuAdmin');
+    if(which==='menus'){
+      box.innerHTML=d.menus.map(m=>`<div class="list-item"><div><strong>${esc(m.name)}</strong> ${m.is_out?'<span style="color:var(--d)">หมด</span>':''}<div style="font-size:12px;color:#777">${money(m.price)}</div></div>
+        <button class="btn btn-o" style="padding:4px 8px" onclick="M.toggleOut('${esc(m.id)}',${m.is_out?0:1})">${m.is_out?'มีของ':'หมด'}</button></div>`).join('');
+    } else if(which==='categories'){
+      box.innerHTML=d.categories.map(c=>`<div class="list-item"><strong>${esc(c.name)}</strong><span style="color:#777">ลำดับ ${c.sort_order}</span></div>`).join('');
+    } else if(which==='spice'){
+      box.innerHTML=d.spiceLevels.map(s=>`<div class="list-item"><strong>${esc(s.name)}</strong></div>`).join('');
+    } else {
+      box.innerHTML=d.toppings.map(t=>`<div class="list-item"><strong>${esc(t.name)}</strong><span>${money(t.price)}</span></div>`).join('');
+    }
+  },
+  async toggleOut(id,isOut){
+    await fetch('/api/admin/menus/'+id,{method:'PUT',headers:authH(),body:JSON.stringify({isOut:!!isOut})});
+    this.loadCatalog(); this.toast('อัปเดตเมนูแล้ว');
+  },
+  async loadSettingsUI(){
+    const r=await fetch('/api/admin/settings',{headers:authH()});
+    const d=await r.json();
+    document.getElementById('setName').value=d.shopName||'';
+    document.getElementById('setPP').value=d.promptpay||'';
+    document.getElementById('setSlipOn').checked=!!d.slipApiEnabled;
+    document.getElementById('setSlipProv').value=d.slipApiProvider||'manual';
+    document.getElementById('shopTitle').textContent=d.shopName||'POS';
+    const url=location.origin+'/';
+    document.getElementById('qrUrl').textContent=url;
+    const box=document.getElementById('qrBox'); box.innerHTML='';
+    new QRCode(box,{text:url,width:180,height:180});
+  },
+  async saveSettings(){
+    const body={
+      shopName:document.getElementById('setName').value.trim(),
+      promptpay:document.getElementById('setPP').value.trim(),
+      slipApiEnabled:document.getElementById('setSlipOn').checked,
+      slipApiProvider:document.getElementById('setSlipProv').value
+    };
+    const key=document.getElementById('setSlipKey').value.trim();
+    if(key) body.slipApiKey=key;
+    const r=await fetch('/api/admin/settings',{method:'PUT',headers:authH(),body:JSON.stringify(body)});
+    const d=await r.json();
+    if(!r.ok){this.toast(d.error||'บันทึกไม่สำเร็จ');return}
+    this.toast('บันทึกแล้ว'); this.loadSettingsUI();
+  }
+};
+
+if(token()) M.enter();
+</script>
+</body>
+</html>
