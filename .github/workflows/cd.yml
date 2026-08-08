@@ -1,1 +1,125 @@
+name: CD
 
+# Deploy แบบกดมือ (workflow_dispatch) หรือเมื่อ push แท็ก v*
+# ปรับ secret / host ตามเซิร์ฟเวอร์จริงของคุณ
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # รัน CI ซ้ำก่อน deploy เพื่อกันโค้ดเสียถูกปล่อยขึ้นเครื่อง
+  precheck:
+    name: Pre-deploy CI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax
+        run: npm run syntax
+      - name: Start + smoke
+        run: |
+          mkdir -p data public/uploads
+          export SOM_TUM_DATA="${{ github.workspace }}/data"
+          export JWT_SECRET="cd-precheck-secret"
+          export PORT=3080
+          node server/index.js > /tmp/srv.log 2>&1 &
+          echo $! > /tmp/srv.pid
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3080/api/health && break
+            sleep 1
+          done
+          BASE_URL=http://127.0.0.1:3080 npm test
+          kill "$(cat /tmp/srv.pid)" 2>/dev/null || true
+
+  # --- ตัวเลือก A: สร้าง artifact ให้ดาวน์โหลดไปวางบนเซิร์ฟเวอร์ ---
+  package:
+    name: Build release artifact
+    needs: precheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pack application
+        run: |
+          mkdir -p dist
+          # ไม่รวม data, uploads, .git
+          tar -czf dist/somtum1pos-v3.tar.gz \
+            --exclude='./data' \
+            --exclude='./public/uploads/*' \
+            --exclude='./.git' \
+            --exclude='./node_modules' \
+            --exclude='./dist' \
+            .
+          ls -la dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: somtum1pos-v3-${{ github.sha }}
+          path: dist/somtum1pos-v3.tar.gz
+          retention-days: 14
+
+  # --- ตัวเลือก B: Deploy ผ่าน SSH ไป VPS (เปิดใช้เมื่อตั้ง Secrets แล้ว) ---
+  deploy-ssh:
+    name: Deploy over SSH
+    needs: package
+    runs-on: ubuntu-latest
+    # เปิดด้วย repo variable ENABLE_SSH_DEPLOY=true และตั้ง Secrets SSH_*
+    if: ${{ vars.ENABLE_SSH_DEPLOY == 'true' }}
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: somtum1pos-v3-${{ github.sha }}
+          path: dist
+
+      - name: Deploy to server via SSH
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          source: "dist/somtum1pos-v3.tar.gz"
+          target: ${{ secrets.DEPLOY_PATH || '/opt/somtum1pos' }}
+
+      - name: Remote extract & restart
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+            APP_DIR="${{ secrets.DEPLOY_PATH || '/opt/somtum1pos' }}"
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
+            # เก็บ data/ เดิมไว้ — ไม่ทับฐานข้อมูล
+            tar -xzf somtum1pos-v3.tar.gz --exclude='data' --exclude='public/uploads'
+            mkdir -p data public/uploads
+            # รีสตาร์ทด้วย systemd ถ้ามี service ชื่อ somtum1pos
+            if systemctl list-unit-files | grep -q somtum1pos; then
+              sudo systemctl restart somtum1pos
+              sudo systemctl --no-pager status somtum1pos || true
+            else
+              echo "No systemd unit 'somtum1pos' — extract done. Start manually with: bash start.sh"
+            fi
