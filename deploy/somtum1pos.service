@@ -1,1 +1,17 @@
+[Unit]
+Description=Somtum1POS v3
+After=network.target
 
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/somtum1pos
+Environment=PORT=3080
+Environment=SOM_TUM_DATA=/opt/somtum1pos/data
+Environment=JWT_SECRET=CHANGE_ME
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
