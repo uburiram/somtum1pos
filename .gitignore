@@ -1,0 +1,16 @@
+node_modules/
+data/
+*.db
+*.db-wal
+*.db-shm
+public/uploads/*
+!public/uploads/.gitkeep
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+npm-debug.log*
+coverage/
+.idea/
+.vscode/
