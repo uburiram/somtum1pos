@@ -1,73 +1,70 @@
-# POS Firebase — มือถือ + GitHub Pages + Firestore realtime
+# ส้มตำนายหนึ่ง POS — GitHub Pages + Firebase (รุ่นแก้ไขครบ)
 
-โปรเจกต์ Firebase: **pos1-4d72a**
-
-## ไฟล์
-
-| ไฟล์ | หน้าที่ |
-|------|---------|
-| `index.html` | หน้าลูกค้า (QR) |
-| `pos.html` | หน้าร้านค้า |
-| `firebase-config.js` | **ใส่ค่า config ที่นี่** |
-| `firestore.rules` | กฎความปลอดภัย (วางใน Console) |
-
-## ตั้งค่า Firebase บนมือถือ (ทีละข้อ)
-
-### 1) เปิด Firestore
-1. เปิด https://console.firebase.google.com/project/pos1-4d72a/firestore
-2. กด **Create database**
-3. เลือก **Start in test mode** (ชั่วคราว) หรือวาง rules จากไฟล์ `firestore.rules`
-4. Location เลือกใกล้ไทย เช่น `asia-southeast1`
-5. Enable
-
-### 2) สร้าง Web App เพื่อเอา Config
-1. เปิด https://console.firebase.google.com/project/pos1-4d72a/settings/general
-2. เลื่อนลง **Your apps**
-3. กดไอคอน **</>** (Web)
-4. App nickname: `pos-web` → Register
-5. คัดลอกค่าใน `firebaseConfig = { ... }`
-
-### 3) แก้ไฟล์ `firebase-config.js`
-วางค่าที่คัดลอก:
-
-```js
-window.FIREBASE_CONFIG = {
-  apiKey: "...",
-  authDomain: "pos1-4d72a.firebaseapp.com",
-  projectId: "pos1-4d72a",
-  storageBucket: "...",
-  messagingSenderId: "...",
-  appId: "..."
-};
-```
-
-### 4) อัปขึ้น GitHub (root ของ repo)
-อัปไฟล์เหล่านี้ไปที่ root:
-- index.html
-- pos.html
-- firebase-config.js
-- .nojekyll (ว่างก็ได้)
-
-### 5) เปิด GitHub Pages
-Settings → Pages → Deploy from branch → main → / (root) → Save
-
-### 6) ใช้งาน
-- ลูกค้า: `https://uburiram.github.io/somtum1pos/`
-- ร้าน: `https://uburiram.github.io/somtum1pos/pos.html`
-- PIN: `1234`
-
-ลูกค้าสั่งบนมือถือใดก็ได้ → ร้านเห็นทันทีผ่าน Firestore realtime
-
-## โครงสร้างข้อมูล Firestore
+## ไฟล์ที่ต้องอยู่ที่ root ของ repo
 
 ```
-shops/main/
-  settings/config
-  categories/{id}
-  menus/{id}
-  spiceLevels/{id}
-  toppings/{id}
-  orders/{id}
+index.html           ← หน้าลูกค้า (QR)
+pos.html             ← หน้าร้านค้า
+firebase-config.js   ← ค่า Firebase
+firestore.rules      ← วางใน Firebase Console
+.nojekyll
+README.md
 ```
 
-ครั้งแรกที่เปิดหน้าลูกค้า ระบบจะ seed เมนูให้อัตโนมัติถ้ายังว่าง (ไม่ทับของเดิม)
+## ลิงก์ใช้งาน
+
+| ใคร | URL |
+|-----|-----|
+| ลูกค้า | https://uburiram.github.io/somtum1pos/ |
+| ร้านค้า | https://uburiram.github.io/somtum1pos/pos.html |
+| PIN ครั้งแรก | `1234` (เปลี่ยนทันทีหลังเข้า) |
+
+## สิ่งที่แก้ในรุ่นนี้
+
+### วิกฤต
+- แยก settings เป็น `public` (ชื่อร้าน/PromptPay) กับ `secure` (pinHash + คิว)
+- ลบ PIN ข้อความธรรมดาออกจากเอกสารเก่าอัตโนมัติ
+- ตัดช่องโหว่ DEFAULT_PIN ถาวร — ตรวจเฉพาะ pinHash
+- rules ห้าม delete ออเดอร์จาก client
+
+### สูง
+- แก้เสียงแจ้งเตือนไม่บี๊บตอนเปิด POS ครั้งแรก
+- CRUD เมนู (เพิ่ม/แก้/ปิดขาย/หมด)
+- อัปโหลดสลิป (ย่อรูป) + ร้านกดผ่าน/ไม่ผ่าน
+- ลูกค้าเช็กคิวได้จากช่องด้านบน / `?queue=A001`
+
+### กลาง
+- รายงานวันนี้ / 7 วัน / 30 วัน แยกเงินสด-พร้อมเพย์ + เมนูขายดี
+- รองรับรูปเมนูผ่าน URL
+- offline persistence ของ Firestore
+- คิวรันบน `settings/secure` ด้วย transaction
+
+### ต่ำ
+- แพ็กเฉพาะไฟล์ Pages (ไม่ปน server Node)
+- README ชัดเจน
+
+## วิธีอัปจากมือถือ
+
+1. ดาวน์โหลดไฟล์จาก zip ชุดนี้
+2. GitHub → repo `uburiram/somtum1pos`
+3. อัป **ทับ** ที่ root:
+   - index.html
+   - pos.html
+   - firebase-config.js
+   - .nojekyll
+4. Commit
+5. เปิด https://console.firebase.google.com/project/pos1-4d72a/firestore/rules
+6. วางเนื้อหาจาก `firestore.rules` → Publish
+7. รอ 1–2 นาที แล้วรีเฟรชหน้าเว็บ
+
+## ข้อมูลเดิม
+
+- เมนู / หมวด / ออเดอร์เก่าใน Firestore **ไม่ถูกลบ**
+- ระบบย้าย `settings/config` → `public` + `secure` อัตโนมัติ
+- PIN เดิมถ้าเป็น `1234` จะยังใช้ได้หลัง migrate (ผ่าน hash)
+
+## ข้อจำกัดที่ยังเหลือ (เทคโนโลยี)
+
+บน GitHub Pages **ไม่มี Firebase Auth**  
+rules จึงยังเปิด write ได้ในระดับร้านเล็ก — อย่าแชร์ลิงก์ POS สาธารณะเกินจำเป็น  
+เมื่อพร้อม ควรเพิ่ม Firebase Authentication ภายหลัง

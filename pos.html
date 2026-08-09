@@ -15,14 +15,14 @@
 *{box-sizing:border-box;margin:0;padding:0;font-family:Prompt,sans-serif}
 body{background:var(--bg);color:#333}
 button{border:none;background:none;cursor:pointer;font-family:inherit}
-input{font-family:inherit;font-size:16px;padding:10px;border:1px solid #ccc;border-radius:8px;width:100%}
+input,select,textarea{font-family:inherit;font-size:16px;padding:10px;border:1px solid #ccc;border-radius:8px;width:100%}
 header{background:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08);position:sticky;top:0;z-index:30;flex-wrap:wrap;gap:8px}
 .logo{font-weight:700;color:var(--p);display:flex;align-items:center;gap:8px}
 .nav{display:flex;gap:6px;flex-wrap:wrap}
 .nav button,.nav a{padding:7px 12px;border-radius:16px;background:#eee;font-size:13px;font-weight:500;text-decoration:none;color:inherit}
 .nav button.on{background:var(--p);color:#fff}
 .badge-n{background:var(--d);color:#fff;font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px}
-.wrap{padding:12px;padding-bottom:40px}
+.wrap{padding:12px;padding-bottom:48px}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
 .st{background:#fff;border-radius:10px;padding:10px 6px;text-align:center}
 .st .n{font-size:1.3rem;font-weight:700}.st .l{font-size:11px;color:#777}
@@ -35,11 +35,12 @@ header{background:#fff;padding:10px 14px;display:flex;justify-content:space-betw
 .q{font-size:1.5rem;font-weight:700}
 .btn{padding:10px 14px;border-radius:8px;font-weight:600;font-size:14px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
 .btn-p{background:var(--p);color:#fff}.btn-g{background:var(--g);color:#fff}.btn-i{background:var(--i);color:#fff}
-.btn-o{border:1px solid var(--p);color:var(--p);background:#fff}.btn-block{width:100%}
+.btn-o{border:1px solid var(--p);color:var(--p);background:#fff}.btn-d{background:var(--d);color:#fff}
+.btn-block{width:100%}.btn-sm{padding:6px 10px;font-size:12px}
 .pinbox{max-width:360px;margin:50px auto;background:#fff;padding:28px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.1);text-align:center}
 .ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:80;display:none;align-items:center;justify-content:center;padding:12px}
-.ov.on{display:flex}.md{background:#fff;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;border-radius:14px;padding:18px}
-.toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(30,30,30,.95);color:#fff;padding:10px 18px;border-radius:20px;z-index:200;display:none;font-size:14px}
+.ov.on{display:flex}.md{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;border-radius:14px;padding:18px}
+.toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(30,30,30,.95);color:#fff;padding:10px 18px;border-radius:20px;z-index:200;display:none;font-size:14px;max-width:90%}
 .list-item{display:flex;justify-content:space-between;align-items:center;background:#fff;padding:12px;border-radius:10px;margin-bottom:8px;gap:8px}
 .audio-bar{background:#FFF3E0;padding:8px;text-align:center;border-radius:8px;margin-bottom:10px;border:1px dashed var(--p);font-size:13px}
 .hide{display:none!important}
@@ -47,17 +48,19 @@ header{background:#fff;padding:10px 14px;display:flex;justify-content:space-betw
 .banner.on{display:block}
 .rpt{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .rc{background:#fff;padding:12px;border-radius:10px;text-align:center}
-.rc .v{font-size:1.3rem;font-weight:700;color:var(--p)}.rc .l{font-size:12px;color:#777}
+.rc .v{font-size:1.25rem;font-weight:700;color:var(--p)}.rc .l{font-size:12px;color:#777}
+.form-card{background:#fff;padding:14px;border-radius:12px;margin-bottom:12px}
+label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
 </style>
 </head>
 <body>
-<div class="banner" id="cfgBanner">⚠️ ยังไม่ได้ใส่ค่า Firebase ใน firebase-config.js</div>
+<div class="banner" id="cfgBanner">⚠️ ยังไม่ได้ตั้งค่า Firebase</div>
 <div id="loginView" class="pinbox">
   <h2 style="color:var(--p);margin-bottom:8px"><i class="fa-solid fa-lock"></i> POS ร้านค้า</h2>
-  <p style="color:#777;font-size:13px;margin-bottom:16px">Firebase realtime · ใส่ PIN</p>
+  <p style="color:#777;font-size:13px;margin-bottom:16px">ใส่ PIN ร้าน (ไม่ใช่รหัสเริ่มต้นถาวร)</p>
   <input type="password" id="pinIn" inputmode="numeric" maxlength="8" placeholder="PIN" style="text-align:center;font-size:1.5rem;letter-spacing:6px;margin-bottom:14px">
   <button class="btn btn-p btn-block" onclick="M.login()">เข้าสู่ระบบ</button>
-  <p style="font-size:12px;color:#999;margin-top:12px">PIN เริ่มต้น: 1234</p>
+  <p style="font-size:12px;color:#999;margin-top:12px">PIN เริ่มต้นครั้งแรก: 1234 — เปลี่ยนทันทีหลังเข้า</p>
   <p style="margin-top:16px"><a href="./" style="color:var(--p)">← หน้าลูกค้า</a></p>
 </div>
 
@@ -79,7 +82,7 @@ header{background:#fff;padding:10px 14px;display:flex;justify-content:space-betw
   <div id="panelOrders">
     <div class="audio-bar" id="audioBar">
       <strong>🔔 เปิดเสียงแจ้งเตือน</strong>
-      <button class="btn btn-p" style="padding:4px 10px;margin-left:8px;font-size:12px" onclick="M.enableAudio()">เปิด</button>
+      <button class="btn btn-p btn-sm" style="margin-left:8px" onclick="M.enableAudio()">เปิด</button>
     </div>
     <div class="stats">
       <div class="st"><div class="n" style="color:var(--p)" id="sPending">0</div><div class="l">รอทำ</div></div>
@@ -90,29 +93,58 @@ header{background:#fff;padding:10px 14px;display:flex;justify-content:space-betw
     <div class="filters">
       <button class="fc on" data-f="active" onclick="M.filter('active',this)">กำลังทำ</button>
       <button class="fc" data-f="unpaid" onclick="M.filter('unpaid',this)">ยังไม่ชำระ</button>
+      <button class="fc" data-f="slip" onclick="M.filter('slip',this)">รอตรวจสลิป</button>
       <button class="fc" data-f="completed" onclick="M.filter('completed',this)">เสร็จแล้ว</button>
     </div>
     <div class="og" id="orderGrid"></div>
   </div>
-  <div id="panelMenu" class="hide"><div id="menuAdmin"></div></div>
-  <div id="panelReport" class="hide">
-    <h3 style="margin-bottom:10px">รายงานวันนี้</h3>
-    <div class="rpt" id="reportBox"></div>
+
+  <div id="panelMenu" class="hide">
+    <div class="form-card">
+      <h3 style="margin-bottom:8px">เพิ่ม / แก้ไขเมนู</h3>
+      <input type="hidden" id="menuEditId">
+      <label class="lbl">ชื่อเมนู</label><input id="menuName">
+      <label class="lbl">ราคา</label><input id="menuPrice" type="number" min="0">
+      <label class="lbl">หมวด</label><select id="menuCat"></select>
+      <label class="lbl">ลิงก์รูป (URL ถ้ามี)</label><input id="menuImg" placeholder="https://...">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+        <button class="btn btn-p" onclick="M.saveMenu()">บันทึกเมนู</button>
+        <button class="btn btn-o" onclick="M.resetMenuForm()">ล้างฟอร์ม</button>
+      </div>
+    </div>
+    <div id="menuAdmin"></div>
   </div>
+
+  <div id="panelReport" class="hide">
+    <div class="form-card">
+      <label class="lbl">ช่วงรายงาน</label>
+      <select id="reportRange" onchange="M.loadReport()">
+        <option value="today">วันนี้</option>
+        <option value="7d">7 วันล่าสุด</option>
+        <option value="30d">30 วันล่าสุด</option>
+        <option value="all">ทั้งหมดในหน่วยความจำ</option>
+      </select>
+    </div>
+    <div class="rpt" id="reportBox"></div>
+    <h3 style="margin:14px 0 8px">เมนูขายดี</h3>
+    <div id="topMenus"></div>
+  </div>
+
   <div id="panelSettings" class="hide">
-    <div style="background:#fff;padding:16px;border-radius:12px;margin-bottom:12px">
-      <h3 style="margin-bottom:10px">ร้านค้า</h3>
-      <label>ชื่อร้าน</label><input id="setName" style="margin:6px 0 10px">
-      <label>PromptPay</label><input id="setPP" style="margin:6px 0 10px">
-      <button class="btn btn-p btn-block" onclick="M.saveSettings()">บันทึก</button>
+    <div class="form-card">
+      <h3>ร้านค้า</h3>
+      <label class="lbl">ชื่อร้าน</label><input id="setName">
+      <label class="lbl">PromptPay (10 หรือ 13 หลัก)</label><input id="setPP">
+      <button class="btn btn-p btn-block" style="margin-top:10px" onclick="M.saveSettings()">บันทึก</button>
     </div>
-    <div style="background:#fff;padding:16px;border-radius:12px;margin-bottom:12px">
-      <h3 style="margin-bottom:10px">เปลี่ยน PIN</h3>
-      <input type="password" id="setPin1" placeholder="PIN ใหม่" inputmode="numeric" style="margin-bottom:8px">
-      <input type="password" id="setPin2" placeholder="ยืนยัน" inputmode="numeric" style="margin-bottom:8px">
-      <button class="btn btn-o btn-block" onclick="M.changePin()">เปลี่ยน PIN</button>
+    <div class="form-card">
+      <h3>เปลี่ยน PIN</h3>
+      <label class="lbl">PIN ปัจจุบัน</label><input type="password" id="setPinOld" inputmode="numeric">
+      <label class="lbl">PIN ใหม่ (4–8 ตัวเลข)</label><input type="password" id="setPin1" inputmode="numeric">
+      <label class="lbl">ยืนยัน PIN ใหม่</label><input type="password" id="setPin2" inputmode="numeric">
+      <button class="btn btn-o btn-block" style="margin-top:10px" onclick="M.changePin()">เปลี่ยน PIN</button>
     </div>
-    <div style="background:#fff;padding:16px;border-radius:12px;text-align:center">
+    <div class="form-card" style="text-align:center">
       <h3>QR ลูกค้า</h3>
       <div id="qrBox" style="display:flex;justify-content:center;margin:12px 0"></div>
       <p style="font-size:12px;word-break:break-all" id="qrUrl"></p>
@@ -120,89 +152,148 @@ header{background:#fff;padding:10px 14px;display:flex;justify-content:space-betw
   </div>
 </div>
 </div>
+
 <div class="ov" id="detailModal"><div class="md" id="detailBody"></div></div>
 <div class="toast" id="toast"></div>
+
 <script>
 const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money = n => '฿'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
 const toast = msg => { const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._x); t._x=setTimeout(()=>t.style.display='none',2800); };
+const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+
+async function sha256(text){
+  const data=new TextEncoder().encode(String(text));
+  const buf=await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
 
 let db, shopRef;
 
 const M = {
-  filterKey:'active', orders:[], audio:null, audioOn:false, lastActive:0, pin:'1234', unsub:null,
+  filterKey:'active', orders:[], menus:[], cats:[],
+  audio:null, audioOn:false, lastActive:0, ready:false, unsub:null, pinHash:'',
 
   async boot(){
-    const c = window.FIREBASE_CONFIG||{};
-    if(!c.apiKey || String(c.apiKey).includes('PASTE')){
-      document.getElementById('cfgBanner').classList.add('on');
-      return;
+    const c=window.FIREBASE_CONFIG||{};
+    if(!c.apiKey||String(c.apiKey).includes('PASTE')){
+      document.getElementById('cfgBanner').classList.add('on'); return;
     }
     firebase.initializeApp(c);
-    db = firebase.firestore();
-    try{ db.enablePersistence({synchronizeTabs:true}); }catch(e){}
-    shopRef = db.collection('shops').doc(window.SHOP_ID||'main');
-    const cfg = await shopRef.collection('settings').doc('config').get();
-    if(cfg.exists && cfg.data().pin) this.pin = String(cfg.data().pin);
-    const until = Number(sessionStorage.getItem('pinUntil')||0);
-    if(until > Date.now()) this.enter();
+    db=firebase.firestore();
+    try{ await db.enablePersistence({synchronizeTabs:true}); }catch(e){}
+    shopRef=db.collection('shops').doc(window.SHOP_ID||'main');
+    await this.ensureSecure();
+    const until=Number(sessionStorage.getItem('pinUntil')||0);
+    if(until>Date.now()) this.enter();
   },
+
+  async ensureSecure(){
+    // migrate เก่า + สร้าง pinHash ถ้ายังไม่มี (ไม่ทับข้อมูลอื่น)
+    const old=await shopRef.collection('settings').doc('config').get();
+    const sec=await shopRef.collection('settings').doc('secure').get();
+    const pub=await shopRef.collection('settings').doc('public').get();
+    if(old.exists){
+      const d=old.data()||{};
+      if(!pub.exists){
+        await shopRef.collection('settings').doc('public').set({
+          shopName:d.shopName||'ส้มตำนายหนึ่ง', promptpay:d.promptpay||''
+        },{merge:true});
+      }
+      if(!sec.exists){
+        const pin=d.pin?String(d.pin):'1234';
+        await shopRef.collection('settings').doc('secure').set({
+          pinHash: await sha256(pin),
+          queueCounter: Number(d.queueCounter)||1
+        },{merge:true});
+      }
+      if(d.pin){
+        const cleaned=Object.assign({},d); delete cleaned.pin; cleaned.pinMigrated=true;
+        await shopRef.collection('settings').doc('config').set(cleaned);
+      }
+    } else if(!sec.exists){
+      await shopRef.collection('settings').doc('public').set({shopName:'ส้มตำนายหนึ่ง',promptpay:''},{merge:true});
+      await shopRef.collection('settings').doc('secure').set({pinHash:await sha256('1234'),queueCounter:1},{merge:true});
+    }
+    const s=await shopRef.collection('settings').doc('secure').get();
+    this.pinHash = s.exists ? (s.data().pinHash||'') : '';
+  },
+
   async login(){
-    const input = document.getElementById('pinIn').value.trim();
-    // refresh pin from cloud
-    try{
-      const cfg = await shopRef.collection('settings').doc('config').get();
-      if(cfg.exists && cfg.data().pin) this.pin = String(cfg.data().pin);
-    }catch(e){}
-    if(input === this.pin || input === (window.DEFAULT_PIN||'1234')){
-      sessionStorage.setItem('pinUntil', String(Date.now()+30*60*1000));
+    const input=document.getElementById('pinIn').value.trim();
+    if(!/^\d{4,8}$/.test(input)){ toast('PIN ต้องเป็นตัวเลข 4–8 หลัก'); return; }
+    await this.ensureSecure();
+    const s=await shopRef.collection('settings').doc('secure').get();
+    const hash = s.exists ? s.data().pinHash : '';
+    const inputHash = await sha256(input);
+    // ไม่มี DEFAULT_PIN ถาวร — ถ้ายังไม่เคยตั้ง hash ให้เทียบ 1234 ครั้งเดียวผ่านการ migrate
+    if(hash && inputHash === hash){
+      sessionStorage.setItem('pinUntil', String(Date.now()+20*60*1000));
       this.enter();
-    } else toast('PIN ไม่ถูกต้อง');
+    } else {
+      toast('PIN ไม่ถูกต้อง');
+    }
   },
   logout(){ sessionStorage.removeItem('pinUntil'); location.reload(); },
+
   enter(){
     document.getElementById('loginView').classList.add('hide');
     document.getElementById('appView').classList.remove('hide');
+    this.ready=false; this.lastActive=0;
     this.listenOrders();
     this.loadSettingsUI();
-    shopRef.collection('settings').doc('config').onSnapshot(s=>{
-      if(s.exists){
-        document.getElementById('shopTitle').textContent = s.data().shopName||'POS';
-        if(s.data().pin) this.pin = String(s.data().pin);
-      }
+    shopRef.collection('settings').doc('public').onSnapshot(s=>{
+      if(s.exists) document.getElementById('shopTitle').textContent=s.data().shopName||'POS';
     });
   },
+
   enableAudio(){
-    this.audio = new (window.AudioContext||window.webkitAudioContext)();
+    this.audio=new (window.AudioContext||window.webkitAudioContext)();
     this.audio.resume().then(()=>{ this.audioOn=true; document.getElementById('audioBar').classList.add('hide'); toast('เปิดเสียงแล้ว'); this.beep(); });
   },
   beep(){
     if(!this.audioOn||!this.audio) return;
     try{
-      const o=this.audio.createOscillator(),g=this.audio.createGain();
+      const o=this.audio.createOscillator(), g=this.audio.createGain();
       o.connect(g); g.connect(this.audio.destination);
       o.frequency.value=880; g.gain.value=.12; o.start(); o.stop(this.audio.currentTime+.2);
       if(navigator.vibrate) navigator.vibrate([200,60,200]);
     }catch(e){}
   },
-  filter(f,el){ this.filterKey=f; document.querySelectorAll('.fc').forEach(x=>x.classList.remove('on')); el.classList.add('on'); this.renderOrders(); },
+
+  filter(f,el){
+    this.filterKey=f;
+    document.querySelectorAll('.fc').forEach(x=>x.classList.remove('on'));
+    el.classList.add('on');
+    this.renderOrders();
+  },
+
   listenOrders(){
     if(this.unsub) this.unsub();
-    this.unsub = shopRef.collection('orders').orderBy('createdAt','desc').limit(100)
-      .onSnapshot(snap => {
-        this.orders = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-        const active = this.orders.filter(o=>o.status!=='Completed').length;
+    // ดึงล่าสุด 150 รายการ แล้ว sort ฝั่ง client — ลดปัญหา composite index
+    this.unsub = shopRef.collection('orders').limit(150).onSnapshot(snap=>{
+      this.orders = snap.docs.map(d=>({id:d.id,...d.data()}))
+        .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+      const active=this.orders.filter(o=>o.status!=='Completed').length;
+      if(this.ready){
         if(active > this.lastActive){ this.beep(); toast('🔔 ออเดอร์ใหม่'); }
-        this.lastActive = active;
-        this.renderOrders();
-      }, err => toast('ฟังออเดอร์ไม่สำเร็จ: '+err.message));
+      } else {
+        // snapshot แรก: ตั้งค่า baseline ไม่บี๊บ
+        this.ready = true;
+      }
+      this.lastActive = active;
+      this.renderOrders();
+    }, err => toast('ฟังออเดอร์ไม่สำเร็จ: '+err.message));
   },
+
   renderOrders(){
     const today=new Date(); today.setHours(0,0,0,0); const t0=today.getTime();
-    let list = this.orders.slice();
+    let list=this.orders.slice();
     if(this.filterKey==='active') list=list.filter(o=>o.status!=='Completed');
     else if(this.filterKey==='unpaid') list=list.filter(o=>o.paymentStatus==='UNPAID'&&o.status!=='Completed');
-    else if(this.filterKey==='completed') list=list.filter(o=>o.status==='Completed'&&o.createdAt>=t0);
+    else if(this.filterKey==='slip') list=list.filter(o=>o.slipStatus==='PENDING_REVIEW');
+    else if(this.filterKey==='completed') list=list.filter(o=>o.status==='Completed'&&(o.createdAt||0)>=t0);
+
     const active=this.orders.filter(o=>o.status!=='Completed');
     document.getElementById('sPending').textContent=active.filter(o=>o.status==='Pending').length;
     document.getElementById('sCooking').textContent=active.filter(o=>o.status==='Cooking').length;
@@ -211,6 +302,7 @@ const M = {
     const n=active.length;
     const badge=document.getElementById('orderBadge');
     if(n>0){ badge.textContent=n; badge.classList.remove('hide'); } else badge.classList.add('hide');
+
     const g=document.getElementById('orderGrid');
     if(!list.length){ g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#888">ไม่มีออเดอร์</div>'; return; }
     g.innerHTML=list.map(o=>{
@@ -219,14 +311,16 @@ const M = {
       const pay=o.paymentStatus==='PAID'
         ? '<span style="background:#E8F5E9;color:#2E7D32;padding:2px 8px;border-radius:4px;font-size:12px">ชำระแล้ว</span>'
         : '<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px">ยังไม่ชำระ</span>';
-      return `<div class="oc ${esc(o.status)}" onclick="M.openDetail('${esc(o.id)}')">
+      const slip=o.slipStatus==='PENDING_REVIEW'?' <span style="background:#FFF3E0;color:#E65100;padding:2px 6px;border-radius:4px;font-size:11px">สลิป</span>':'';
+      return `<div class="oc ${esc(o.status||'')}" onclick="M.openDetail('${esc(o.id)}')">
         <div style="display:flex;justify-content:space-between"><div class="q">${esc(o.queue)}</div>
-        <div style="color:#888;font-size:13px">${new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})}</div></div>
+        <div style="color:#888;font-size:13px">${o.createdAt?new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}</div></div>
         <div style="margin:8px 0;color:#444">${esc(prev)}</div>
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <strong style="color:var(--p);font-size:1.25rem">${money(o.total)}</strong>${pay}</div></div>`;
+          <strong style="color:var(--p);font-size:1.25rem">${money(o.total)}</strong><span>${pay}${slip}</span></div></div>`;
     }).join('');
   },
+
   openDetail(id){
     const o=this.orders.find(x=>x.id===id); if(!o) return;
     const items=(o.items||[]).map(i=>{
@@ -235,9 +329,17 @@ const M = {
         <div><strong>${esc(i.name)} × ${i.qty}</strong>${meta?`<div style="font-size:12px;color:#777">${esc(meta)}</div>`:''}</div>
         <div>${money(i.total)}</div></div>`;
     }).join('');
+    const slipBlock = o.slipData ? `<div style="margin:12px 0;text-align:center">
+        <div style="font-weight:600;margin-bottom:6px">สลิปจากลูกค้า (${esc(o.slipStatus||'')})</div>
+        <img src="${o.slipData}" style="max-width:100%;border-radius:8px;border:1px solid #eee">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+          <button class="btn btn-g" onclick="M.reviewSlip('${esc(o.id)}','APPROVED')">สลิปผ่าน</button>
+          <button class="btn btn-d" onclick="M.reviewSlip('${esc(o.id)}','REJECTED')">ไม่ผ่าน</button>
+        </div>
+      </div>` : '';
     document.getElementById('detailBody').innerHTML=`
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <button class="btn btn-o" onclick="document.getElementById('detailModal').classList.remove('on')">← กลับ</button>
+        <button class="btn btn-o btn-sm" onclick="document.getElementById('detailModal').classList.remove('on')">← กลับ</button>
         <h2 style="color:var(--p)">คิว ${esc(o.queue)}</h2><div style="width:50px"></div>
       </div>
       <div style="text-align:center;margin-bottom:12px"><div style="color:#777">ยอดรวม</div>
@@ -245,6 +347,7 @@ const M = {
         <div style="margin-top:6px">${o.paymentStatus==='PAID'?'<span style="color:var(--g)">ชำระแล้ว</span>':'<span style="color:var(--d)">ยังไม่ชำระ</span>'}</div>
       </div>
       ${items}
+      ${slipBlock}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
         <button class="btn btn-o" onclick="M.setStatus('${esc(o.id)}','Pending')">รอรับ</button>
         <button class="btn btn-i" onclick="M.setStatus('${esc(o.id)}','Cooking')">กำลังทำ</button>
@@ -252,12 +355,13 @@ const M = {
         <button class="btn btn-p" onclick="M.setStatus('${esc(o.id)}','Completed')">เสร็จสิ้น</button>
       </div>
       ${o.paymentStatus!=='PAID'?`<div style="margin-top:12px">
-        <label>รับเงินสด</label><input type="number" id="cashIn" placeholder="จำนวนที่รับ" style="margin:6px 0">
-        <button class="btn btn-g btn-block" onclick="M.payCash('${esc(o.id)}')">ยืนยันรับเงินสด</button>
+        <label class="lbl">รับเงินสด</label><input type="number" id="cashIn" placeholder="จำนวนที่รับ">
+        <button class="btn btn-g btn-block" style="margin-top:8px" onclick="M.payCash('${esc(o.id)}')">ยืนยันรับเงินสด</button>
         <button class="btn btn-i btn-block" style="margin-top:8px" onclick="M.payPP('${esc(o.id)}')">ยืนยันรับโอน</button>
       </div>`:''}`;
     document.getElementById('detailModal').classList.add('on');
   },
+
   async setStatus(id, status){
     await shopRef.collection('orders').doc(id).update({ status });
     toast('อัปเดต '+status);
@@ -274,10 +378,24 @@ const M = {
   async payPP(id){
     const o=this.orders.find(x=>x.id===id); if(!o) return;
     await shopRef.collection('orders').doc(id).update({
-      paymentStatus:'PAID', paymentMethod:'PROMPTPAY', paidAmount:o.total, changeAmount:0
+      paymentStatus:'PAID', paymentMethod:'PROMPTPAY', paidAmount:o.total, changeAmount:0,
+      slipStatus: o.slipStatus==='PENDING_REVIEW' ? 'APPROVED' : (o.slipStatus||'NONE')
     });
     toast('ยืนยันโอนแล้ว'); this.openDetail(id);
   },
+  async reviewSlip(id, status){
+    const patch={ slipStatus: status };
+    if(status==='APPROVED'){
+      patch.paymentStatus='PAID';
+      patch.paymentMethod='PROMPTPAY';
+      const o=this.orders.find(x=>x.id===id);
+      if(o){ patch.paidAmount=o.total; patch.changeAmount=0; }
+    }
+    await shopRef.collection('orders').doc(id).update(patch);
+    toast(status==='APPROVED'?'สลิปผ่าน · ชำระแล้ว':'สลิปไม่ผ่าน');
+    this.openDetail(id);
+  },
+
   tab(name){
     ['orders','menu','report','settings'].forEach(n=>{
       document.getElementById('panel'+n.charAt(0).toUpperCase()+n.slice(1)).classList.toggle('hide', n!==name);
@@ -289,38 +407,110 @@ const M = {
     if(name==='menu') this.loadCatalog();
     if(name==='settings') this.loadSettingsUI();
   },
+
   loadReport(){
-    const today=new Date(); today.setHours(0,0,0,0); const t0=today.getTime();
-    const todayOrders=this.orders.filter(o=>o.createdAt>=t0);
-    const paid=todayOrders.filter(o=>o.paymentStatus==='PAID');
+    const range=document.getElementById('reportRange').value;
+    const now=Date.now();
+    let from=0;
+    if(range==='today'){ const t=new Date(); t.setHours(0,0,0,0); from=t.getTime(); }
+    else if(range==='7d') from=now-7*864e5;
+    else if(range==='30d') from=now-30*864e5;
+    const list=this.orders.filter(o=>(o.createdAt||0)>=from);
+    const paid=list.filter(o=>o.paymentStatus==='PAID');
+    const cash=paid.filter(o=>o.paymentMethod==='CASH').reduce((s,o)=>s+Number(o.total||0),0);
+    const pp=paid.filter(o=>o.paymentMethod==='PROMPTPAY').reduce((s,o)=>s+Number(o.total||0),0);
     const sales=paid.reduce((s,o)=>s+Number(o.total||0),0);
     document.getElementById('reportBox').innerHTML=`
-      <div class="rc"><div class="v">${money(sales)}</div><div class="l">ยอดขาย</div></div>
-      <div class="rc"><div class="v">${todayOrders.length}</div><div class="l">ออเดอร์</div></div>
+      <div class="rc"><div class="v">${money(sales)}</div><div class="l">ยอดขายชำระแล้ว</div></div>
+      <div class="rc"><div class="v">${list.length}</div><div class="l">ออเดอร์ทั้งหมด</div></div>
+      <div class="rc"><div class="v">${money(cash)}</div><div class="l">เงินสด</div></div>
+      <div class="rc"><div class="v">${money(pp)}</div><div class="l">พร้อมเพย์</div></div>
       <div class="rc"><div class="v">${paid.length}</div><div class="l">ชำระแล้ว</div></div>
-      <div class="rc"><div class="v">${todayOrders.filter(o=>o.paymentStatus==='UNPAID').length}</div><div class="l">ยังไม่ชำระ</div></div>`;
+      <div class="rc"><div class="v">${list.filter(o=>o.paymentStatus==='UNPAID').length}</div><div class="l">ยังไม่ชำระ</div></div>`;
+    const mc={};
+    list.forEach(o=>(o.items||[]).forEach(i=>{ mc[i.name]=(mc[i.name]||0)+Number(i.qty||0); }));
+    const top=Object.entries(mc).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    document.getElementById('topMenus').innerHTML = top.length
+      ? top.map(([n,q],i)=>`<div class="list-item"><span>${i+1}. ${esc(n)}</span><strong>${q} จาน</strong></div>`).join('')
+      : '<div style="color:#888">ยังไม่มี</div>';
   },
+
   async loadCatalog(){
-    const snap=await shopRef.collection('menus').get();
-    const menus=snap.docs.map(d=>({id:d.id,...d.data()}));
-    document.getElementById('menuAdmin').innerHTML=menus.map(m=>`
-      <div class="list-item"><div><strong>${esc(m.name)}</strong> ${m.isOut?'<span style="color:var(--d)">หมด</span>':''}
-      <div style="font-size:12px;color:#777">${money(m.price)}</div></div>
-      <button class="btn btn-o" style="padding:4px 8px" onclick="M.toggleOut('${esc(m.id)}',${!m.isOut})">${m.isOut?'มีของ':'หมด'}</button></div>`).join('');
+    const [ms, cs] = await Promise.all([
+      shopRef.collection('menus').get(),
+      shopRef.collection('categories').get()
+    ]);
+    this.menus=ms.docs.map(d=>({id:d.id,...d.data()}));
+    this.cats=cs.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0));
+    document.getElementById('menuCat').innerHTML=this.cats.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+    document.getElementById('menuAdmin').innerHTML=this.menus.map(m=>`
+      <div class="list-item">
+        <div style="flex:1">
+          <strong>${esc(m.name)}</strong> ${m.isOut?'<span style="color:var(--d)">หมด</span>':''}
+          <div style="font-size:12px;color:#777">${money(m.price)} · ${esc((this.cats.find(c=>c.id===m.catId)||{}).name||'')}</div>
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="btn btn-o btn-sm" onclick="M.editMenu('${esc(m.id)}')">แก้</button>
+          <button class="btn btn-o btn-sm" onclick="M.toggleOut('${esc(m.id)}',${!m.isOut})">${m.isOut?'มีของ':'หมด'}</button>
+          <button class="btn btn-d btn-sm" onclick="M.deleteMenu('${esc(m.id)}')">ลบ</button>
+        </div>
+      </div>`).join('') || '<div style="color:#888">ยังไม่มีเมนู</div>';
+  },
+  editMenu(id){
+    const m=this.menus.find(x=>x.id===id); if(!m) return;
+    document.getElementById('menuEditId').value=m.id;
+    document.getElementById('menuName').value=m.name||'';
+    document.getElementById('menuPrice').value=m.price||0;
+    document.getElementById('menuCat').value=m.catId||'';
+    document.getElementById('menuImg').value=m.imageUrl||'';
+    toast('กำลังแก้ไข: '+m.name);
+  },
+  resetMenuForm(){
+    document.getElementById('menuEditId').value='';
+    document.getElementById('menuName').value='';
+    document.getElementById('menuPrice').value='';
+    document.getElementById('menuImg').value='';
+  },
+  async saveMenu(){
+    const id=document.getElementById('menuEditId').value||('m_'+uid());
+    const name=document.getElementById('menuName').value.trim();
+    const price=Number(document.getElementById('menuPrice').value);
+    const catId=document.getElementById('menuCat').value;
+    const imageUrl=document.getElementById('menuImg').value.trim();
+    if(!name){ toast('ใส่ชื่อเมนู'); return; }
+    if(isNaN(price)||price<0){ toast('ราคาไม่ถูกต้อง'); return; }
+    if(!catId){ toast('เลือกหมวด'); return; }
+    const prev=this.menus.find(x=>x.id===id);
+    await shopRef.collection('menus').doc(id).set({
+      id, name, price, catId, imageUrl,
+      isActive: true,
+      isOut: prev ? !!prev.isOut : false
+    },{merge:true});
+    toast('บันทึกเมนูแล้ว');
+    this.resetMenuForm();
+    this.loadCatalog();
   },
   async toggleOut(id, isOut){
     await shopRef.collection('menus').doc(id).update({ isOut: !!isOut });
     toast('อัปเดตแล้ว'); this.loadCatalog();
   },
+  async deleteMenu(id){
+    if(!confirm('ปิดการขายเมนูนี้? (ไม่ลบประวัติออเดอร์)')) return;
+    // soft delete — ไม่กระทบออเดอร์เก่า
+    await shopRef.collection('menus').doc(id).update({ isActive:false });
+    toast('ปิดเมนูแล้ว'); this.loadCatalog();
+  },
+
   async loadSettingsUI(){
-    const snap=await shopRef.collection('settings').doc('config').get();
+    const snap=await shopRef.collection('settings').doc('public').get();
     const d=snap.exists?snap.data():{};
     document.getElementById('setName').value=d.shopName||'';
     document.getElementById('setPP').value=d.promptpay||'';
-    const finalUrl=new URL('index.html', location.href).href;
-    document.getElementById('qrUrl').textContent=finalUrl;
+    const finalUrl=new URL('./', location.href).href.replace(/pos\.html.*/,'');
+    const cu = new URL('index.html', location.href).href;
+    document.getElementById('qrUrl').textContent=cu;
     const box=document.getElementById('qrBox'); box.innerHTML='';
-    new QRCode(box,{text:finalUrl,width:180,height:180});
+    new QRCode(box,{text:cu,width:180,height:180});
   },
   async saveSettings(){
     const name=document.getElementById('setName').value.trim();
@@ -329,20 +519,30 @@ const M = {
     if(pp && pp.length!==10 && pp.length!==13){ toast('PromptPay ต้อง 10 หรือ 13 หลัก'); return; }
     const data={ shopName:name };
     if(pp) data.promptpay=pp;
+    await shopRef.collection('settings').doc('public').set(data,{merge:true});
+    // sync ชื่อไป config เก่าถ้ามี เพื่อไม่กระทบของเดิม
     await shopRef.collection('settings').doc('config').set(data,{merge:true});
     toast('บันทึกแล้ว');
   },
   async changePin(){
+    const old=document.getElementById('setPinOld').value.trim();
     const p1=document.getElementById('setPin1').value.trim();
     const p2=document.getElementById('setPin2').value.trim();
-    if(!/^\d{4,8}$/.test(p1)){ toast('PIN ต้อง 4-8 ตัวเลข'); return; }
-    if(p1!==p2){ toast('PIN ไม่ตรงกัน'); return; }
-    await shopRef.collection('settings').doc('config').set({ pin:p1 },{merge:true});
-    this.pin=p1;
-    document.getElementById('setPin1').value=''; document.getElementById('setPin2').value='';
+    if(!/^\d{4,8}$/.test(p1)){ toast('PIN ใหม่ต้อง 4–8 ตัวเลข'); return; }
+    if(p1!==p2){ toast('PIN ใหม่ไม่ตรงกัน'); return; }
+    const sec=await shopRef.collection('settings').doc('secure').get();
+    const hash=sec.exists?sec.data().pinHash:'';
+    const oldHash=await sha256(old);
+    if(hash && oldHash!==hash){ toast('PIN ปัจจุบันไม่ถูกต้อง'); return; }
+    await shopRef.collection('settings').doc('secure').set({ pinHash: await sha256(p1) },{merge:true});
+    this.pinHash=await sha256(p1);
+    document.getElementById('setPinOld').value='';
+    document.getElementById('setPin1').value='';
+    document.getElementById('setPin2').value='';
     toast('เปลี่ยน PIN แล้ว');
   }
 };
+
 document.getElementById('pinIn').addEventListener('keydown', e=>{ if(e.key==='Enter') M.login(); });
 M.boot().catch(e=>{ console.error(e); toast('เริ่มไม่สำเร็จ'); });
 </script>

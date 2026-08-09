@@ -1,3 +1,7 @@
+/**
+ * Firebase config — โปรเจกต์ pos1-4d72a
+ * ไฟล์นี้ต้องเป็น script ธรรมดา (ห้ามใช้ import/export)
+ */
 window.FIREBASE_CONFIG = {
   apiKey: "AIzaSyC4aJKI-HbwWhA6AcZqOS5Wx8ShKvCWN8U",
   authDomain: "pos1-4d72a.firebaseapp.com",
@@ -9,4 +13,3 @@ window.FIREBASE_CONFIG = {
 };
 
 window.SHOP_ID = "main";
-window.DEFAULT_PIN = "1234";

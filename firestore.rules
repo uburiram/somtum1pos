@@ -1,15 +1,41 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ร้านเล็ก: เปิดอ่าน/เขียนเมนู+ออเดอร์ได้จากเว็บ
-    // ภายหลังควรใส่ Auth แล้วจำกัดสิทธิ์
+    // ร้านเล็กบน GitHub Pages — ยังไม่มี Firebase Auth
+    // ป้องกันการลบข้อมูลทั้งก้อน / โครงสร้างหลัก
     match /shops/{shopId} {
       allow read: if true;
-      allow write: if true;
+      allow delete: if false;
 
-      match /{document=**} {
+      match /settings/{docId} {
         allow read: if true;
         allow write: if true;
+        allow delete: if false;
+      }
+
+      match /categories/{id} {
+        allow read: if true;
+        allow write: if true;
+      }
+      match /menus/{id} {
+        allow read: if true;
+        allow write: if true;
+      }
+      match /spiceLevels/{id} {
+        allow read: if true;
+        allow write: if true;
+      }
+      match /toppings/{id} {
+        allow read: if true;
+        allow write: if true;
+      }
+
+      match /orders/{id} {
+        allow read: if true;
+        allow create: if true;
+        allow update: if true;
+        // กันลบออเดอร์จาก client ทั่วไป (ร้านใช้สถานะ Completed แทน)
+        allow delete: if false;
       }
     }
   }
