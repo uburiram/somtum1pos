@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#FF5722">
+<title>สั่งอาหาร</title>
+<link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="./firebase-config.js"></script>
+<style>
+:root{--p:#FF5722;--g:#4CAF50;--bg:#F5F7FA;--s:#fff;--t:#333;--m:#777;--d:#F44336;--i:#2196F3}
+*{box-sizing:border-box;margin:0;padding:0;font-family:Prompt,sans-serif}
+body{background:var(--bg);color:var(--t);-webkit-tap-highlight-color:transparent}
+button{border:none;background:none;cursor:pointer;font-family:inherit}
+input,select{font-family:inherit;font-size:16px;padding:10px;border:1px solid #ccc;border-radius:8px;width:100%}
+header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.logo{font-weight:700;color:var(--p);display:flex;gap:8px;align-items:center}
+.cats{display:flex;gap:8px;overflow-x:auto;padding:12px 16px;scrollbar-width:none}
+.chip{padding:8px 14px;background:#fff;border-radius:20px;white-space:nowrap;font-size:13px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.chip.on{background:var(--p);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;padding:0 16px 100px}
+.card{background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,.05);cursor:pointer;position:relative}
+.card.oos{opacity:.5;pointer-events:none;filter:grayscale(.7)}
+.ph{height:100px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;color:#ccc;font-size:28px}
+.info{padding:10px}.name{font-weight:600;font-size:14px}.price{color:var(--p);font-weight:700;margin-top:4px}
+.oosb{position:absolute;top:6px;right:6px;background:var(--d);color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;font-weight:600}
+.fab{position:fixed;bottom:16px;left:16px;right:16px;background:var(--p);color:#fff;border-radius:28px;padding:14px 18px;display:none;justify-content:space-between;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.2);z-index:30;font-weight:600}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;display:none;align-items:flex-end;justify-content:center}
+.ov.on{display:flex}.md{background:#fff;width:100%;max-height:92vh;border-radius:20px 20px 0 0;padding:18px;overflow-y:auto}
+@media(min-width:640px){.ov{align-items:center}.md{max-width:480px;border-radius:16px}}
+.mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-weight:700;font-size:1.15rem}
+.x{font-size:22px;color:var(--m);padding:4px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 18px;border-radius:10px;font-weight:600;font-size:15px}
+.btn-p{background:var(--p);color:#fff;width:100%}.btn-p:disabled{opacity:.5}
+.btn-o{border:1px solid var(--p);color:var(--p);background:#fff;width:100%}
+.btn-g{background:var(--g);color:#fff;width:100%}
+.btn-i{background:var(--i);color:#fff;width:100%}
+.qty{display:flex;align-items:center;justify-content:center;gap:16px;margin:14px 0}
+.qb{width:40px;height:40px;border-radius:50%;background:#eee;font-size:20px;font-weight:700}
+.opt{margin-bottom:14px}.ot{font-weight:600;margin-bottom:8px}
+.rl,.cl{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid #eee;border-radius:8px;margin-bottom:6px}
+.rl.on,.cl.on{border-color:var(--p);background:#FFF3E0}
+.ci{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px dashed #eee;gap:8px}
+.huge{font-size:2.4rem;font-weight:700;color:var(--p)}
+.badge{display:inline-block;padding:6px 12px;border-radius:8px;font-weight:600;font-size:14px}
+.bw{background:#FFF3E0;color:#E65100}.bi{background:#E3F2FD;color:#1565C0}.bg{background:#E8F5E9;color:#2E7D32}
+.toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(30,30,30,.95);color:#fff;padding:10px 18px;border-radius:20px;z-index:9999;display:none;font-size:14px}
+.banner{background:#FFF3E0;color:#E65100;padding:8px 12px;font-size:13px;text-align:center;display:none}
+.banner.on{display:block}
+.search{padding:10px 16px 0}
+</style>
+</head>
+<body>
+<div class="banner" id="cfgBanner">⚠️ ยังไม่ได้ใส่ค่า Firebase ใน firebase-config.js</div>
+<header>
+  <div class="logo"><i class="fa-solid fa-mortar-pestle"></i> <span id="shopName">ร้าน</span></div>
+  <span id="conn" style="font-size:12px;color:#999">กำลังเชื่อมต่อ…</span>
+</header>
+<div class="search"><input type="search" id="q" placeholder="🔍 ค้นหาเมนู..." oninput="C.search(this.value)"></div>
+<div class="cats" id="cats"></div>
+<div class="grid" id="menus"></div>
+<div class="fab" id="fab" onclick="C.openCart()">
+  <span id="fabCount">0 รายการ</span>
+  <span id="fabTotal">฿0</span>
+</div>
+
+<div class="ov" id="mProduct"><div class="md">
+  <div class="mh"><span id="pTitle"></span><button class="x" onclick="C.hide('mProduct')">×</button></div>
+  <div style="text-align:center" class="huge" id="pPrice">฿0</div>
+  <div class="opt" id="spiceBox"><div class="ot">ระดับความเผ็ด *</div><div id="spiceList"></div></div>
+  <div class="opt" id="topBox"><div class="ot">ท็อปปิ้ง</div><div id="topList"></div></div>
+  <div class="qty"><button class="qb" onclick="C.qty(-1)">−</button><span id="pQty" style="font-weight:700;font-size:1.2rem">1</span><button class="qb" onclick="C.qty(1)">+</button></div>
+  <button class="btn btn-p" onclick="C.addCart()">เพิ่มลงตะกร้า • <span id="pTotal">฿0</span></button>
+</div></div>
+
+<div class="ov" id="mCart"><div class="md">
+  <div class="mh"><span>ตะกร้า</span><button class="x" onclick="C.hide('mCart')">×</button></div>
+  <div id="cartList"></div>
+  <div style="margin-top:12px;padding-top:12px;border-top:1px solid #eee">
+    <div style="display:flex;justify-content:space-between;font-size:1.15rem;margin-bottom:12px"><span>รวม</span><strong class="price" id="cartSum">฿0</strong></div>
+    <button class="btn btn-p" onclick="C.checkout()">สั่งอาหาร</button>
+  </div>
+</div></div>
+
+<div class="ov" id="mPay"><div class="md">
+  <div class="mh"><span>ชำระเงิน</span><button class="x" onclick="C.hide('mPay')">×</button></div>
+  <div style="text-align:center;margin-bottom:12px"><div style="color:#777">ยอดที่ต้องชำระ</div><div class="huge" id="payTotal">฿0</div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+    <label class="rl on" id="lbCash" style="flex-direction:column;gap:6px;cursor:pointer" onclick="C.payMethod('CASH')">
+      <i class="fa-solid fa-money-bill-wave" style="font-size:2rem;color:var(--g)"></i><span>เงินสด</span>
+    </label>
+    <label class="rl" id="lbPP" style="flex-direction:column;gap:6px;cursor:pointer" onclick="C.payMethod('PROMPTPAY')">
+      <i class="fa-solid fa-qrcode" style="font-size:2rem;color:var(--i)"></i><span>พร้อมเพย์</span>
+    </label>
+  </div>
+  <div id="ppZone" style="display:none;text-align:center;margin-bottom:12px">
+    <div id="ppQR" style="display:flex;justify-content:center;margin-bottom:8px"></div>
+    <div id="ppNum" style="font-weight:600"></div>
+    <p style="color:var(--d);font-size:13px;margin-top:8px">โอนแล้วแจ้งพนักงาน</p>
+  </div>
+  <button class="btn btn-p" id="btnOrder" onclick="C.confirmOrder()">ยืนยันออเดอร์</button>
+</div></div>
+
+<div class="ov" id="mTicket"><div class="md" style="text-align:center">
+  <h2 style="color:var(--g);margin-bottom:8px"><i class="fa-solid fa-circle-check"></i> ส่งออเดอร์แล้ว</h2>
+  <div>คิวของคุณ</div>
+  <div class="huge" id="tQueue">A000</div>
+  <div style="background:#fafafa;border-radius:12px;padding:12px;margin:12px 0;text-align:left">
+    <div style="display:flex;justify-content:space-between"><span>ยอดรวม</span><strong id="tTotal">฿0</strong></div>
+    <div style="display:flex;justify-content:space-between;margin-top:6px"><span>ชำระเงิน</span><strong id="tPay">-</strong></div>
+  </div>
+  <div class="badge bw" id="tStatus">รอรับออเดอร์</div>
+  <button class="btn btn-o" style="margin-top:16px" onclick="C.hide('mTicket')">ปิด / สั่งเพิ่ม</button>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = n => '฿'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
+const toast = msg => { const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._x); t._x=setTimeout(()=>t.style.display='none',2800); };
+const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+
+const PP = {
+  crc(p){let c=0xFFFF;for(let i=0;i<p.length;i++){c^=p.charCodeAt(i)<<8;for(let j=0;j<8;j++)c=c&0x8000?((c<<1)^0x1021)&0xFFFF:(c<<1)&0xFFFF}return c.toString(16).toUpperCase().padStart(4,'0')},
+  tlv(id,v){return id+String(v.length).padStart(2,'0')+v},
+  gen(target,amount){
+    let t=String(target||'').replace(/\D/g,'');
+    if(t.length===10&&t[0]==='0')t='0066'+t.slice(1);
+    else if(t.length!==13&&!(t.length===15&&t.startsWith('0066')))return null;
+    const mi=this.tlv('00','A000000677010111')+this.tlv('01',t);
+    let p=this.tlv('00','01')+this.tlv('01',amount>0?'12':'11')+this.tlv('29',mi)+this.tlv('53','764');
+    if(amount>0)p+=this.tlv('54',Number(amount).toFixed(2));
+    p+=this.tlv('58','TH')+'6304';
+    return p+this.crc(p);
+  }
+};
+
+let db, shopRef;
+
+function checkConfig() {
+  const c = window.FIREBASE_CONFIG || {};
+  if (!c.apiKey || c.apiKey.includes('PASTE')) {
+    document.getElementById('cfgBanner').classList.add('on');
+    return false;
+  }
+  return true;
+}
+
+async function seedIfEmpty() {
+  const catSnap = await shopRef.collection('categories').limit(1).get();
+  if (!catSnap.empty) return;
+  const batch = db.batch();
+  const cats = [
+    {id:'c1',name:'เมนูส้มตำ',isActive:true,order:1},
+    {id:'c2',name:'เมนูยำ',isActive:true,order:2},
+    {id:'c3',name:'เมนูของทอด',isActive:true,order:3},
+    {id:'c4',name:'เมนูทานเล่น',isActive:true,order:4},
+    {id:'c5',name:'เครื่องดื่ม',isActive:true,order:5}
+  ];
+  cats.forEach(c => batch.set(shopRef.collection('categories').doc(c.id), c));
+  const menus = [
+    {id:'m1',catId:'c1',name:'ตำปูปลาร้า',price:40,isActive:true,isOut:false},
+    {id:'m2',catId:'c1',name:'ตำไทย',price:40,isActive:true,isOut:false},
+    {id:'m3',catId:'c1',name:'ตำป่า',price:45,isActive:true,isOut:false},
+    {id:'m4',catId:'c1',name:'ตำแตง',price:40,isActive:true,isOut:false},
+    {id:'m5',catId:'c2',name:'ยำวุ้นเส้น',price:50,isActive:true,isOut:false},
+    {id:'m6',catId:'c3',name:'ไก่ทอด',price:50,isActive:true,isOut:false},
+    {id:'m7',catId:'c3',name:'ปีกไก่ทอด',price:40,isActive:true,isOut:false},
+    {id:'m8',catId:'c4',name:'ไข่ต้ม',price:10,isActive:true,isOut:false},
+    {id:'m9',catId:'c5',name:'น้ำเปล่า',price:10,isActive:true,isOut:false},
+    {id:'m10',catId:'c5',name:'น้ำอัดลม',price:15,isActive:true,isOut:false}
+  ];
+  menus.forEach(m => batch.set(shopRef.collection('menus').doc(m.id), m));
+  [{id:'s1',name:'ไม่เผ็ด',isActive:true},{id:'s2',name:'เผ็ดน้อย',isActive:true},{id:'s3',name:'เผ็ดกลาง',isActive:true},{id:'s4',name:'เผ็ดมาก',isActive:true}]
+    .forEach(s => batch.set(shopRef.collection('spiceLevels').doc(s.id), s));
+  [{id:'t1',name:'ไข่ดาว',price:10,isActive:true},{id:'t2',name:'ไข่ต้ม',price:10,isActive:true},{id:'t3',name:'เพิ่มปู',price:20,isActive:true}]
+    .forEach(t => batch.set(shopRef.collection('toppings').doc(t.id), t));
+  batch.set(shopRef.collection('settings').doc('config'), {
+    shopName: 'ส้มตำนายหนึ่ง',
+    promptpay: '0812345678',
+    queueCounter: 1,
+    pin: window.DEFAULT_PIN || '1234'
+  });
+  await batch.commit();
+  toast('สร้างเมนูเริ่มต้นแล้ว');
+}
+
+const C = {
+  shopName:'ร้าน', promptpay:'', cats:[], menus:[], spice:[], tops:[],
+  cat:'all', q:'', cart:[], modal:null, orderId:null, unsub:null, payM:'CASH',
+
+  async init() {
+    if (!checkConfig()) {
+      document.getElementById('conn').textContent = 'ยังไม่ตั้งค่า Firebase';
+      return;
+    }
+    firebase.initializeApp(window.FIREBASE_CONFIG);
+    db = firebase.firestore();
+    try { db.enablePersistence({ synchronizeTabs: true }); } catch(e) {}
+    shopRef = db.collection('shops').doc(window.SHOP_ID || 'main');
+    document.getElementById('conn').textContent = 'เชื่อมต่อแล้ว';
+    await seedIfEmpty();
+
+    shopRef.collection('settings').doc('config').onSnapshot(snap => {
+      const d = snap.data() || {};
+      this.shopName = d.shopName || 'ส้มตำนายหนึ่ง';
+      this.promptpay = d.promptpay || '';
+      document.getElementById('shopName').textContent = this.shopName;
+      document.title = this.shopName + ' | สั่งอาหาร';
+    });
+    shopRef.collection('categories').onSnapshot(snap => {
+      this.cats = snap.docs.map(d => d.data());
+      this.renderCats();
+    });
+    shopRef.collection('menus').onSnapshot(snap => {
+      this.menus = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      this.renderMenus();
+    });
+    shopRef.collection('spiceLevels').onSnapshot(snap => { this.spice = snap.docs.map(d => d.data()); });
+    shopRef.collection('toppings').onSnapshot(snap => { this.tops = snap.docs.map(d => d.data()); });
+  },
+  show(id){ document.getElementById(id).classList.add('on'); },
+  hide(id){ document.getElementById(id).classList.remove('on'); },
+  search(v){ this.q=(v||'').trim().toLowerCase(); this.renderMenus(); },
+  renderCats(){
+    let h = `<button class="chip ${this.cat==='all'?'on':''}" onclick="C.setCat('all')">ทั้งหมด</button>`;
+    this.cats.filter(c=>c.isActive).sort((a,b)=>(a.order||0)-(b.order||0)).forEach(c=>{
+      h += `<button class="chip ${this.cat===c.id?'on':''}" onclick="C.setCat('${esc(c.id)}')">${esc(c.name)}</button>`;
+    });
+    document.getElementById('cats').innerHTML = h;
+  },
+  setCat(id){ this.cat=id; this.renderCats(); this.renderMenus(); },
+  renderMenus(){
+    let list = this.menus.filter(m => m.isActive && (this.cat==='all'||m.catId===this.cat));
+    if (this.q) list = list.filter(m => (m.name||'').toLowerCase().includes(this.q));
+    const el = document.getElementById('menus');
+    if (!list.length) { el.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:#999">ไม่พบเมนู</div>'; return; }
+    el.innerHTML = list.map(m => `
+      <div class="card ${m.isOut?'oos':''}" onclick="${m.isOut?'':`C.openProduct('${esc(m.id)}')`}">
+        ${m.isOut?'<div class="oosb">หมด</div>':''}
+        <div class="ph"><i class="fa-solid fa-utensils"></i></div>
+        <div class="info"><div class="name">${esc(m.name)}</div><div class="price">${money(m.price)}</div></div>
+      </div>`).join('');
+  },
+  openProduct(id){
+    const m = this.menus.find(x=>x.id===id); if(!m||m.isOut) return;
+    this.modal = { menu:m, qty:1, spice:this.spice.filter(s=>s.isActive)[0]?.id||null, tops:[] };
+    document.getElementById('pTitle').textContent = m.name;
+    const activeSp = this.spice.filter(s=>s.isActive);
+    document.getElementById('spiceList').innerHTML = activeSp.map((s,i)=>
+      `<label class="rl ${i===0?'on':''}" onclick="C.pickSpice('${esc(s.id)}',this)"><span>${esc(s.name)}</span>
+       <input type="radio" name="sp" ${i===0?'checked':''} style="width:18px;height:18px;accent-color:var(--p)"></label>`).join('');
+    document.getElementById('spiceBox').style.display = activeSp.length?'block':'none';
+    document.getElementById('topList').innerHTML = this.tops.filter(t=>t.isActive).map(t=>
+      `<label class="cl"><span>${esc(t.name)} <small style="color:#999">(+${money(t.price)})</small></span>
+       <input type="checkbox" style="width:18px;height:18px;accent-color:var(--p)" onchange="C.toggleTop('${esc(t.id)}',this)"></label>`).join('');
+    document.getElementById('topBox').style.display = this.tops.some(t=>t.isActive)?'block':'none';
+    this.updPrice(); this.show('mProduct');
+  },
+  pickSpice(id,el){ this.modal.spice=id; document.querySelectorAll('#spiceList .rl').forEach(x=>x.classList.remove('on')); el.classList.add('on'); },
+  toggleTop(id,el){
+    if(el.checked){ if(!this.modal.tops.includes(id)) this.modal.tops.push(id); }
+    else this.modal.tops = this.modal.tops.filter(x=>x!==id);
+    el.closest('.cl').classList.toggle('on', el.checked); this.updPrice();
+  },
+  qty(d){ this.modal.qty=Math.min(99,Math.max(1,this.modal.qty+d)); this.updPrice(); },
+  updPrice(){
+    const p=this.modal; document.getElementById('pQty').textContent=p.qty;
+    let tp=0; p.tops.forEach(id=>{ const t=this.tops.find(x=>x.id===id); if(t) tp+=Number(t.price); });
+    const u=Number(p.menu.price)+tp;
+    document.getElementById('pPrice').textContent=money(u);
+    document.getElementById('pTotal').textContent=money(u*p.qty);
+  },
+  addCart(){
+    const p=this.modal;
+    if(this.spice.filter(s=>s.isActive).length && !p.spice){ toast('เลือกระดับความเผ็ด'); return; }
+    const sp=this.spice.find(s=>s.id===p.spice);
+    const tops=p.tops.map(id=>this.tops.find(t=>t.id===id)).filter(Boolean);
+    const tp=tops.reduce((s,t)=>s+Number(t.price),0);
+    const unit=Number(p.menu.price)+tp;
+    this.cart.push({ name:p.menu.name, qty:p.qty, spiceName:sp?.name||'', toppings:tops.map(t=>t.name), unitPrice:unit, total:unit*p.qty });
+    this.hide('mProduct'); this.updFab(); toast('เพิ่มลงตะกร้าแล้ว');
+  },
+  updFab(){
+    const c=this.cart.reduce((s,i)=>s+i.qty,0), t=this.cart.reduce((s,i)=>s+i.total,0);
+    const fab=document.getElementById('fab');
+    if(c){ fab.style.display='flex'; document.getElementById('fabCount').textContent=c+' รายการ'; document.getElementById('fabTotal').textContent=money(t); }
+    else fab.style.display='none';
+  },
+  openCart(){
+    const el=document.getElementById('cartList');
+    if(!this.cart.length) el.innerHTML='<div style="text-align:center;color:#999;padding:20px">ตะกร้าว่าง</div>';
+    else el.innerHTML=this.cart.map((i,idx)=>{
+      const meta=[i.spiceName,...(i.toppings||[])].filter(Boolean).join(', ');
+      return `<div class="ci"><div><div style="font-weight:600">${esc(i.name)} × ${i.qty}</div>
+        ${meta?`<div style="font-size:13px;color:#777">${esc(meta)}</div>`:''}
+        <button style="color:var(--d);font-size:13px;margin-top:4px" onclick="C.rmCart(${idx})">ลบ</button></div>
+        <div style="font-weight:600">${money(i.total)}</div></div>`;
+    }).join('');
+    document.getElementById('cartSum').textContent=money(this.cart.reduce((s,i)=>s+i.total,0));
+    this.show('mCart');
+  },
+  rmCart(i){ this.cart.splice(i,1); this.updFab(); this.openCart(); },
+  checkout(){
+    if(!this.cart.length) return;
+    document.getElementById('payTotal').textContent=money(this.cart.reduce((s,i)=>s+i.total,0));
+    this.payMethod('CASH'); this.hide('mCart'); this.show('mPay');
+  },
+  payMethod(m){
+    this.payM=m;
+    document.getElementById('lbCash').classList.toggle('on', m==='CASH');
+    document.getElementById('lbPP').classList.toggle('on', m==='PROMPTPAY');
+    const z=document.getElementById('ppZone');
+    if(m==='PROMPTPAY'){
+      z.style.display='block';
+      const total=this.cart.reduce((s,i)=>s+i.total,0);
+      const payload=PP.gen(this.promptpay, total);
+      document.getElementById('ppNum').textContent='พร้อมเพย์: '+(this.promptpay||'-');
+      const qr=document.getElementById('ppQR'); qr.innerHTML='';
+      if(payload) new QRCode(qr,{text:payload,width:180,height:180});
+      else qr.innerHTML='<p style="color:var(--d)">ร้านยังไม่ตั้งค่า PromptPay</p>';
+    } else z.style.display='none';
+  },
+  async confirmOrder(){
+    const btn=document.getElementById('btnOrder');
+    btn.disabled=true; btn.textContent='กำลังส่ง…';
+    try {
+      const items=this.cart.map(i=>({name:i.name,qty:i.qty,spiceName:i.spiceName,toppings:i.toppings,unitPrice:i.unitPrice,total:i.total}));
+      const total=items.reduce((s,i)=>s+i.total,0);
+      const cfgRef = shopRef.collection('settings').doc('config');
+      const queue = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(cfgRef);
+        let qNum = 1;
+        if (snap.exists) qNum = Number(snap.data().queueCounter) || 1;
+        if (qNum > 999) qNum = 1;
+        const q = 'A' + String(qNum).padStart(3,'0');
+        tx.set(cfgRef, { queueCounter: qNum + 1 }, { merge: true });
+        return q;
+      });
+      const id = uid();
+      const order = {
+        id, queue, items, total,
+        status: 'Pending',
+        paymentMethod: this.payM,
+        paymentStatus: 'UNPAID',
+        paidAmount: 0, changeAmount: 0,
+        createdAt: Date.now()
+      };
+      await shopRef.collection('orders').doc(id).set(order);
+      this.cart=[]; this.updFab(); this.hide('mPay');
+      this.orderId = id;
+      document.getElementById('tQueue').textContent = queue;
+      document.getElementById('tTotal').textContent = money(total);
+      document.getElementById('tPay').textContent = (this.payM==='CASH'?'เงินสด':'พร้อมเพย์')+' (ยังไม่ชำระ)';
+      document.getElementById('tStatus').className = 'badge bw';
+      document.getElementById('tStatus').textContent = '🟡 รอรับออเดอร์';
+      this.show('mTicket');
+      toast('สั่งสำเร็จ คิว '+queue);
+      if (this.unsub) this.unsub();
+      this.unsub = shopRef.collection('orders').doc(id).onSnapshot(snap => {
+        const o = snap.data(); if(!o) return;
+        const map = { Pending:['bw','🟡 รอรับออเดอร์'], Cooking:['bi','🔵 กำลังทำ'], Ready:['bg','🟢 พร้อมรับ'], Completed:['bg','⚫ เสร็จสิ้น'] };
+        const m = map[o.status] || map.Pending;
+        document.getElementById('tStatus').className = 'badge '+m[0];
+        document.getElementById('tStatus').textContent = m[1];
+        document.getElementById('tPay').textContent = (o.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์')+(o.paymentStatus==='PAID'?' (ชำระแล้ว)':' (ยังไม่ชำระ)');
+      });
+    } catch (e) {
+      console.error(e);
+      toast('ส่งไม่สำเร็จ: '+(e.message||e));
+    } finally {
+      btn.disabled=false; btn.textContent='ยืนยันออเดอร์';
+    }
+  }
+};
+C.init().catch(e => { console.error(e); toast('เริ่มระบบไม่สำเร็จ'); document.getElementById('conn').textContent='ผิดพลาด'; });
+</script>
+</body>
+</html>

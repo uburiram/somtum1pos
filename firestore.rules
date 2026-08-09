@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ร้านเล็ก: เปิดอ่าน/เขียนเมนู+ออเดอร์ได้จากเว็บ
+    // ภายหลังควรใส่ Auth แล้วจำกัดสิทธิ์
+    match /shops/{shopId} {
+      allow read: if true;
+      allow write: if true;
+
+      match /{document=**} {
+        allow read: if true;
+        allow write: if true;
+      }
+    }
+  }
+}
