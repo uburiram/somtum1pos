@@ -1,70 +1,30 @@
-# ส้มตำนายหนึ่ง POS — GitHub Pages + Firebase (รุ่นแก้ไขครบ)
+# ส้มตำนายหนึ่ง POS v4 — GitHub Pages + Firebase
 
-## ไฟล์ที่ต้องอยู่ที่ root ของ repo
+## ไฟล์ที่ต้องอยู่ root ของ repo
 
-```
-index.html           ← หน้าลูกค้า (QR)
-pos.html             ← หน้าร้านค้า
-firebase-config.js   ← ค่า Firebase
-firestore.rules      ← วางใน Firebase Console
-.nojekyll
-README.md
-```
+- `index.html` — ลูกค้า
+- `pos.html` — ร้านค้า
+- `firebase-config.js`
+- `firestore.rules` (วางใน Console)
+- `.nojekyll`
 
-## ลิงก์ใช้งาน
+## ลิงก์
 
-| ใคร | URL |
-|-----|-----|
-| ลูกค้า | https://uburiram.github.io/somtum1pos/ |
-| ร้านค้า | https://uburiram.github.io/somtum1pos/pos.html |
-| PIN ครั้งแรก | `1234` (เปลี่ยนทันทีหลังเข้า) |
+- ลูกค้า: https://uburiram.github.io/somtum1pos/
+- ร้าน: https://uburiram.github.io/somtum1pos/pos.html
+- PIN ครั้งแรก: `1234`
 
-## สิ่งที่แก้ในรุ่นนี้
+## ฟีเจอร์ v4
 
-### วิกฤต
-- แยก settings เป็น `public` (ชื่อร้าน/PromptPay) กับ `secure` (pinHash + คิว)
-- ลบ PIN ข้อความธรรมดาออกจากเอกสารเก่าอัตโนมัติ
-- ตัดช่องโหว่ DEFAULT_PIN ถาวร — ตรวจเฉพาะ pinHash
-- rules ห้าม delete ออเดอร์จาก client
+1. จัดการหมวด / ท็อปปิ้ง / ความเผ็ด (เพิ่ม แก้ ปิด)
+2. ท็อปปิ้งหลายอย่าง + จำนวนต่อรายการ + ราคาชัด
+3. อัปโหลดรูปเมนูจากเครื่อง → บันทึกใน Firestore
+4. พิมพ์ QR สั่งอาหารติดโต๊ะ
+5. พร้อมเพย์ตามเลขร้าน (ค่าเริ่ม 1319900156353 + ชื่อบัญชี)
+6. ใบเสร็จเมื่อชำระแล้ว (ลูกค้า+ร้าน) ค้นจากคิวได้
+7. เงินสด: ร้านกดรับเงิน → ออกใบเสร็จ
+8. ตรวจสลิปอัตโนมัติถ้าใส่ `EASYSLIP_API_KEY` (ไม่งั้นร้านตรวจมือ)
 
-### สูง
-- แก้เสียงแจ้งเตือนไม่บี๊บตอนเปิด POS ครั้งแรก
-- CRUD เมนู (เพิ่ม/แก้/ปิดขาย/หมด)
-- อัปโหลดสลิป (ย่อรูป) + ร้านกดผ่าน/ไม่ผ่าน
-- ลูกค้าเช็กคิวได้จากช่องด้านบน / `?queue=A001`
+## อัป Firestore Rules
 
-### กลาง
-- รายงานวันนี้ / 7 วัน / 30 วัน แยกเงินสด-พร้อมเพย์ + เมนูขายดี
-- รองรับรูปเมนูผ่าน URL
-- offline persistence ของ Firestore
-- คิวรันบน `settings/secure` ด้วย transaction
-
-### ต่ำ
-- แพ็กเฉพาะไฟล์ Pages (ไม่ปน server Node)
-- README ชัดเจน
-
-## วิธีอัปจากมือถือ
-
-1. ดาวน์โหลดไฟล์จาก zip ชุดนี้
-2. GitHub → repo `uburiram/somtum1pos`
-3. อัป **ทับ** ที่ root:
-   - index.html
-   - pos.html
-   - firebase-config.js
-   - .nojekyll
-4. Commit
-5. เปิด https://console.firebase.google.com/project/pos1-4d72a/firestore/rules
-6. วางเนื้อหาจาก `firestore.rules` → Publish
-7. รอ 1–2 นาที แล้วรีเฟรชหน้าเว็บ
-
-## ข้อมูลเดิม
-
-- เมนู / หมวด / ออเดอร์เก่าใน Firestore **ไม่ถูกลบ**
-- ระบบย้าย `settings/config` → `public` + `secure` อัตโนมัติ
-- PIN เดิมถ้าเป็น `1234` จะยังใช้ได้หลัง migrate (ผ่าน hash)
-
-## ข้อจำกัดที่ยังเหลือ (เทคโนโลยี)
-
-บน GitHub Pages **ไม่มี Firebase Auth**  
-rules จึงยังเปิด write ได้ในระดับร้านเล็ก — อย่าแชร์ลิงก์ POS สาธารณะเกินจำเป็น  
-เมื่อพร้อม ควรเพิ่ม Firebase Authentication ภายหลัง
+Console → Firestore → Rules → วางจากไฟล์ → Publish

@@ -12,39 +12,19 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="./firebase-config.js"></script>
 <style>
-
-:root{--p:#FF5722;--g:#4CAF50;--bg:#F5F7FA;--s:#fff;--t:#333;--m:#777;--d:#F44336;--i:#2196F3;--w:#FF9800}
+:root{--p:#FF5722;--g:#4CAF50;--bg:#F5F7FA;--d:#F44336;--i:#2196F3;--m:#777}
 *{box-sizing:border-box;margin:0;padding:0;font-family:Prompt,sans-serif}
-body{background:var(--bg);color:var(--t);-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:#333;-webkit-tap-highlight-color:transparent}
 button{border:none;background:none;cursor:pointer;font-family:inherit}
 input,select,textarea{font-family:inherit;font-size:16px;padding:10px;border:1px solid #ccc;border-radius:8px;width:100%}
 header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
 .logo{font-weight:700;color:var(--p);display:flex;gap:8px;align-items:center}
 .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(30,30,30,.95);color:#fff;padding:10px 18px;border-radius:20px;z-index:9999;display:none;font-size:14px;max-width:90%}
-.banner{background:#FFF3E0;color:#E65100;padding:8px 12px;font-size:13px;text-align:center;display:none}
-.banner.on{display:block}
+.banner{background:#FFF3E0;color:#E65100;padding:8px 12px;font-size:13px;text-align:center;display:none}.banner.on{display:block}
 .banner.err{background:#FFEBEE;color:#C62828}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 18px;border-radius:10px;font-weight:600;font-size:15px}
-.btn-p{background:var(--p);color:#fff;width:100%}.btn-p:disabled{opacity:.5}
-.btn-o{border:1px solid var(--p);color:var(--p);background:#fff;width:100%}
-.btn-g{background:var(--g);color:#fff;width:100%}
-.btn-i{background:var(--i);color:#fff;width:100%}
-.btn-d{background:var(--d);color:#fff}
-.btn-sm{padding:6px 10px;font-size:13px;width:auto}
-.ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;display:none;align-items:flex-end;justify-content:center}
-.ov.on{display:flex}.md{background:#fff;width:100%;max-height:92vh;border-radius:20px 20px 0 0;padding:18px;overflow-y:auto}
-@media(min-width:640px){.ov{align-items:center}.md{max-width:520px;border-radius:16px;max-height:88vh}}
-.mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-weight:700;font-size:1.15rem}
-.x{font-size:22px;color:var(--m);padding:4px}
-.huge{font-size:2.4rem;font-weight:700;color:var(--p)}
-.badge{display:inline-block;padding:6px 12px;border-radius:8px;font-weight:600;font-size:14px}
-.bw{background:#FFF3E0;color:#E65100}.bi{background:#E3F2FD;color:#1565C0}.bg{background:#E8F5E9;color:#2E7D32}.bd{background:#FFEBEE;color:#C62828}
-.hide{display:none!important}
-
 .cats{display:flex;gap:8px;overflow-x:auto;padding:12px 16px;scrollbar-width:none}
-.chip{padding:8px 14px;background:#fff;border-radius:20px;white-space:nowrap;font-size:13px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.chip.on{background:var(--p);color:#fff}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;padding:0 16px 100px}
+.chip{padding:8px 14px;background:#fff;border-radius:20px;white-space:nowrap;font-size:13px;box-shadow:0 1px 3px rgba(0,0,0,.06)}.chip.on{background:var(--p);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;padding:0 16px 110px}
 .card{background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,.05);cursor:pointer;position:relative}
 .card.oos{opacity:.5;pointer-events:none;filter:grayscale(.7)}
 .ph{height:110px;background:#f0f0f0;display:flex;align-items:center;justify-content:center;color:#ccc;font-size:28px;overflow:hidden}
@@ -52,15 +32,38 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
 .info{padding:10px}.name{font-weight:600;font-size:14px}.price{color:var(--p);font-weight:700;margin-top:4px}
 .oosb{position:absolute;top:6px;right:6px;background:var(--d);color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;font-weight:600}
 .fab{position:fixed;bottom:16px;left:16px;right:16px;background:var(--p);color:#fff;border-radius:28px;padding:14px 18px;display:none;justify-content:space-between;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.2);z-index:30;font-weight:600}
-.qty{display:flex;align-items:center;justify-content:center;gap:16px;margin:14px 0}
-.qb{width:40px;height:40px;border-radius:50%;background:#eee;font-size:20px;font-weight:700}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;display:none;align-items:flex-end;justify-content:center}
+.ov.on{display:flex}.md{background:#fff;width:100%;max-height:92vh;border-radius:20px 20px 0 0;padding:18px;overflow-y:auto}
+@media(min-width:640px){.ov{align-items:center}.md{max-width:520px;border-radius:16px}}
+.mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-weight:700;font-size:1.15rem}
+.x{font-size:22px;color:var(--m);padding:4px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 18px;border-radius:10px;font-weight:600;font-size:15px}
+.btn-p{background:var(--p);color:#fff;width:100%}.btn-p:disabled{opacity:.5}
+.btn-o{border:1px solid var(--p);color:var(--p);background:#fff;width:100%}
+.btn-g{background:var(--g);color:#fff;width:100%}
+.btn-i{background:var(--i);color:#fff;width:100%}
+.btn-sm{padding:6px 10px;font-size:13px;width:auto}
+.qty{display:flex;align-items:center;justify-content:center;gap:14px;margin:12px 0}
+.qb{width:36px;height:36px;border-radius:50%;background:#eee;font-size:18px;font-weight:700}
 .opt{margin-bottom:14px}.ot{font-weight:600;margin-bottom:8px}
-.rl,.cl{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid #eee;border-radius:8px;margin-bottom:6px}
+.rl,.cl{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid #eee;border-radius:8px;margin-bottom:6px;gap:8px}
 .rl.on,.cl.on{border-color:var(--p);background:#FFF3E0}
 .ci{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px dashed #eee;gap:8px}
-.search{padding:10px 16px 0}
-.track-bar{padding:8px 16px;display:flex;gap:8px}
-.track-bar input{flex:1}
+.huge{font-size:2.2rem;font-weight:700;color:var(--p)}
+.badge{display:inline-block;padding:6px 12px;border-radius:8px;font-weight:600;font-size:14px}
+.bw{background:#FFF3E0;color:#E65100}.bi{background:#E3F2FD;color:#1565C0}.bg{background:#E8F5E9;color:#2E7D32}
+.search{padding:10px 16px 0}.track-bar{padding:8px 16px;display:flex;gap:8px}.track-bar input{flex:1}
+.top-row{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%}
+.top-qty{display:flex;align-items:center;gap:8px}
+.receipt{background:#fff;border:1px dashed #ccc;border-radius:12px;padding:16px;text-align:left;margin:12px 0}
+.receipt h3{text-align:center;color:var(--p);margin-bottom:8px}
+@media print{
+  body *{visibility:hidden}
+  #printReceipt,#printReceipt *{visibility:visible}
+  #printReceipt{position:absolute;left:0;top:0;width:100%}
+  .ov{display:block!important;position:static;background:#fff}
+  .md{box-shadow:none;max-height:none}
+}
 </style>
 </head>
 <body>
@@ -72,22 +75,20 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
 </header>
 <div class="track-bar">
   <input id="trackQ" placeholder="ใส่เลขคิว เช่น A001" maxlength="8">
-  <button class="btn btn-o btn-sm" onclick="C.trackQueue()">เช็กคิว</button>
+  <button class="btn btn-o btn-sm" onclick="C.trackQueue()">เช็กคิว/ใบเสร็จ</button>
 </div>
 <div class="search"><input type="search" id="q" placeholder="🔍 ค้นหาเมนู..." oninput="C.search(this.value)"></div>
 <div class="cats" id="cats"></div>
 <div class="grid" id="menus"></div>
-<div class="fab" id="fab" onclick="C.openCart()">
-  <span id="fabCount">0 รายการ</span>
-  <span id="fabTotal">฿0</span>
-</div>
+<div class="fab" id="fab" onclick="C.openCart()"><span id="fabCount">0 รายการ</span><span id="fabTotal">฿0</span></div>
 
 <div class="ov" id="mProduct"><div class="md">
   <div class="mh"><span id="pTitle"></span><button class="x" onclick="C.hide('mProduct')">×</button></div>
   <div id="pImg" class="ph" style="border-radius:12px;margin-bottom:10px;display:none"></div>
   <div style="text-align:center" class="huge" id="pPrice">฿0</div>
   <div class="opt" id="spiceBox"><div class="ot">ระดับความเผ็ด *</div><div id="spiceList"></div></div>
-  <div class="opt" id="topBox"><div class="ot">ท็อปปิ้ง</div><div id="topList"></div></div>
+  <div class="opt" id="topBox"><div class="ot">ท็อปปิ้ง (เลือกได้หลายอย่าง · กำหนดจำนวนได้)</div><div id="topList"></div></div>
+  <div class="ot">จำนวนเมนูหลัก</div>
   <div class="qty"><button class="qb" onclick="C.qty(-1)">−</button><span id="pQty" style="font-weight:700;font-size:1.2rem">1</span><button class="qb" onclick="C.qty(1)">+</button></div>
   <button class="btn btn-p" onclick="C.addCart()">เพิ่มลงตะกร้า • <span id="pTotal">฿0</span></button>
 </div></div>
@@ -96,7 +97,7 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
   <div class="mh"><span>ตะกร้า</span><button class="x" onclick="C.hide('mCart')">×</button></div>
   <div id="cartList"></div>
   <div style="margin-top:12px;padding-top:12px;border-top:1px solid #eee">
-    <div style="display:flex;justify-content:space-between;font-size:1.15rem;margin-bottom:12px"><span>รวม</span><strong class="price" id="cartSum">฿0</strong></div>
+    <div style="display:flex;justify-content:space-between;font-size:1.15rem;margin-bottom:12px"><span>รวม</span><strong id="cartSum" style="color:var(--p)">฿0</strong></div>
     <button class="btn btn-p" onclick="C.checkout()">สั่งอาหาร</button>
   </div>
 </div></div>
@@ -113,37 +114,35 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
     </label>
   </div>
   <div id="ppZone" style="display:none;text-align:center;margin-bottom:12px">
+    <p style="font-size:13px;margin-bottom:6px">สแกนด้วยแอปธนาคาร / ถุงเงิน / วอลเล็ต</p>
     <div id="ppQR" style="display:flex;justify-content:center;margin-bottom:8px"></div>
     <div id="ppNum" style="font-weight:600"></div>
-    <p style="color:var(--d);font-size:13px;margin-top:8px">โอนแล้วอัปโหลดสลิป (ถ้ามี) หรือแจ้งพนักงาน</p>
-    <input type="file" id="slipFile" accept="image/*" style="margin-top:8px">
+    <div id="ppName" style="font-size:13px;color:#555;margin-top:4px"></div>
+    <p style="color:var(--d);font-size:13px;margin-top:8px">โอนตามยอดแล้วอัปโหลดสลิปด้านล่าง</p>
+    <input type="file" id="slipFile" accept="image/*" capture="environment" style="margin-top:8px">
     <div id="slipPreview" style="margin-top:8px"></div>
+    <div id="slipAutoMsg" style="font-size:13px;margin-top:6px;color:#1565C0"></div>
   </div>
   <button class="btn btn-p" id="btnOrder" onclick="C.confirmOrder()">ยืนยันออเดอร์</button>
 </div></div>
 
 <div class="ov" id="mTicket"><div class="md" style="text-align:center">
-  <h2 style="color:var(--g);margin-bottom:8px"><i class="fa-solid fa-circle-check"></i> ส่งออเดอร์แล้ว</h2>
-  <div>คิวของคุณ</div>
-  <div class="huge" id="tQueue">A000</div>
-  <div style="background:#fafafa;border-radius:12px;padding:12px;margin:12px 0;text-align:left">
-    <div style="display:flex;justify-content:space-between"><span>ยอดรวม</span><strong id="tTotal">฿0</strong></div>
-    <div style="display:flex;justify-content:space-between;margin-top:6px"><span>ชำระเงิน</span><strong id="tPay">-</strong></div>
-  </div>
-  <div class="badge bw" id="tStatus">รอรับออเดอร์</div>
-  <p style="font-size:13px;color:#777;margin-top:12px">จำเลขคิวไว้ หรือเปิดหน้านี้ค้างไว้เพื่อดูสถานะ</p>
-  <button class="btn btn-o" style="margin-top:16px" onclick="C.hide('mTicket')">ปิด / สั่งเพิ่ม</button>
+  <div id="ticketBody"></div>
+  <button class="btn btn-o" style="margin-top:12px" onclick="C.hide('mTicket')">ปิด</button>
+  <button class="btn btn-g" style="margin-top:8px" id="btnPrintReceipt" onclick="C.printReceipt()">พิมพ์ / บันทึกใบเสร็จ</button>
 </div></div>
+<div id="printReceipt" style="display:none"></div>
 <div class="toast" id="toast"></div>
 
 <script>
-const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const money = n => '฿'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
-const toast = msg => { const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._x); t._x=setTimeout(()=>t.style.display='none',2800); };
-const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const showErr = msg => { const e=document.getElementById('errBanner'); e.textContent=msg; e.classList.add('on'); };
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money=n=>'฿'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
+const toast=msg=>{const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';clearTimeout(t._x);t._x=setTimeout(()=>t.style.display='none',2800)};
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+const showErr=msg=>{const e=document.getElementById('errBanner');e.textContent=msg;e.classList.add('on')};
+async function sha256(text){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(text)));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
 
-const PP = {
+const PP={
   crc(p){let c=0xFFFF;for(let i=0;i<p.length;i++){c^=p.charCodeAt(i)<<8;for(let j=0;j<8;j++)c=c&0x8000?((c<<1)^0x1021)&0xFFFF:(c<<1)&0xFFFF}return c.toString(16).toUpperCase().padStart(4,'0')},
   tlv(id,v){return id+String(v.length).padStart(2,'0')+v},
   gen(target,amount){
@@ -158,336 +157,412 @@ const PP = {
   }
 };
 
-let db, shopRef;
+let db,shopRef;
 
 function checkConfig(){
   const c=window.FIREBASE_CONFIG||{};
-  if(!c.apiKey||String(c.apiKey).includes('PASTE')){ document.getElementById('cfgBanner').classList.add('on'); return false; }
+  if(!c.apiKey||String(c.apiKey).includes('PASTE')){document.getElementById('cfgBanner').classList.add('on');return false}
   return true;
 }
 
-async function migrateAndSeed(){
-  // ย้าย settings/config เก่า → public + secure โดยไม่ลบของเดิม
-  const old = await shopRef.collection('settings').doc('config').get();
-  const pub = await shopRef.collection('settings').doc('public').get();
-  const sec = await shopRef.collection('settings').doc('secure').get();
-  if(old.exists){
-    const d=old.data()||{};
-    if(!pub.exists){
-      await shopRef.collection('settings').doc('public').set({
-        shopName: d.shopName||'ส้มตำนายหนึ่ง',
-        promptpay: d.promptpay||''
-      },{merge:true});
-    }
-    if(!sec.exists){
-      const pin = d.pin ? String(d.pin) : '1234';
-      const pinHash = await sha256(pin);
-      await shopRef.collection('settings').doc('secure').set({
-        pinHash,
-        queueCounter: Number(d.queueCounter)||1
-      },{merge:true});
-    }
-    // ลบ pin ข้อความธรรมดาออกจาก config เก่า (คงฟิลด์อื่นไว้)
-    if(d.pin){
-      const cleaned = Object.assign({}, d);
-      delete cleaned.pin;
-      cleaned.pinMigrated = true;
-      await shopRef.collection('settings').doc('config').set(cleaned);
-    }
-  } else if(!pub.exists){
-    await shopRef.collection('settings').doc('public').set({ shopName:'ส้มตำนายหนึ่ง', promptpay:'' });
-    await shopRef.collection('settings').doc('secure').set({ pinHash: await sha256('1234'), queueCounter:1 });
-  }
-
-  const catSnap = await shopRef.collection('categories').limit(1).get();
-  if(!catSnap.empty) return;
-  const batch = db.batch();
-  [['c1','เมนูส้มตำ',1],['c2','เมนูยำ',2],['c3','เมนูของทอด',3],['c4','เมนูทานเล่น',4],['c5','เครื่องดื่ม',5]]
-    .forEach(([id,name,order])=>batch.set(shopRef.collection('categories').doc(id),{id,name,isActive:true,order}));
-  const menus=[
-    ['m1','c1','ตำปูปลาร้า',40],['m2','c1','ตำไทย',40],['m3','c1','ตำป่า',45],['m4','c1','ตำแตง',40],
-    ['m5','c2','ยำวุ้นเส้น',50],['m6','c3','ไก่ทอด',50],['m7','c3','ปีกไก่ทอด',40],
-    ['m8','c4','ไข่ต้ม',10],['m9','c5','น้ำเปล่า',10],['m10','c5','น้ำอัดลม',15]
-  ];
-  menus.forEach(([id,catId,name,price])=>batch.set(shopRef.collection('menus').doc(id),{id,catId,name,price,isActive:true,isOut:false,imageUrl:''}));
-  [['s1','ไม่เผ็ด'],['s2','เผ็ดน้อย'],['s3','เผ็ดกลาง'],['s4','เผ็ดมาก']].forEach(([id,name])=>batch.set(shopRef.collection('spiceLevels').doc(id),{id,name,isActive:true}));
-  [['t1','ไข่ดาว',10],['t2','ไข่ต้ม',10],['t3','เพิ่มปู',20]].forEach(([id,name,price])=>batch.set(shopRef.collection('toppings').doc(id),{id,name,price,isActive:true}));
-  await batch.commit();
-  toast('สร้างเมนูเริ่มต้นแล้ว');
-}
-
-async function sha256(text){
-  const data=new TextEncoder().encode(String(text));
-  const buf=await crypto.subtle.digest('SHA-256', data);
-  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-
-function fileToDataUrl(file, maxSide=800, quality=0.7){
+function fileToDataUrl(file,maxSide=900,quality=.72){
   return new Promise((resolve,reject)=>{
-    if(!file) return resolve('');
-    if(file.size > 2.5*1024*1024) return reject(new Error('ไฟล์ใหญ่เกิน 2.5MB'));
-    const img=new Image();
-    const url=URL.createObjectURL(file);
+    if(!file)return resolve('');
+    if(file.size>4*1024*1024)return reject(new Error('ไฟล์ใหญ่เกิน 4MB'));
+    const img=new Image(); const url=URL.createObjectURL(file);
     img.onload=()=>{
-      let w=img.width,h=img.height;
-      const scale=Math.min(1, maxSide/Math.max(w,h));
-      w=Math.round(w*scale); h=Math.round(h*scale);
-      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      let w=img.width,h=img.height; const s=Math.min(1,maxSide/Math.max(w,h));
+      w=Math.round(w*s);h=Math.round(h*s);
+      const c=document.createElement('canvas');c.width=w;c.height=h;
       c.getContext('2d').drawImage(img,0,0,w,h);
       URL.revokeObjectURL(url);
-      resolve(c.toDataURL('image/jpeg', quality));
+      resolve(c.toDataURL('image/jpeg',quality));
     };
-    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('อ่านรูปไม่สำเร็จ')); };
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('อ่านรูปไม่สำเร็จ'))};
     img.src=url;
   });
 }
 
-const C = {
-  shopName:'ร้าน', promptpay:'', cats:[], menus:[], spice:[], tops:[],
-  cat:'all', q:'', cart:[], modal:null, orderId:null, unsub:null, payM:'CASH', slipData:'',
+async function migrateAndSeed(){
+  const old=await shopRef.collection('settings').doc('config').get();
+  const pub=await shopRef.collection('settings').doc('public').get();
+  const sec=await shopRef.collection('settings').doc('secure').get();
+  if(old.exists){
+    const d=old.data()||{};
+    if(!pub.exists){
+      await shopRef.collection('settings').doc('public').set({
+        shopName:d.shopName||'ส้มตำนายหนึ่ง',
+        promptpay:d.promptpay||'1319900156353',
+        accountName:d.accountName||'นายการันย์ ยามดี'
+      },{merge:true});
+    }
+    if(!sec.exists){
+      await shopRef.collection('settings').doc('secure').set({
+        pinHash:await sha256(d.pin?String(d.pin):'1234'),
+        queueCounter:Number(d.queueCounter)||1
+      },{merge:true});
+    }
+    if(d.pin){const c=Object.assign({},d);delete c.pin;c.pinMigrated=true;await shopRef.collection('settings').doc('config').set(c)}
+  }else if(!pub.exists){
+    await shopRef.collection('settings').doc('public').set({shopName:'ส้มตำนายหนึ่ง',promptpay:'1319900156353',accountName:'นายการันย์ ยามดี'});
+    await shopRef.collection('settings').doc('secure').set({pinHash:await sha256('1234'),queueCounter:1});
+  }
+  // ensure promptpay default for ถุงเงิน / บัตรประชาชน 13 หลัก จากร้าน
+  if(pub.exists){
+    const p=pub.data()||{};
+    if(!p.promptpay){
+      await shopRef.collection('settings').doc('public').set({promptpay:'1319900156353',accountName:p.accountName||'นายการันย์ ยามดี'},{merge:true});
+    }
+  }
+
+  const catSnap=await shopRef.collection('categories').limit(1).get();
+  if(!catSnap.empty) return;
+  const batch=db.batch();
+  [['c1','เมนูส้มตำ',1],['c2','เมนูยำ',2],['c3','เมนูของทอด',3],['c4','เมนูทานเล่น',4],['c5','เครื่องดื่ม',5]]
+    .forEach(([id,name,order])=>batch.set(shopRef.collection('categories').doc(id),{id,name,isActive:true,order}));
+  const menus=[['m1','c1','ตำปูปลาร้า',40],['m2','c1','ตำไทย',40],['m3','c1','ตำป่า',45],['m4','c1','ตำแตง',40],['m5','c2','ยำวุ้นเส้น',50],['m6','c3','ไก่ทอด',50],['m7','c3','ปีกไก่ทอด',40],['m8','c4','ไข่ต้ม',10],['m9','c5','น้ำเปล่า',10],['m10','c5','น้ำอัดลม',15]];
+  menus.forEach(([id,catId,name,price])=>batch.set(shopRef.collection('menus').doc(id),{id,catId,name,price,isActive:true,isOut:false,imageUrl:'',imageData:''}));
+  [['s1','ไม่เผ็ด'],['s2','เผ็ดน้อย'],['s3','เผ็ดกลาง'],['s4','เผ็ดมาก']].forEach(([id,name])=>batch.set(shopRef.collection('spiceLevels').doc(id),{id,name,isActive:true}));
+  [['t1','ไข่ดาว',10],['t2','ไข่ต้ม',10],['t3','เพิ่มปู',20],['t4','หมูกรอบ',15]].forEach(([id,name,price])=>batch.set(shopRef.collection('toppings').doc(id),{id,name,price,isActive:true}));
+  await batch.commit();
+}
+
+const C={
+  shopName:'ร้าน',promptpay:'',accountName:'',cats:[],menus:[],spice:[],tops:[],
+  cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'CASH',slipData:'',lastOrder:null,
 
   async init(){
-    if(!checkConfig()){ document.getElementById('conn').textContent='ยังไม่ตั้งค่า Firebase'; return; }
+    if(!checkConfig()){document.getElementById('conn').textContent='ยังไม่ตั้งค่า';return}
     try{
       firebase.initializeApp(window.FIREBASE_CONFIG);
       db=firebase.firestore();
-      try{ await db.enablePersistence({synchronizeTabs:true}); }catch(e){}
+      try{await db.enablePersistence({synchronizeTabs:true})}catch(e){}
       shopRef=db.collection('shops').doc(window.SHOP_ID||'main');
       document.getElementById('conn').textContent='เชื่อมต่อแล้ว';
       await migrateAndSeed();
-
-      shopRef.collection('settings').doc('public').onSnapshot(snap=>{
-        const d=snap.data()||{};
+      shopRef.collection('settings').doc('public').onSnapshot(s=>{
+        const d=s.data()||{};
         this.shopName=d.shopName||'ส้มตำนายหนึ่ง';
-        this.promptpay=d.promptpay||'';
+        this.promptpay=d.promptpay||'1319900156353';
+        this.accountName=d.accountName||'';
         document.getElementById('shopName').textContent=this.shopName;
         document.title=this.shopName+' | สั่งอาหาร';
-      }, err=>showErr('อ่านตั้งค่าร้านไม่สำเร็จ: '+err.message));
-
-      shopRef.collection('categories').onSnapshot(s=>{ this.cats=s.docs.map(d=>({id:d.id,...d.data()})); this.renderCats(); });
-      shopRef.collection('menus').onSnapshot(s=>{ this.menus=s.docs.map(d=>({id:d.id,...d.data()})); this.renderMenus(); });
-      shopRef.collection('spiceLevels').onSnapshot(s=>{ this.spice=s.docs.map(d=>({id:d.id,...d.data()})); });
-      shopRef.collection('toppings').onSnapshot(s=>{ this.tops=s.docs.map(d=>({id:d.id,...d.data()})); });
-
-      // deep link ?queue=A001
-      const u=new URL(location.href);
-      const q=u.searchParams.get('queue');
-      if(q){ document.getElementById('trackQ').value=q; this.trackQueue(); }
-    }catch(e){
-      console.error(e);
-      showErr('เริ่มระบบไม่สำเร็จ: '+(e.message||e));
-      document.getElementById('conn').textContent='ผิดพลาด';
-    }
+      });
+      shopRef.collection('categories').onSnapshot(s=>{this.cats=s.docs.map(d=>({id:d.id,...d.data()}));this.renderCats()});
+      shopRef.collection('menus').onSnapshot(s=>{this.menus=s.docs.map(d=>({id:d.id,...d.data()}));this.renderMenus()});
+      shopRef.collection('spiceLevels').onSnapshot(s=>{this.spice=s.docs.map(d=>({id:d.id,...d.data()}))});
+      shopRef.collection('toppings').onSnapshot(s=>{this.tops=s.docs.map(d=>({id:d.id,...d.data()}))});
+      const u=new URL(location.href); const q=u.searchParams.get('queue');
+      if(q){document.getElementById('trackQ').value=q;this.trackQueue()}
+    }catch(e){console.error(e);showErr('เริ่มระบบไม่สำเร็จ: '+(e.message||e));document.getElementById('conn').textContent='ผิดพลาด'}
   },
-  show(id){ document.getElementById(id).classList.add('on'); },
-  hide(id){ document.getElementById(id).classList.remove('on'); },
-  search(v){ this.q=(v||'').trim().toLowerCase(); this.renderMenus(); },
+  show(id){document.getElementById(id).classList.add('on')},
+  hide(id){document.getElementById(id).classList.remove('on')},
+  search(v){this.q=(v||'').trim().toLowerCase();this.renderMenus()},
   renderCats(){
     let h=`<button class="chip ${this.cat==='all'?'on':''}" onclick="C.setCat('all')">ทั้งหมด</button>`;
-    this.cats.filter(c=>c.isActive).sort((a,b)=>(a.order||0)-(b.order||0)).forEach(c=>{
+    this.cats.filter(c=>c.isActive!==false).sort((a,b)=>(a.order||0)-(b.order||0)).forEach(c=>{
       h+=`<button class="chip ${this.cat===c.id?'on':''}" onclick="C.setCat('${esc(c.id)}')">${esc(c.name)}</button>`;
     });
     document.getElementById('cats').innerHTML=h;
   },
-  setCat(id){ this.cat=id; this.renderCats(); this.renderMenus(); },
+  setCat(id){this.cat=id;this.renderCats();this.renderMenus()},
+  menuImg(m){return m.imageData||m.imageUrl||''},
   renderMenus(){
-    let list=this.menus.filter(m=>m.isActive && (this.cat==='all'||m.catId===this.cat));
-    if(this.q) list=list.filter(m=>(m.name||'').toLowerCase().includes(this.q));
+    let list=this.menus.filter(m=>m.isActive!==false&&(this.cat==='all'||m.catId===this.cat));
+    if(this.q)list=list.filter(m=>(m.name||'').toLowerCase().includes(this.q));
     const el=document.getElementById('menus');
-    if(!list.length){ el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#999">ไม่พบเมนู</div>'; return; }
+    if(!list.length){el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#999">ไม่พบเมนู</div>';return}
     el.innerHTML=list.map(m=>{
-      const img=m.imageUrl?`<img src="${esc(m.imageUrl)}" alt="">`:`<i class="fa-solid fa-utensils"></i>`;
+      const src=this.menuImg(m);
+      const img=src?`<img src="${esc(src)}" alt="">`:`<i class="fa-solid fa-utensils"></i>`;
       return `<div class="card ${m.isOut?'oos':''}" onclick="${m.isOut?'':`C.openProduct('${esc(m.id)}')`}">
-        ${m.isOut?'<div class="oosb">หมด</div>':''}
-        <div class="ph">${img}</div>
-        <div class="info"><div class="name">${esc(m.name)}</div><div class="price">${money(m.price)}</div></div>
-      </div>`;
+        ${m.isOut?'<div class="oosb">หมด</div>':''}<div class="ph">${img}</div>
+        <div class="info"><div class="name">${esc(m.name)}</div><div class="price">${money(m.price)}</div></div></div>`;
     }).join('');
   },
   openProduct(id){
-    const m=this.menus.find(x=>x.id===id); if(!m||m.isOut) return;
-    this.modal={menu:m,qty:1,spice:this.spice.filter(s=>s.isActive)[0]?.id||null,tops:[]};
+    const m=this.menus.find(x=>x.id===id); if(!m||m.isOut)return;
+    // tops: {id: qty}
+    this.modal={menu:m,qty:1,spice:this.spice.filter(s=>s.isActive!==false)[0]?.id||null,topQty:{}};
     document.getElementById('pTitle').textContent=m.name;
-    const imgBox=document.getElementById('pImg');
-    if(m.imageUrl){ imgBox.style.display='flex'; imgBox.innerHTML=`<img src="${esc(m.imageUrl)}" style="width:100%;height:100%;object-fit:cover">`; }
-    else { imgBox.style.display='none'; imgBox.innerHTML=''; }
-    const activeSp=this.spice.filter(s=>s.isActive);
+    const src=this.menuImg(m); const imgBox=document.getElementById('pImg');
+    if(src){imgBox.style.display='flex';imgBox.innerHTML=`<img src="${esc(src)}" style="width:100%;height:100%;object-fit:cover">`}
+    else{imgBox.style.display='none';imgBox.innerHTML=''}
+    const activeSp=this.spice.filter(s=>s.isActive!==false);
     document.getElementById('spiceList').innerHTML=activeSp.map((s,i)=>
       `<label class="rl ${i===0?'on':''}" onclick="C.pickSpice('${esc(s.id)}',this)"><span>${esc(s.name)}</span>
        <input type="radio" name="sp" ${i===0?'checked':''} style="width:18px;height:18px;accent-color:var(--p)"></label>`).join('');
     document.getElementById('spiceBox').style.display=activeSp.length?'block':'none';
-    document.getElementById('topList').innerHTML=this.tops.filter(t=>t.isActive).map(t=>
-      `<label class="cl"><span>${esc(t.name)} <small style="color:#999">(+${money(t.price)})</small></span>
-       <input type="checkbox" style="width:18px;height:18px;accent-color:var(--p)" onchange="C.toggleTop('${esc(t.id)}',this)"></label>`).join('');
-    document.getElementById('topBox').style.display=this.tops.some(t=>t.isActive)?'block':'none';
+    const tops=this.tops.filter(t=>t.isActive!==false);
+    document.getElementById('topList').innerHTML=tops.map(t=>`
+      <div class="cl" id="topRow_${esc(t.id)}">
+        <div class="top-row">
+          <div><strong>${esc(t.name)}</strong><div style="font-size:12px;color:#777">+${money(t.price)} / ชิ้น</div></div>
+          <div class="top-qty">
+            <button class="qb" style="width:28px;height:28px;font-size:14px" onclick="event.preventDefault();C.topQty('${esc(t.id)}',-1)">−</button>
+            <span id="tq_${esc(t.id)}" style="min-width:20px;text-align:center;font-weight:700">0</span>
+            <button class="qb" style="width:28px;height:28px;font-size:14px" onclick="event.preventDefault();C.topQty('${esc(t.id)}',1)">+</button>
+          </div>
+        </div>
+      </div>`).join('');
+    document.getElementById('topBox').style.display=tops.length?'block':'none';
     this.updPrice(); this.show('mProduct');
   },
-  pickSpice(id,el){ this.modal.spice=id; document.querySelectorAll('#spiceList .rl').forEach(x=>x.classList.remove('on')); el.classList.add('on'); },
-  toggleTop(id,el){
-    if(el.checked){ if(!this.modal.tops.includes(id)) this.modal.tops.push(id); }
-    else this.modal.tops=this.modal.tops.filter(x=>x!==id);
-    el.closest('.cl').classList.toggle('on', el.checked); this.updPrice();
+  pickSpice(id,el){this.modal.spice=id;document.querySelectorAll('#spiceList .rl').forEach(x=>x.classList.remove('on'));el.classList.add('on')},
+  topQty(id,d){
+    const cur=this.modal.topQty[id]||0;
+    const n=Math.min(20,Math.max(0,cur+d));
+    if(n===0) delete this.modal.topQty[id]; else this.modal.topQty[id]=n;
+    document.getElementById('tq_'+id).textContent=n;
+    document.getElementById('topRow_'+id).classList.toggle('on',n>0);
+    this.updPrice();
   },
-  qty(d){ this.modal.qty=Math.min(99,Math.max(1,this.modal.qty+d)); this.updPrice(); },
+  qty(d){this.modal.qty=Math.min(99,Math.max(1,this.modal.qty+d));this.updPrice()},
+  calcUnit(){
+    const p=this.modal; let tp=0;
+    Object.entries(p.topQty||{}).forEach(([id,q])=>{
+      const t=this.tops.find(x=>x.id===id); if(t) tp+=Number(t.price)*Number(q);
+    });
+    return Number(p.menu.price)+tp;
+  },
   updPrice(){
     const p=this.modal; document.getElementById('pQty').textContent=p.qty;
-    let tp=0; p.tops.forEach(id=>{ const t=this.tops.find(x=>x.id===id); if(t) tp+=Number(t.price); });
-    const u=Number(p.menu.price)+tp;
+    const u=this.calcUnit();
     document.getElementById('pPrice').textContent=money(u);
     document.getElementById('pTotal').textContent=money(u*p.qty);
   },
   addCart(){
     const p=this.modal;
-    if(this.spice.filter(s=>s.isActive).length && !p.spice){ toast('เลือกระดับความเผ็ด'); return; }
+    if(this.spice.filter(s=>s.isActive!==false).length && !p.spice){toast('เลือกระดับความเผ็ด');return}
     const sp=this.spice.find(s=>s.id===p.spice);
-    const tops=p.tops.map(id=>this.tops.find(t=>t.id===id)).filter(Boolean);
-    const tp=tops.reduce((s,t)=>s+Number(t.price),0);
-    const unit=Number(p.menu.price)+tp;
-    this.cart.push({name:p.menu.name,qty:p.qty,spiceName:sp?.name||'',toppings:tops.map(t=>t.name),unitPrice:unit,total:unit*p.qty});
+    const toppings=[];
+    Object.entries(p.topQty||{}).forEach(([id,q])=>{
+      const t=this.tops.find(x=>x.id===id);
+      if(t&&q>0) toppings.push({id:t.id,name:t.name,price:Number(t.price),qty:Number(q),total:Number(t.price)*Number(q)});
+    });
+    const unit=this.calcUnit();
+    this.cart.push({
+      name:p.menu.name, qty:p.qty, spiceName:sp?.name||'',
+      toppings, unitPrice:unit, total:unit*p.qty
+    });
     this.hide('mProduct'); this.updFab(); toast('เพิ่มลงตะกร้าแล้ว');
   },
   updFab(){
     const c=this.cart.reduce((s,i)=>s+i.qty,0), t=this.cart.reduce((s,i)=>s+i.total,0);
     const fab=document.getElementById('fab');
-    if(c){ fab.style.display='flex'; document.getElementById('fabCount').textContent=c+' รายการ'; document.getElementById('fabTotal').textContent=money(t); }
+    if(c){fab.style.display='flex';document.getElementById('fabCount').textContent=c+' รายการ';document.getElementById('fabTotal').textContent=money(t)}
     else fab.style.display='none';
   },
   openCart(){
     const el=document.getElementById('cartList');
     if(!this.cart.length) el.innerHTML='<div style="text-align:center;color:#999;padding:20px">ตะกร้าว่าง</div>';
     else el.innerHTML=this.cart.map((i,idx)=>{
-      const meta=[i.spiceName,...(i.toppings||[])].filter(Boolean).join(', ');
+      const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty} (${money(t.total)})`).join(', ');
+      const meta=[i.spiceName, tops].filter(Boolean).join(' · ');
       return `<div class="ci"><div><div style="font-weight:600">${esc(i.name)} × ${i.qty}</div>
-        ${meta?`<div style="font-size:13px;color:#777">${esc(meta)}</div>`:''}
+        ${meta?`<div style="font-size:13px;color:#777">${meta}</div>`:''}
         <button style="color:var(--d);font-size:13px;margin-top:4px" onclick="C.rmCart(${idx})">ลบ</button></div>
         <div style="font-weight:600">${money(i.total)}</div></div>`;
     }).join('');
     document.getElementById('cartSum').textContent=money(this.cart.reduce((s,i)=>s+i.total,0));
     this.show('mCart');
   },
-  rmCart(i){ this.cart.splice(i,1); this.updFab(); this.openCart(); },
+  rmCart(i){this.cart.splice(i,1);this.updFab();this.openCart()},
   checkout(){
-    if(!this.cart.length) return;
+    if(!this.cart.length)return;
     document.getElementById('payTotal').textContent=money(this.cart.reduce((s,i)=>s+i.total,0));
-    this.slipData=''; document.getElementById('slipFile').value=''; document.getElementById('slipPreview').innerHTML='';
+    this.slipData='';document.getElementById('slipFile').value='';document.getElementById('slipPreview').innerHTML='';
+    document.getElementById('slipAutoMsg').textContent='';
     this.payMethod('CASH'); this.hide('mCart'); this.show('mPay');
   },
   payMethod(m){
     this.payM=m;
-    document.getElementById('lbCash').classList.toggle('on', m==='CASH');
-    document.getElementById('lbPP').classList.toggle('on', m==='PROMPTPAY');
+    document.getElementById('lbCash').classList.toggle('on',m==='CASH');
+    document.getElementById('lbPP').classList.toggle('on',m==='PROMPTPAY');
     const z=document.getElementById('ppZone');
     if(m==='PROMPTPAY'){
       z.style.display='block';
       const total=this.cart.reduce((s,i)=>s+i.total,0);
-      const payload=PP.gen(this.promptpay, total);
+      const payload=PP.gen(this.promptpay,total);
       document.getElementById('ppNum').textContent='พร้อมเพย์: '+(this.promptpay||'-');
+      document.getElementById('ppName').textContent=this.accountName?('ชื่อบัญชี: '+this.accountName):('ร้าน: '+this.shopName);
       const qr=document.getElementById('ppQR'); qr.innerHTML='';
-      if(payload) new QRCode(qr,{text:payload,width:180,height:180});
-      else qr.innerHTML='<p style="color:var(--d)">ร้านยังไม่ตั้งค่า PromptPay</p>';
+      if(payload) new QRCode(qr,{text:payload,width:200,height:200});
+      else qr.innerHTML='<p style="color:var(--d)">ตั้งค่า PromptPay ไม่ถูกต้อง (ต้อง 10 หรือ 13 หลัก)</p>';
     } else z.style.display='none';
   },
   async confirmOrder(){
     const btn=document.getElementById('btnOrder');
     btn.disabled=true; btn.textContent='กำลังส่ง…';
     try{
-      // slip optional
       const f=document.getElementById('slipFile').files[0];
+      let slipAuto=null;
       if(f && this.payM==='PROMPTPAY'){
-        try{ this.slipData = await fileToDataUrl(f); }catch(e){ toast(e.message); btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; return; }
+        try{ this.slipData=await fileToDataUrl(f,1000,.7); document.getElementById('slipPreview').innerHTML=`<img src="${this.slipData}" style="max-width:180px;border-radius:8px">`; }
+        catch(e){ toast(e.message); btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; return; }
+        // ตรวจสลิปอัตโนมัติถ้ามี API key
+        if(window.EASYSLIP_API_KEY){
+          document.getElementById('slipAutoMsg').textContent='กำลังตรวจสลิปอัตโนมัติ…';
+          slipAuto=await C.verifySlipEasy(this.slipData, this.cart.reduce((s,i)=>s+i.total,0));
+          document.getElementById('slipAutoMsg').textContent=slipAuto.msg;
+        }
       }
-      const items=this.cart.map(i=>({name:i.name,qty:i.qty,spiceName:i.spiceName,toppings:i.toppings,unitPrice:i.unitPrice,total:i.total}));
+      const items=this.cart.map(i=>({
+        name:i.name,qty:i.qty,spiceName:i.spiceName,
+        toppings:(i.toppings||[]).map(t=>({name:t.name,price:t.price,qty:t.qty,total:t.total})),
+        unitPrice:i.unitPrice,total:i.total
+      }));
       const total=items.reduce((s,i)=>s+i.total,0);
       const secRef=shopRef.collection('settings').doc('secure');
-      const queue = await db.runTransaction(async tx=>{
+      const queue=await db.runTransaction(async tx=>{
         const snap=await tx.get(secRef);
-        let qNum=1;
-        if(snap.exists) qNum=Number(snap.data().queueCounter)||1;
+        let qNum=1; if(snap.exists) qNum=Number(snap.data().queueCounter)||1;
         if(qNum>999) qNum=1;
         const q='A'+String(qNum).padStart(3,'0');
-        tx.set(secRef,{ queueCounter:qNum+1 },{merge:true});
+        tx.set(secRef,{queueCounter:qNum+1},{merge:true});
         return q;
       });
       const id=uid();
+      let paymentStatus='UNPAID', slipStatus=this.slipData?'PENDING_REVIEW':'NONE';
+      if(slipAuto && slipAuto.ok){ paymentStatus='PAID'; slipStatus='AUTO_APPROVED'; }
       const order={
-        id, queue, items, total,
-        status:'Pending',
-        paymentMethod:this.payM,
-        paymentStatus:'UNPAID',
-        paidAmount:0, changeAmount:0,
-        slipData: this.slipData||'',
-        slipStatus: this.slipData ? 'PENDING_REVIEW' : 'NONE',
-        createdAt: Date.now()
+        id,queue,items,total,status:'Pending',
+        paymentMethod:this.payM, paymentStatus,
+        paidAmount: paymentStatus==='PAID'?total:0, changeAmount:0,
+        slipData:this.slipData||'', slipStatus,
+        slipAuto: slipAuto||null,
+        createdAt:Date.now()
       };
       await shopRef.collection('orders').doc(id).set(order);
-      try{ localStorage.setItem('lastQueue', queue); localStorage.setItem('lastOrderId', id); }catch(e){}
+      if(paymentStatus==='PAID') await C.writeReceipt(order);
+      try{localStorage.setItem('lastQueue',queue);localStorage.setItem('lastOrderId',id)}catch(e){}
       this.cart=[]; this.updFab(); this.hide('mPay');
-      this.orderId=id;
-      document.getElementById('tQueue').textContent=queue;
-      document.getElementById('tTotal').textContent=money(total);
-      document.getElementById('tPay').textContent=(this.payM==='CASH'?'เงินสด':'พร้อมเพย์')+' (ยังไม่ชำระ)';
-      document.getElementById('tStatus').className='badge bw';
-      document.getElementById('tStatus').textContent='🟡 รอรับออเดอร์';
+      this.orderId=id; this.lastOrder=order;
+      this.renderTicket(order);
       this.show('mTicket');
       toast('สั่งสำเร็จ คิว '+queue);
       if(this.unsub) this.unsub();
       this.unsub=shopRef.collection('orders').doc(id).onSnapshot(snap=>{
         const o=snap.data(); if(!o) return;
-        this.applyStatus(o);
+        this.lastOrder={id,...o};
+        this.renderTicket(this.lastOrder);
+        if(o.paymentStatus==='PAID') C.writeReceipt({id,...o});
       });
+    }catch(e){console.error(e);toast('ส่งไม่สำเร็จ: '+(e.message||e))}
+    finally{btn.disabled=false;btn.textContent='ยืนยันออเดอร์'}
+  },
+  async verifySlipEasy(dataUrl, amount){
+    try{
+      // EasySlip รับ binary — ส่งเป็น blob จาก dataUrl
+      const res=await fetch(dataUrl); const blob=await res.blob();
+      const fd=new FormData();
+      fd.append('file', blob, 'slip.jpg');
+      // บางผู้ให้บริการใช้ JSON base64 — ลอง endpoint มาตรฐาน
+      const r=await fetch('https://developer.easyslip.com/api/v1/verify',{
+        method:'POST',
+        headers:{ Authorization: 'Bearer '+window.EASYSLIP_API_KEY },
+        body: fd
+      });
+      if(!r.ok){
+        const t=await r.text();
+        return {ok:false,msg:'ตรวจสลิปอัตโนมัติไม่สำเร็จ ('+r.status+') — รอร้านตรวจมือ', raw:t};
+      }
+      const j=await r.json();
+      // ตรวจยอดคร่าว ๆ ถ้ามี
+      const paid=Number(j?.data?.amount || j?.amount || 0);
+      if(paid && Math.abs(paid-amount)>1){
+        return {ok:false,msg:'ยอดในสลิปไม่ตรง ฿'+paid, raw:j};
+      }
+      return {ok:true,msg:'✓ ตรวจสลิปอัตโนมัติผ่าน', raw:j};
     }catch(e){
-      console.error(e);
-      toast('ส่งไม่สำเร็จ: '+(e.message||e));
-    }finally{
-      btn.disabled=false; btn.textContent='ยืนยันออเดอร์';
+      return {ok:false,msg:'ตรวจอัตโนมัติไม่ได้ (อาจติด CORS) — รอร้านตรวจมือ', error:String(e.message||e)};
     }
   },
-  applyStatus(o){
+  async writeReceipt(order){
+    if(!order||order.paymentStatus!=='PAID') return;
+    const receipt={
+      id: order.id,
+      orderId: order.id,
+      queue: order.queue,
+      shopName: this.shopName,
+      accountName: this.accountName,
+      items: order.items||[],
+      total: order.total,
+      paymentMethod: order.paymentMethod,
+      paidAmount: order.paidAmount||order.total,
+      changeAmount: order.changeAmount||0,
+      paidAt: order.paidAt||Date.now(),
+      createdAt: order.createdAt||Date.now()
+    };
+    try{ await shopRef.collection('receipts').doc(order.id).set(receipt,{merge:true}); }catch(e){}
+    try{
+      const key='receipts';
+      const arr=JSON.parse(localStorage.getItem(key)||'[]');
+      const next=[receipt,...arr.filter(x=>x.id!==receipt.id)].slice(0,50);
+      localStorage.setItem(key, JSON.stringify(next));
+    }catch(e){}
+  },
+  renderTicket(o){
     const map={Pending:['bw','🟡 รอรับออเดอร์'],Cooking:['bi','🔵 กำลังทำ'],Ready:['bg','🟢 พร้อมรับ'],Completed:['bg','⚫ เสร็จสิ้น']};
-    const m=map[o.status]||map.Pending;
-    document.getElementById('tStatus').className='badge '+m[0];
-    document.getElementById('tStatus').textContent=m[1];
-    let pay=(o.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์')+(o.paymentStatus==='PAID'?' (ชำระแล้ว)':' (ยังไม่ชำระ)');
-    if(o.slipStatus==='APPROVED') pay+=' · สลิปผ่าน';
-    if(o.slipStatus==='REJECTED') pay+=' · สลิปไม่ผ่าน';
-    document.getElementById('tPay').textContent=pay;
-    document.getElementById('tQueue').textContent=o.queue;
-    document.getElementById('tTotal').textContent=money(o.total);
+    const st=map[o.status]||map.Pending;
+    const paid=o.paymentStatus==='PAID';
+    const lines=(o.items||[]).map(i=>{
+      const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty}`).join(', ');
+      return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span>${esc(i.name)} × ${i.qty}${tops?`<div style="font-size:12px;color:#777">${tops}</div>`:''}</span><span>${money(i.total)}</span></div>`;
+    }).join('');
+    document.getElementById('ticketBody').innerHTML=`
+      <h2 style="color:${paid?'var(--g)':'var(--p)'};margin-bottom:8px">${paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> ส่งออเดอร์แล้ว'}</h2>
+      <div>คิวของคุณ</div>
+      <div class="huge">${esc(o.queue)}</div>
+      <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
+      <div class="receipt" id="receiptBox">
+        <h3>${esc(this.shopName)}</h3>
+        <div style="text-align:center;font-size:13px;color:#666;margin-bottom:8px">${new Date(o.createdAt||Date.now()).toLocaleString('th-TH')}</div>
+        ${lines}
+        <div style="border-top:1px dashed #ccc;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700">
+          <span>รวม</span><span style="color:var(--p)">${money(o.total)}</span>
+        </div>
+        <div style="margin-top:6px;font-size:13px">ชำระ: ${o.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์'} · ${paid?'ชำระแล้ว':'ยังไม่ชำระ'}</div>
+        ${o.slipStatus&&o.slipStatus!=='NONE'?`<div style="font-size:12px;color:#555">สลิป: ${esc(o.slipStatus)}</div>`:''}
+      </div>
+      <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;
+    document.getElementById('btnPrintReceipt').style.display = paid ? 'inline-flex' : 'none';
+  },
+  printReceipt(){
+    const o=this.lastOrder; if(!o) return;
+    const html=document.getElementById('receiptBox')?.innerHTML||'';
+    document.getElementById('printReceipt').innerHTML='<div style="padding:20px;font-family:Prompt,sans-serif">'+html+'</div>';
+    document.getElementById('printReceipt').style.display='block';
+    window.print();
+    document.getElementById('printReceipt').style.display='none';
   },
   async trackQueue(){
     const q=document.getElementById('trackQ').value.trim().toUpperCase();
-    if(!q){ toast('ใส่เลขคิว'); return; }
+    if(!q){toast('ใส่เลขคิว');return}
     try{
-      const snap=await shopRef.collection('orders').where('queue','==',q).orderBy('createdAt','desc').limit(1).get();
-      if(snap.empty){
-        // fallback without composite index
-        const all=await shopRef.collection('orders').where('queue','==',q).limit(5).get();
-        if(all.empty){ toast('ไม่พบคิว '+q); return; }
-        const docs=all.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>b.createdAt-a.createdAt);
-        this.orderId=docs[0].id;
-        this.applyStatus(docs[0]);
-        this.show('mTicket');
-        if(this.unsub) this.unsub();
-        this.unsub=shopRef.collection('orders').doc(this.orderId).onSnapshot(s=>{ if(s.data()) this.applyStatus(s.data()); });
-        return;
-      }
-      const d=snap.docs[0];
-      this.orderId=d.id;
-      this.applyStatus(d.data());
-      this.show('mTicket');
-      if(this.unsub) this.unsub();
-      this.unsub=shopRef.collection('orders').doc(this.orderId).onSnapshot(s=>{ if(s.data()) this.applyStatus(s.data()); });
-    }catch(e){
-      // index missing — fallback
+      let docs=[];
       try{
-        const all=await shopRef.collection('orders').where('queue','==',q).get();
-        if(all.empty){ toast('ไม่พบคิว '+q); return; }
-        const docs=all.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-        this.orderId=docs[0].id; this.applyStatus(docs[0]); this.show('mTicket');
-        if(this.unsub) this.unsub();
-        this.unsub=shopRef.collection('orders').doc(this.orderId).onSnapshot(s=>{ if(s.data()) this.applyStatus(s.data()); });
-      }catch(e2){ toast('ค้นหาไม่สำเร็จ: '+(e2.message||e2)); }
-    }
+        const snap=await shopRef.collection('orders').where('queue','==',q).get();
+        docs=snap.docs.map(d=>({id:d.id,...d.data()}));
+      }catch(e){}
+      if(!docs.length){
+        // ลองจาก local receipts
+        try{
+          const arr=JSON.parse(localStorage.getItem('receipts')||'[]');
+          const local=arr.find(x=>String(x.queue).toUpperCase()===q);
+          if(local){ this.lastOrder=local; this.renderTicket({...local,status:local.status||'Completed',paymentStatus:'PAID'}); this.show('mTicket'); return; }
+        }catch(e){}
+        toast('ไม่พบคิว '+q); return;
+      }
+      docs.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+      this.orderId=docs[0].id; this.lastOrder=docs[0];
+      this.renderTicket(docs[0]); this.show('mTicket');
+      if(this.unsub) this.unsub();
+      this.unsub=shopRef.collection('orders').doc(this.orderId).onSnapshot(s=>{
+        if(s.data()){ this.lastOrder={id:s.id,...s.data()}; this.renderTicket(this.lastOrder); }
+      });
+    }catch(e){ toast('ค้นหาไม่สำเร็จ: '+(e.message||e)); }
   }
 };
 C.init();
