@@ -340,7 +340,7 @@ function fileToDataUrl(file,maxSide=800,quality=.7){
 let db,shopRef;
 
 const M={
-  filterKey:'kitchen', orders:[], menus:[], cats:[], tops:[], spice:[],
+  filterKey:'queue', orders:[], menus:[], cats:[], tops:[], spice:[],
   audio:null, audioOn:false, lastActive:0, ready:false, unsub:null, catalogTab:'cat',
   pendingImageData:'',
 
@@ -574,24 +574,34 @@ const M={
     // slip = พร้อมเพย์ + มีสลิปรอตรวจ
     // waitingPay = ทำเสร็จแล้ว (Ready) แต่ยังไม่จ่าย
     // ready = ทำเสร็จแล้ว + จ่ายแล้ว (พร้อมรับ)
-    if(this.filterKey==='kitchen') list=list.filter(o=>['Pending','Cooking','AwaitingPayment'].includes(o.status));
-    else if(this.filterKey==='unpaid') list=list.filter(o=>o.paymentStatus==='UNPAID' && o.status!=='Completed' && o.status!=='Cancelled');
-    else if(this.filterKey==='paid') list=list.filter(o=>o.paymentStatus==='PAID' && o.status!=='Completed' && o.status!=='Cancelled');
-    else if(this.filterKey==='slip') list=list.filter(o=>(o.paymentMethod==='PROMPTPAY'||o.paymentMethod==='QR') && (o.slipStatus==='PENDING_REVIEW'||o.slipStatus==='AUTO_APPROVED') && o.status!=='Cancelled');
-    else if(this.filterKey==='waitingPay') list=list.filter(o=>o.status==='Ready' && o.paymentStatus==='UNPAID');
-    else if(this.filterKey==='ready') list=list.filter(o=>o.status==='Ready' && o.paymentStatus==='PAID');
+    // โปรเซสร้าน: รอคิวทำ → กำลังทำ → ทำเสร็จแล้ว
+    // จบสมบูรณ์ได้เฉพาะ ทำเสร็จแล้ว + จ่ายเงินแล้ว (status=Completed)
+    // ข้อมูลเดิม: Pending/AwaitingPayment=รอคิว, Cooking=กำลังทำ, Ready=ทำเสร็จ, Completed=เสร็จสมบูรณ์
+    const isQueue = o => ['Pending','AwaitingPayment'].includes(o.status);
+    const isActive = o => o.status!=='Completed' && o.status!=='Cancelled';
+    if(this.filterKey==='queue') list=list.filter(o=>isQueue(o));
+    else if(this.filterKey==='cooking') list=list.filter(o=>o.status==='Cooking');
+    else if(this.filterKey==='doneKitchen') list=list.filter(o=>o.status==='Ready');
+    else if(this.filterKey==='waitingPay') list=list.filter(o=>isActive(o) && o.paymentStatus!=='PAID' && o.status==='Ready');
+    else if(this.filterKey==='slip') list=list.filter(o=>isActive(o) && (o.paymentMethod==='PROMPTPAY'||o.paymentMethod==='QR') && (o.slipStatus==='PENDING_REVIEW'||o.slipStatus==='AUTO_APPROVED'));
+    else if(this.filterKey==='completed') list=list.filter(o=>o.status==='Completed');
     else if(this.filterKey==='cancelled') list=list.filter(o=>o.status==='Cancelled');
-    // ครัว: เรียงเก่า→ใหม่ (ออเดอร์ใหม่อยู่ล่าง)
-    if(this.filterKey==='kitchen'||this.filterKey==='waitingPay'||this.filterKey==='unpaid'||this.filterKey==='paid'||this.filterKey==='slip'||this.filterKey==='ready'){
-      list=list.slice().sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
-    } else {
+    else if(this.filterKey==='allActive') list=list.filter(o=>isActive(o));
+    else if(this.filterKey==='kitchen') list=list.filter(o=>['Pending','Cooking','AwaitingPayment','Ready'].includes(o.status)); // รองรับปุ่มเก่า
+    else if(this.filterKey==='unpaid') list=list.filter(o=>isActive(o) && o.paymentStatus!=='PAID');
+    else if(this.filterKey==='paid') list=list.filter(o=>isActive(o) && o.paymentStatus==='PAID');
+    else if(this.filterKey==='ready') list=list.filter(o=>o.status==='Ready' && o.paymentStatus==='PAID');
+    // เรียง: คิวก่อน→หลัง (เก่าบน ใหม่ล่าง) ยกเว้นประวัติเสร็จสมบูรณ์/ยกเลิก
+    if(this.filterKey==='completed'||this.filterKey==='cancelled'){
       list=list.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    } else {
+      list=list.slice().sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
     }
     const active=this.orders.filter(o=>o.status!=='Completed'&&o.status!=='Cancelled');
-    document.getElementById('sPending').textContent=active.filter(o=>o.status==='Pending'||o.status==='AwaitingPayment').length;
+    document.getElementById('sPending').textContent=active.filter(o=>['Pending','AwaitingPayment'].includes(o.status)).length;
     document.getElementById('sCooking').textContent=active.filter(o=>o.status==='Cooking').length;
     document.getElementById('sReady').textContent=active.filter(o=>o.status==='Ready').length;
-    document.getElementById('sUnpaid').textContent=active.filter(o=>o.paymentStatus==='UNPAID').length;
+    document.getElementById('sUnpaid').textContent=active.filter(o=>o.paymentStatus!=='PAID' && o.status==='Ready').length;
     const n=active.length;
     const badge=document.getElementById('orderBadge');
     if(badge){ if(n>0){badge.textContent=n;badge.classList.remove('hide')} else badge.classList.add('hide'); }
@@ -608,8 +618,9 @@ const M={
       const slip=o.slipStatus==='PENDING_REVIEW'?' <span style="background:#FFF3E0;color:#E65100;padding:2px 6px;border-radius:4px;font-size:11px">รอตรวจสลิป</span>':(o.slipStatus==='APPROVED'||o.slipStatus==='AUTO_APPROVED'?' <span style="background:#E8F5E9;color:#2E7D32;padding:2px 6px;border-radius:4px;font-size:11px">สลิปผ่าน</span>':'');
       const isNew=this.unviewed&&this.unviewed.has(o.id);
       return `<div class="oc ${esc(o.status||'')}" style="${isNew?'box-shadow:0 0 0 3px #F44336;':''}" onclick="M.openDetail('${esc(o.id)}')">
-        <div style="display:flex;justify-content:space-between"><div class="q">${esc(o.queue)}</div>
-        <div style="color:#888;font-size:13px">${o.createdAt?new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}</div></div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px"><div class="q">${esc(o.queue)}</div>
+        <div style="text-align:right"><div style="color:#888;font-size:12px">${o.createdAt?new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}</div>
+        <div style="font-size:11px;font-weight:600;margin-top:2px;color:${o.status==='Cooking'?'#1565C0':o.status==='Ready'?'#2E7D32':'#E65100'}">${({Pending:'รอคิวทำ',AwaitingPayment:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:'ยกเลิก'})[o.status]||o.status}</div></div></div>
         <div style="margin:8px 0;color:#444">${esc(prev)}</div>
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px"><strong style="color:var(--p);font-size:1.25rem">${money(o.total)}</strong><span style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${method}${pay}${slip}</span></div></div>`;
     }).join('');
@@ -639,11 +650,20 @@ const M={
     </div>`:(o.paymentStatus!=='PAID'&&!locked?`<div style="margin:10px 0;padding:10px;background:#FFF8E1;border-radius:8px;font-size:13px;text-align:center">ยังไม่มีสลิปจากลูกค้า</div>`:'');
     let statusBtns='';
     if(!locked){
-      statusBtns=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
-        <button class="btn btn-o ${o.status==='Pending'||o.status==='AwaitingPayment'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Pending')">⏳ รอรับ ${o.status==='Pending'||o.status==='AwaitingPayment'?'✓':''}</button>
-        <button class="btn btn-i ${o.status==='Cooking'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Cooking')">🔵 กำลังทำ ${o.status==='Cooking'?'✓':''}</button>
-        <button class="btn btn-g ${o.status==='Ready'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Ready')">🟢 พร้อมรับ ${o.status==='Ready'?'✓':''}</button>
-        <button class="btn btn-p" onclick="M.setStatus('${esc(o.id)}','Completed')">✅ เสร็จสิ้น</button>
+      const paid=o.paymentStatus==='PAID';
+      const canComplete=paid; // เสร็จสมบูรณ์ได้เฉพาะเมื่อจ่ายแล้ว
+      statusBtns=`<div style="margin-top:12px;padding:10px;background:#FFF8F5;border-radius:10px;font-size:13px;color:#555">
+        <strong style="color:var(--p)">ขั้นตอนครัว</strong>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px">
+          <button class="btn btn-o ${o.status==='Pending'||o.status==='AwaitingPayment'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Pending')">⏳ รอคิวทำ</button>
+          <button class="btn btn-i ${o.status==='Cooking'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Cooking')">🔵 กำลังทำ</button>
+          <button class="btn btn-g ${o.status==='Ready'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Ready')">🟢 ทำเสร็จแล้ว</button>
+        </div>
+        <div style="margin-top:10px;padding-top:8px;border-top:1px dashed #ddd">
+          <strong style="color:${paid?'#2E7D32':'#C62828'}">${paid?'✓ จ่ายเงินแล้ว':'ยังไม่จ่ายเงิน'}</strong>
+          ${o.status==='Ready'&&!paid?'<div style="color:#E65100;margin-top:4px">ทำครัวเสร็จแล้ว — รอรับเงิน/ตรวจสลิป ก่อนปิดงาน</div>':''}
+          ${canComplete?`<button class="btn btn-p btn-block" style="margin-top:8px" onclick="M.setStatus('${esc(o.id)}','Completed')">✅ เสร็จสมบูรณ์ (ทำเสร็จ+จ่ายแล้ว)</button>`:`<button class="btn btn-block" style="margin-top:8px;background:#eee;color:#999" disabled>✅ เสร็จสมบูรณ์ (ต้องจ่ายเงินก่อน)</button>`}
+        </div>
       </div>`;
     } else {
       statusBtns=`<div style="margin-top:12px;padding:12px;background:#E8F5E9;border-radius:10px;text-align:center;font-weight:600;color:#2E7D32">ออเดอร์${o.status==='Completed'?'เสร็จสิ้น':'ถูกยกเลิก'}แล้ว — ไม่สามารถย้อนขั้นตอนได้</div>`;
@@ -659,7 +679,7 @@ const M={
       </div>
       ${items}${slipBlock}
       ${statusBtns}
-      <div style="font-size:12px;color:#666;margin-top:6px;text-align:center">ขั้นตอนปัจจุบัน: <strong>${({AwaitingPayment:'รอชำระเงิน',Pending:'รอรับ',Cooking:'กำลังทำ',Ready:'พร้อมรับ',Completed:'เสร็จสิ้น',Cancelled:'ยกเลิก'})[o.status]||o.status}</strong></div>
+      <div style="font-size:12px;color:#666;margin-top:6px;text-align:center">ขั้นตอนปัจจุบัน: <strong>${({AwaitingPayment:'รอคิวทำ',Pending:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:'ยกเลิก'})[o.status]||o.status}</strong></div>
       ${!locked?`<button class="btn btn-d btn-block" style="margin-top:10px" onclick="M.cancelOrder('${esc(o.id)}')">ยกเลิกออเดอร์</button>`:''}
       ${!locked && o.paymentStatus!=='PAID'?`<div style="margin-top:12px">
         <label class="lbl">รับเงินสด</label><input type="number" id="cashIn" placeholder="จำนวนที่รับ" inputmode="decimal">
@@ -671,8 +691,25 @@ const M={
   async setStatus(id,status){
     const cur=this.orders.find(x=>x.id===id);
     if(cur && (cur.status==='Completed' || cur.statusLocked)){
-      toast('ออเดอร์นี้เสร็จสิ้นแล้ว ย้อนขั้นตอนไม่ได้');
+      toast('ออเดอร์นี้เสร็จสมบูรณ์แล้ว ย้อนขั้นตอนไม่ได้');
       return;
+    }
+    // โปรเซสครัว: Pending(รอคิว) → Cooking(กำลังทำ) → Ready(ทำเสร็จแล้ว)
+    // Completed(เสร็จสมบูรณ์) ได้เฉพาะเมื่อ จ่ายเงินแล้ว + ครัวทำเสร็จแล้ว (หรือกำลังทำ/รอคิวแล้วแต่จ่ายแล้วก็ได้ถ้าต้องการปิด)
+    if(status==='Completed'){
+      if(!cur || cur.paymentStatus!=='PAID'){
+        toast('ยังไม่จ่ายเงิน — ปิดออเดอร์เป็นเสร็จสมบูรณ์ไม่ได้');
+        return;
+      }
+      // แนะนำให้ทำครัวเสร็จก่อน แต่ถ้าร้านกดปิดทั้งที่จ่ายแล้ว อนุญาตได้หลัง Ready
+      if(cur.status!=='Ready' && cur.status!=='Cooking' && cur.status!=='Pending' && cur.status!=='AwaitingPayment'){
+        toast('สถานะไม่อนุญาตให้ปิดงาน');
+        return;
+      }
+      if(cur.status!=='Ready'){
+        // บังคับเป็น Ready ก่อนบันทึก Completed เพื่อความสอดคล้องของข้อมูล
+        await shopRef.collection('orders').doc(id).update({status:'Ready'});
+      }
     }
     const patch={status};
     if(status==='Completed'){
@@ -680,9 +717,11 @@ const M={
       patch.statusLocked=true;
     }
     await shopRef.collection('orders').doc(id).update(patch);
-    toast(status==='Completed'?'เสร็จสิ้น · ปิดการ์ดแล้ว':'อัปเดต '+status);
+    const labels={Pending:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์'};
+    toast(status==='Completed'?'เสร็จสมบูรณ์ · ย้ายไปรายการเสร็จแล้ว':('อัปเดต: '+(labels[status]||status)));
     if(status==='Completed'){
       document.getElementById('detailModal').classList.remove('on');
+      this.renderOrders();
     } else {
       this.openDetail(id);
     }
@@ -729,10 +768,13 @@ const M={
       changeAmount: patch.changeAmount||0,
       paymentMethod: patch.paymentMethod
     }, patch);
-    // เงินเข้าแล้ว → ส่งเข้าครัวอัตโนมัติ
-    if(!cur || cur.status==='AwaitingPayment' || cur.status==='Pending'){
+    // จ่ายเงินแล้ว — ไม่ย้อนสถานะครัว
+    // ถ้ายังเป็น AwaitingPayment (ของเก่า) → เข้า Pending (รอคิวทำ)
+    if(cur && cur.status==='AwaitingPayment'){
       payload.status='Pending';
     }
+    // ถ้าครัวทำเสร็จแล้ว (Ready) + จ่ายแล้ว ร้านกดเสร็จสมบูรณ์เอง
+    // ไม่ auto-complete เพื่อให้ร้านตรวจสลิป/ยืนยันก่อน
     await shopRef.collection('orders').doc(id).update(payload);
     // รีโหลดจาก Firestore เป็นแหล่งจริง
     const snap=await shopRef.collection('orders').doc(id).get();
