@@ -204,25 +204,28 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
     <div class="form-card">
       <h3>ร้านค้า</h3>
       <label class="lbl">ชื่อร้าน</label><input id="setName">
-      <label class="lbl">ชื่อบัญชีผู้รับเงิน</label><input id="setAccount" placeholder="นายการันย์ ยามดี">
+      <label class="lbl">ชื่อบัญชีผู้รับเงิน</label><input id="setAccount" placeholder="นาย นราทร วงค์แก่นท้าว">
       <button class="btn btn-p btn-block" style="margin-top:10px" onclick="M.saveSettings()">บันทึกชื่อร้าน</button>
     </div>
     <div class="form-card">
       <h3>ช่องทางรับเงิน QR</h3>
       <label class="lbl">ประเภท QR</label>
       <select id="setPayType" onchange="M.togglePayTypeUI()">
+        <option value="kshop">Thai QR Payment — K Shop (แนะนำ)</option>
         <option value="promptpay">พร้อมเพย์ (เบอร์ / บัตรประชาชน)</option>
-        <option value="merchant">Thai QR ร้านค้า (K Shop / รหัสร้าน)</option>
+        <option value="merchant">Thai QR ร้านค้า (รหัสอื่น)</option>
       </select>
-      <div id="payPromptpayBox">
+      <div id="payPromptpayBox" class="hide">
         <label class="lbl">เลขพร้อมเพย์ (10 หรือ 13 หลัก)</label>
         <input id="setPP" placeholder="1319900156353">
         <p style="font-size:12px;color:#777;margin-top:6px">เบอร์มือถือ 10 หลัก หรือบัตรประชาชน 13 หลัก</p>
       </div>
-      <div id="payMerchantBox" class="hide">
-        <label class="lbl">รหัสร้าน / Merchant–Biller ID (จาก K Shop)</label>
-        <input id="setMerchantId" placeholder="เช่น รหัสจากแอป K Shop">
-        <p style="font-size:12px;color:#777;margin-top:6px">วางรหัสร้านจาก K Shop หรือธนาคาร — ระบบจะสร้าง Thai QR แบบร้านค้า</p>
+      <div id="payMerchantBox">
+        <label class="lbl">เลขอ้างอิง K Shop</label>
+        <input id="setMerchantId" placeholder="EMPKB000002198793001" value="EMPKB000002198793001">
+        <p style="font-size:12px;color:#777;margin-top:6px">ค่าจาก QR K Shop ร้านส้มตำนายหนึ่ง — ระบบใช้ payload จริงของ Thai QR Payment</p>
+        <label class="lbl">Thai QR Payload (ขั้นสูง · ถ้ามี)</label>
+        <textarea id="setKshopPayload" rows="3" placeholder="วาง payload EMV จาก QR K Shop"></textarea>
       </div>
       <button class="btn btn-p btn-block" style="margin-top:10px" onclick="M.saveSettings()">บันทึกช่องทางรับเงิน</button>
     </div>
@@ -293,11 +296,11 @@ const M={
     const pub=await shopRef.collection('settings').doc('public').get();
     if(old.exists){
       const d=old.data()||{};
-      if(!pub.exists) await shopRef.collection('settings').doc('public').set({shopName:d.shopName||'ส้มตำนายหนึ่ง',promptpay:d.promptpay||'1319900156353',accountName:d.accountName||'นายการันย์ ยามดี'},{merge:true});
+      if(!pub.exists) await shopRef.collection('settings').doc('public').set({shopName:d.shopName||'ส้มตำนายหนึ่ง',promptpay:d.promptpay||'1319900156353',accountName:d.accountName||'นาย นราทร วงค์แก่นท้าว',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:window.KSHOP_QR_PAYLOAD||''},{merge:true});
       if(!sec.exists) await shopRef.collection('settings').doc('secure').set({pinHash:await sha256(d.pin?String(d.pin):'1234'),queueCounter:Number(d.queueCounter)||1},{merge:true});
       if(d.pin){const c=Object.assign({},d);delete c.pin;c.pinMigrated=true;await shopRef.collection('settings').doc('config').set(c)}
     } else if(!sec.exists){
-      await shopRef.collection('settings').doc('public').set({shopName:'ส้มตำนายหนึ่ง',promptpay:'1319900156353',accountName:'นายการันย์ ยามดี'},{merge:true});
+      await shopRef.collection('settings').doc('public').set({shopName:'ส้มตำนายหนึ่ง',promptpay:'1319900156353',accountName:'นาย นราทร วงค์แก่นท้าว',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:window.KSHOP_QR_PAYLOAD||''},{merge:true});
       await shopRef.collection('settings').doc('secure').set({pinHash:await sha256('1234'),queueCounter:1},{merge:true});
     }
   },
@@ -800,9 +803,9 @@ const M={
     });
   },
   togglePayTypeUI(){
-    const t=document.getElementById('setPayType')?.value||'promptpay';
+    const t=document.getElementById('setPayType')?.value||'kshop';
     document.getElementById('payPromptpayBox')?.classList.toggle('hide', t!=='promptpay');
-    document.getElementById('payMerchantBox')?.classList.toggle('hide', t!=='merchant');
+    document.getElementById('payMerchantBox')?.classList.toggle('hide', t==='promptpay');
   },
   async loadSettingsUI(){
     const snap=await shopRef.collection('settings').doc('public').get();
@@ -810,9 +813,10 @@ const M={
     document.getElementById('setName').value=d.shopName||'';
     document.getElementById('setAccount').value=d.accountName||'';
     document.getElementById('setPP').value=d.promptpay||'1319900156353';
-    const payType=d.payType||'promptpay';
+    const payType=d.payType||'kshop';
     const pt=document.getElementById('setPayType'); if(pt) pt.value=payType;
-    const mid=document.getElementById('setMerchantId'); if(mid) mid.value=d.merchantId||'';
+    const mid=document.getElementById('setMerchantId'); if(mid) mid.value=d.merchantId||'EMPKB000002198793001';
+    const kp=document.getElementById('setKshopPayload'); if(kp) kp.value=d.kshopPayload||'';
     this.togglePayTypeUI();
     const cu=new URL('index.html', location.href).href;
     document.getElementById('qrUrl').textContent=cu;
@@ -831,15 +835,18 @@ const M={
   async saveSettings(){
     const name=document.getElementById('setName').value.trim();
     const accountName=document.getElementById('setAccount').value.trim();
-    const payType=document.getElementById('setPayType')?.value||'promptpay';
+    const payType=document.getElementById('setPayType')?.value||'kshop';
     const pp=(document.getElementById('setPP')?.value||'').replace(/\D/g,'');
     const merchantId=(document.getElementById('setMerchantId')?.value||'').trim();
+    const kshopPayload=(document.getElementById('setKshopPayload')?.value||'').trim();
     if(!name){toast('ใส่ชื่อร้าน');return}
     if(payType==='promptpay' && pp && pp.length!==10 && pp.length!==13){toast('PromptPay ต้อง 10 หรือ 13 หลัก');return}
-    if(payType==='merchant' && !merchantId){toast('ใส่รหัสร้าน K Shop / Merchant ID');return}
+    if((payType==='merchant'||payType==='kshop') && !merchantId && !kshopPayload){toast('ใส่เลขอ้างอิง K Shop');return}
     const data={shopName:name, accountName, payType};
     if(pp) data.promptpay=pp;
     if(merchantId) data.merchantId=merchantId;
+    if(kshopPayload) data.kshopPayload=kshopPayload;
+    else if(payType==='kshop') data.kshopPayload=window.KSHOP_QR_PAYLOAD||'';
     await shopRef.collection('settings').doc('public').set(data,{merge:true});
     await shopRef.collection('settings').doc('config').set(data,{merge:true});
     toast('บันทึกแล้ว'); this.loadSettingsUI();

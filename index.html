@@ -182,6 +182,48 @@ const PP={
     if(Number(amount)>0) p+=this.tlv('54', Number(amount).toFixed(2));
     p+=this.tlv('58','TH')+'6304';
     return p+this.crc(p);
+  },/* ใส่ยอดเงินลง Thai QR payload เดิม (จาก K Shop) แล้วคำนวณ CRC ใหม่ */
+  parseTlv(s){
+    const out=[]; let i=0;
+    while(i+4<=s.length){
+      const tag=s.substr(i,2); const ln=parseInt(s.substr(i+2,2),10); i+=4;
+      if(isNaN(ln)||i+ln>s.length) break;
+      const val=s.substr(i,ln); i+=ln; out.push([tag,val]);
+      if(tag==='63') break;
+    }
+    return out;
+  },
+  applyAmount(staticPayload, amount){
+    if(!staticPayload) return null;
+    let parts=this.parseTlv(String(staticPayload).trim());
+    if(!parts.length) return null;
+    parts=parts.filter(([t])=>t!=='63');
+    const amt=Number(amount);
+    const hasAmt=amt>0;
+    let has54=false;
+    const next=[];
+    for(const [t,v] of parts){
+      if(t==='01'){ next.push(['01', hasAmt?'12':'11']); }
+      else if(t==='54'){ has54=true; if(hasAmt) next.push(['54', amt.toFixed(2)]); }
+      else next.push([t,v]);
+    }
+    let final=next;
+    if(hasAmt && !has54){
+      final=[];
+      for(const [t,v] of next){
+        if(t==='58') final.push(['54', amt.toFixed(2)]);
+        final.push([t,v]);
+      }
+    }
+    let body='';
+    for(const [t,v] of final) body+=this.tlv(t,v);
+    body+='6304';
+    return body+this.crc(body);
+  },
+  genKShop(amount, payload){
+    const p=payload||window.KSHOP_QR_PAYLOAD||'';
+    if(p) return this.applyAmount(p, amount);
+    return null;
   }
 };
 
@@ -221,7 +263,10 @@ async function migrateAndSeed(){
       await shopRef.collection('settings').doc('public').set({
         shopName:d.shopName||'ส้มตำนายหนึ่ง',
         promptpay:d.promptpay||'1319900156353',
-        accountName:d.accountName||'นายการันย์ ยามดี'
+        accountName:d.accountName||'นาย นราทร วงค์แก่นท้าว',
+        payType:d.payType||'kshop',
+        merchantId:d.merchantId||'EMPKB000002198793001',
+        kshopPayload:d.kshopPayload||window.KSHOP_QR_PAYLOAD||''
       },{merge:true});
     }
     if(!sec.exists){
@@ -232,7 +277,7 @@ async function migrateAndSeed(){
     }
     if(d.pin){const c=Object.assign({},d);delete c.pin;c.pinMigrated=true;await shopRef.collection('settings').doc('config').set(c)}
   }else if(!pub.exists){
-    await shopRef.collection('settings').doc('public').set({shopName:'ส้มตำนายหนึ่ง',promptpay:'1319900156353',accountName:'นายการันย์ ยามดี'});
+    await shopRef.collection('settings').doc('public').set({shopName:'ส้มตำนายหนึ่ง',promptpay:'1319900156353',accountName:'นาย นราทร วงค์แก่นท้าว',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:window.KSHOP_QR_PAYLOAD||''});
     await shopRef.collection('settings').doc('secure').set({pinHash:await sha256('1234'),queueCounter:1});
   }
   // ensure promptpay default for ถุงเงิน / บัตรประชาชน 13 หลัก จากร้าน
@@ -256,7 +301,7 @@ async function migrateAndSeed(){
 }
 
 const C={
-  shopName:'ร้าน',promptpay:'',accountName:'',payType:'promptpay',merchantId:'',optionConfig:{spiceMode:'single',toppingMode:'multi',toppingAllowQty:true},cats:[],menus:[],spice:[],tops:[],
+  shopName:'ร้าน',promptpay:'',accountName:'',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:'',optionConfig:{spiceMode:'single',toppingMode:'multi',toppingAllowQty:true},cats:[],menus:[],spice:[],tops:[],
   cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'CASH',slipData:'',lastOrder:null,
 
   async init(){
@@ -273,8 +318,9 @@ const C={
         this.shopName=d.shopName||'ส้มตำนายหนึ่ง';
         this.promptpay=d.promptpay||'1319900156353';
         this.accountName=d.accountName||'';
-        this.payType=d.payType||'promptpay';
-        this.merchantId=d.merchantId||'';
+        this.payType=d.payType||'kshop';
+        this.merchantId=d.merchantId||'EMPKB000002198793001';
+        this.kshopPayload=d.kshopPayload||window.KSHOP_QR_PAYLOAD||'';
         if(d.optionConfig) this.optionConfig=Object.assign({spiceMode:'single',toppingMode:'multi',toppingAllowQty:true}, d.optionConfig);
         document.getElementById('shopName').textContent=this.shopName;
         document.title=this.shopName+' | สั่งอาหาร';
@@ -463,9 +509,10 @@ const C={
       z.style.display='block';
       const total=this.cart.reduce((s,i)=>s+i.total,0);
       let payload=null, label='';
-      if(this.payType==='merchant'){
-        payload=PP.genMerchant(this.merchantId, total);
-        label='Thai QR ร้านค้า: '+(this.merchantId||'-');
+      const kshopPayload=this.kshopPayload||window.KSHOP_QR_PAYLOAD||'';
+      if(this.payType==='kshop' || this.payType==='merchant'){
+        payload=PP.genKShop(total, kshopPayload) || PP.genMerchant(this.merchantId||'EMPKB000002198793001', total);
+        label='Thai QR (K Shop): '+(this.merchantId||'EMPKB000002198793001');
       } else {
         payload=PP.gen(this.promptpay, total);
         label='พร้อมเพย์: '+(this.promptpay||'-');
