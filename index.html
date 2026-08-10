@@ -90,6 +90,9 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
   <div class="opt" id="topBox"><div class="ot">ท็อปปิ้ง (เลือกได้หลายอย่าง · กำหนดจำนวนได้)</div><div id="topList"></div></div>
   <div class="ot">จำนวนเมนูหลัก</div>
   <div class="qty"><button class="qb" onclick="C.qty(-1)">−</button><span id="pQty" style="font-weight:700;font-size:1.2rem">1</span><button class="qb" onclick="C.qty(1)">+</button></div>
+  <div class="opt"><div class="ot">หมายเหตุ (ถ้ามี)</div>
+    <textarea id="pNote" rows="2" placeholder="เช่น ไม่ใส่ถั่ว, เผ็ดแยก, ขอช้อนส้อม..." style="resize:vertical"></textarea>
+  </div>
   <button class="btn btn-p" onclick="C.addCart()">เพิ่มลงตะกร้า • <span id="pTotal">฿0</span></button>
 </div></div>
 
@@ -116,6 +119,7 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
   <div id="ppZone" style="display:none;text-align:center;margin-bottom:12px">
     <p style="font-size:13px;margin-bottom:6px">สแกนด้วยแอปธนาคาร / ถุงเงิน / วอลเล็ต</p>
     <div id="ppQR" style="display:flex;justify-content:center;margin-bottom:8px"></div>
+    <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0 auto 8px;display:inline-flex" onclick="C.savePayQR()">💾 บันทึกรูป QR ไปจ่ายในแอปธนาคาร</button>
     <div id="ppNum" style="font-weight:600"></div>
     <div id="ppName" style="font-size:13px;color:#555;margin-top:4px"></div>
     <p style="color:var(--d);font-size:13px;margin-top:8px">โอนตามยอดแล้วอัปโหลดสลิปด้านล่าง</p>
@@ -277,8 +281,8 @@ const C={
       });
       shopRef.collection('categories').onSnapshot(s=>{this.cats=s.docs.map(d=>({id:d.id,...d.data()}));this.renderCats()});
       shopRef.collection('menus').onSnapshot(s=>{this.menus=s.docs.map(d=>({id:d.id,...d.data()}));this.renderMenus()});
-      shopRef.collection('spiceLevels').onSnapshot(s=>{this.spice=s.docs.map(d=>({id:d.id,...d.data()}))});
-      shopRef.collection('toppings').onSnapshot(s=>{this.tops=s.docs.map(d=>({id:d.id,...d.data()}))});
+      shopRef.collection('spiceLevels').onSnapshot(s=>{this.spice=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0))});
+      shopRef.collection('toppings').onSnapshot(s=>{this.tops=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0))});
       const u=new URL(location.href); const q=u.searchParams.get('queue');
       if(q){document.getElementById('trackQ').value=q;this.trackQueue()}
     }catch(e){console.error(e);showErr('เริ่มระบบไม่สำเร็จ: '+(e.message||e));document.getElementById('conn').textContent='ผิดพลาด'}
@@ -296,7 +300,7 @@ const C={
   setCat(id){this.cat=id;this.renderCats();this.renderMenus()},
   menuImg(m){return m.imageData||m.imageUrl||''},
   renderMenus(){
-    let list=this.menus.filter(m=>m.isActive!==false&&(this.cat==='all'||m.catId===this.cat));
+    let list=this.menus.filter(m=>m.isActive!==false&&(this.cat==='all'||m.catId===this.cat)).sort((a,b)=>(a.order||0)-(b.order||0));
     if(this.q)list=list.filter(m=>(m.name||'').toLowerCase().includes(this.q));
     const el=document.getElementById('menus');
     if(!list.length){el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#999">ไม่พบเมนู</div>';return}
@@ -311,7 +315,8 @@ const C={
   openProduct(id){
     const m=this.menus.find(x=>x.id===id); if(!m||m.isOut)return;
     // tops: {id: qty}
-    this.modal={menu:m,qty:1,spice:this.spice.filter(s=>s.isActive!==false)[0]?.id||null,topQty:{}};
+    this.modal={menu:m,qty:1,spice:this.spice.filter(s=>s.isActive!==false)[0]?.id||null,topQty:{},note:''};
+    const pn=document.getElementById('pNote'); if(pn) pn.value='';
     document.getElementById('pTitle').textContent=m.name;
     const src=this.menuImg(m); const imgBox=document.getElementById('pImg');
     if(src){imgBox.style.display='flex';imgBox.innerHTML=`<img src="${esc(src)}" style="width:100%;height:100%;object-fit:cover">`}
@@ -414,9 +419,10 @@ const C={
       if(t&&q>0) toppings.push({id:t.id,name:t.name,price:Number(t.price),qty:Number(q),total:Number(t.price)*Number(q)});
     });
     const unit=this.calcUnit();
+    const note=(document.getElementById('pNote')?.value||'').trim();
     this.cart.push({
       name:p.menu.name, qty:p.qty, spiceName,
-      toppings, unitPrice:unit, total:unit*p.qty
+      toppings, note, unitPrice:unit, total:unit*p.qty
     });
     this.hide('mProduct'); this.updFab(); toast('เพิ่มลงตะกร้าแล้ว');
   },
@@ -431,7 +437,7 @@ const C={
     if(!this.cart.length) el.innerHTML='<div style="text-align:center;color:#999;padding:20px">ตะกร้าว่าง</div>';
     else el.innerHTML=this.cart.map((i,idx)=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty} (${money(t.total)})`).join(', ');
-      const meta=[i.spiceName, tops].filter(Boolean).join(' · ');
+      const meta=[i.spiceName, tops, i.note?('หมายเหตุ: '+i.note):''].filter(Boolean).join(' · ');
       return `<div class="ci"><div><div style="font-weight:600">${esc(i.name)} × ${i.qty}</div>
         ${meta?`<div style="font-size:13px;color:#777">${meta}</div>`:''}
         <button style="color:var(--d);font-size:13px;margin-top:4px" onclick="C.rmCart(${idx})">ลบ</button></div>
@@ -471,6 +477,20 @@ const C={
       else qr.innerHTML='<p style="color:var(--d)">'+(this.payType==='merchant'?'ตั้งค่ารหัสร้าน K Shop ไม่ถูกต้อง':'ตั้งค่า PromptPay ไม่ถูกต้อง (ต้อง 10 หรือ 13 หลัก)')+'</p>';
     } else z.style.display='none';
   },
+  savePayQR(){
+    const box=document.getElementById('ppQR');
+    const canvas=box.querySelector('canvas');
+    const img=box.querySelector('img');
+    let dataUrl='';
+    if(canvas) dataUrl=canvas.toDataURL('image/png');
+    else if(img) dataUrl=img.src;
+    if(!dataUrl){ toast('ยังไม่มี QR'); return; }
+    const a=document.createElement('a');
+    a.href=dataUrl;
+    a.download='promptpay-qr-'+Date.now()+'.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('บันทึกรูป QR แล้ว — เปิดแอปธนาคารแล้วเลือกสแกนจากรูปภาพ');
+  },
   async confirmOrder(){
     const btn=document.getElementById('btnOrder');
     btn.disabled=true; btn.textContent='กำลังส่ง…';
@@ -490,7 +510,7 @@ const C={
       const items=this.cart.map(i=>({
         name:i.name,qty:i.qty,spiceName:i.spiceName,
         toppings:(i.toppings||[]).map(t=>({name:t.name,price:t.price,qty:t.qty,total:t.total})),
-        unitPrice:i.unitPrice,total:i.total
+        note:i.note||'', unitPrice:i.unitPrice,total:i.total
       }));
       const total=items.reduce((s,i)=>s+i.total,0);
       const secRef=shopRef.collection('settings').doc('secure');
@@ -588,7 +608,8 @@ const C={
     const paid=o.paymentStatus==='PAID';
     const lines=(o.items||[]).map(i=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty}`).join(', ');
-      return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span>${esc(i.name)} × ${i.qty}${tops?`<div style="font-size:12px;color:#777">${tops}</div>`:''}</span><span>${money(i.total)}</span></div>`;
+      const note=i.note?`<div style="font-size:12px;color:#E65100">📝 ${esc(i.note)}</div>`:'';
+      return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span>${esc(i.name)} × ${i.qty}${tops?`<div style="font-size:12px;color:#777">${tops}</div>`:''}${note}</span><span>${money(i.total)}</span></div>`;
     }).join('');
     document.getElementById('ticketBody').innerHTML=`
       <h2 style="color:${paid?'var(--g)':'var(--p)'};margin-bottom:8px">${paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> ส่งออเดอร์แล้ว'}</h2>

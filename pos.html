@@ -328,13 +328,71 @@ const M={
   filter(f,el){this.filterKey=f;document.querySelectorAll('.fc').forEach(x=>x.classList.remove('on'));el.classList.add('on');this.renderOrders()},
   listenOrders(){
     if(this.unsub) this.unsub();
+    this.unviewed=this.unviewed||new Set();
     this.unsub=shopRef.collection('orders').limit(150).onSnapshot(snap=>{
       this.orders=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-      const active=this.orders.filter(o=>o.status!=='Completed').length;
-      if(this.ready){ if(active>this.lastActive){ this.beep(); toast('🔔 ออเดอร์ใหม่'); } }
-      else this.ready=true;
+      const activeOrders=this.orders.filter(o=>o.status!=='Completed');
+      const active=activeOrders.length;
+      if(this.ready){
+        // หาออเดอร์ใหม่ที่ยังไม่เคยเห็น
+        activeOrders.forEach(o=>{
+          if(o.status==='Pending' && !this.seenIds.has(o.id)){
+            this.unviewed.add(o.id);
+          }
+        });
+        if(this.unviewed.size>0){
+          this.startAlarm();
+          toast('🔔 มีออเดอร์ใหม่ '+this.unviewed.size+' รายการ');
+        }
+      } else {
+        // snapshot แรก: ถือว่าเห็นแล้วทั้งหมด (ไม่ปลุกตอนเปิดหน้า)
+        this.seenIds=new Set(this.orders.map(o=>o.id));
+        this.unviewed=new Set();
+        this.ready=true;
+      }
       this.lastActive=active; this.renderOrders();
+      this.updateAlarmBadge();
     }, err=>toast('ฟังออเดอร์ไม่สำเร็จ: '+err.message));
+  },
+  seenIds:new Set(),
+  unviewed:new Set(),
+  alarmTimer:null,
+  startAlarm(){
+    if(this.alarmTimer) return;
+    this.beep();
+    this.alarmTimer=setInterval(()=>{
+      if(this.unviewed.size===0){ this.stopAlarm(); return; }
+      this.beep();
+    }, 2500);
+  },
+  stopAlarm(){
+    if(this.alarmTimer){ clearInterval(this.alarmTimer); this.alarmTimer=null; }
+  },
+  markOrderViewed(id){
+    if(!id) return;
+    this.unviewed.delete(id);
+    this.seenIds.add(id);
+    if(this.unviewed.size===0) this.stopAlarm();
+    this.updateAlarmBadge();
+  },
+  updateAlarmBadge(){
+    const n=this.unviewed?this.unviewed.size:0;
+    const badge=document.getElementById('orderBadge');
+    // badge แสดง active อยู่แล้ว — เพิ่มแถบเตือนถ้ายังไม่ดู
+    let bar=document.getElementById('alarmBar');
+    if(!bar){
+      bar=document.createElement('div');
+      bar.id='alarmBar';
+      bar.style.cssText='display:none;background:#C62828;color:#fff;text-align:center;padding:8px;font-weight:600;font-size:14px';
+      const wrap=document.getElementById('panelOrders');
+      if(wrap) wrap.insertBefore(bar, wrap.firstChild);
+    }
+    if(n>0){
+      bar.style.display='block';
+      bar.innerHTML='🔔 มีออเดอร์ใหม่ '+n+' รายการ ที่ยังไม่ได้เปิดดู — กดการ์ดออเดอร์เพื่อหยุดเสียง';
+    } else {
+      bar.style.display='none';
+    }
   },
   renderOrders(){
     const today=new Date(); today.setHours(0,0,0,0); const t0=today.getTime();
@@ -357,7 +415,8 @@ const M={
       let prev=(o.items||[]).map(i=>i.name+' x'+i.qty).join(', '); if(prev.length>40) prev=prev.slice(0,40)+'…';
       const pay=o.paymentStatus==='PAID'?'<span style="background:#E8F5E9;color:#2E7D32;padding:2px 8px;border-radius:4px;font-size:12px">ชำระแล้ว</span>':'<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px">ยังไม่ชำระ</span>';
       const slip=o.slipStatus==='PENDING_REVIEW'?' <span style="background:#FFF3E0;color:#E65100;padding:2px 6px;border-radius:4px;font-size:11px">สลิป</span>':'';
-      return `<div class="oc ${esc(o.status||'')}" onclick="M.openDetail('${esc(o.id)}')">
+      const isNew=this.unviewed&&this.unviewed.has(o.id);
+      return `<div class="oc ${esc(o.status||'')}" style="${isNew?'box-shadow:0 0 0 3px #F44336;':''}" onclick="M.openDetail('${esc(o.id)}')">
         <div style="display:flex;justify-content:space-between"><div class="q">${esc(o.queue)}</div>
         <div style="color:#888;font-size:13px">${o.createdAt?new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}</div></div>
         <div style="margin:8px 0;color:#444">${esc(prev)}</div>
@@ -365,13 +424,15 @@ const M={
     }).join('');
   },
   openDetail(id){
+    this.markOrderViewed(id);
     const o=this.orders.find(x=>x.id===id); if(!o) return;
     const items=(o.items||[]).map(i=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty} (${money(t.total||t.price*t.qty)})`).join(', ');
       const spice=i.spiceName?esc(i.spiceName):'';
+      const note=i.note?`<div style="font-size:12px;color:#E65100;margin-top:2px">📝 ${esc(i.note)}</div>`:'';
       const meta=[spice,tops].filter(Boolean).join(' · ');
       return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #eee">
-        <div><strong>${esc(i.name)} × ${i.qty}</strong>${meta?`<div style="font-size:12px;color:#777">${meta}</div>`:''}</div>
+        <div><strong>${esc(i.name)} × ${i.qty}</strong>${meta?`<div style="font-size:12px;color:#777">${meta}</div>`:''}${note}</div>
         <div>${money(i.total)}</div></div>`;
     }).join('');
     const slipBlock=o.slipData?`<div style="margin:12px 0;text-align:center">
@@ -539,18 +600,22 @@ const M={
         toast('พร้อมบันทึกรูป');
       }catch(err){ toast(err.message); }
     };
-    document.getElementById('menuAdmin').innerHTML=this.menus.filter(m=>m.isActive!==false).map(m=>{
+    const menus=this.menus.filter(m=>m.isActive!==false).sort((a,b)=>(a.order||0)-(b.order||0));
+    document.getElementById('menuAdmin').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กดค้าง ⋮⋮ แล้วลากเพื่อจัดลำดับ</p>`+(menus.map(m=>{
       const src=m.imageData||m.imageUrl||'';
-      return `<div class="list-item">
+      return `<div class="list-item" draggable="true" data-id="${esc(m.id)}" data-col="menus" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropGeneric(event,'menus')" ondragend="M.dragEnd(event)">
+        <span style="cursor:grab;color:#999">⋮⋮</span>
         ${src?`<img class="thumb" src="${esc(src)}">`:'<div class="thumb"></div>'}
         <div style="flex:1"><strong>${esc(m.name)}</strong> ${m.isOut?'<span style="color:var(--d)">หมด</span>':''}
-          <div style="font-size:12px;color:#777">${money(m.price)}</div></div>
+          <div style="font-size:12px;color:#777">${money(m.price)} · #${m.order||0}</div></div>
         <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="btn btn-o btn-sm" onclick="M.moveGeneric('menus','${esc(m.id)}',-1)">↑</button>
+          <button class="btn btn-o btn-sm" onclick="M.moveGeneric('menus','${esc(m.id)}',1)">↓</button>
           <button class="btn btn-o btn-sm" onclick="M.editMenu('${esc(m.id)}')">แก้</button>
           <button class="btn btn-o btn-sm" onclick="M.toggleOut('${esc(m.id)}',${!m.isOut})">${m.isOut?'มีของ':'หมด'}</button>
           <button class="btn btn-d btn-sm" onclick="M.deleteMenu('${esc(m.id)}')">ปิด</button>
         </div></div>`;
-    }).join('')||'<div style="color:#888">ยังไม่มีเมนู</div>';
+    }).join('')||'<div style="color:#888">ยังไม่มีเมนู</div>');
   },
   editMenu(id){
     const m=this.menus.find(x=>x.id===id); if(!m) return;
@@ -581,7 +646,8 @@ const M={
     if(isNaN(price)||price<0){toast('ราคาไม่ถูกต้อง');return}
     if(!catId){toast('เลือกหมวด');return}
     const prev=this.menus.find(x=>x.id===id);
-    const data={id,name,price,catId,imageUrl,isActive:true,isOut:prev?!!prev.isOut:false};
+    const maxOrder=this.menus.reduce((m,x)=>Math.max(m,Number(x.order)||0),0);
+    const data={id,name,price,catId,imageUrl,isActive:true,isOut:prev?!!prev.isOut:false, order: prev&&prev.order!=null?prev.order:maxOrder+1};
     if(this.pendingImageData) data.imageData=this.pendingImageData;
     await shopRef.collection('menus').doc(id).set(data,{merge:true});
     toast('บันทึกเมนูแล้ว'); this.resetMenuForm(); this.loadCatalogMenus();
@@ -666,12 +732,17 @@ const M={
         <button class="btn btn-p" onclick="M.saveTop()">บันทึก</button>
         <button class="btn btn-o" onclick="document.getElementById('topId').value='';document.getElementById('topName').value=''">ล้าง</button>
       </div>`;
-    document.getElementById('catalogListTop').innerHTML=this.tops.map(t=>`
-      <div class="list-item"><div><strong>${esc(t.name)}</strong> <span style="color:var(--p)">${money(t.price)}</span> ${t.isActive===false?'<span style="color:var(--d)">ปิด</span>':''}</div>
-      <div style="display:flex;gap:4px">
-        <button class="btn btn-o btn-sm" onclick="M.editTop('${esc(t.id)}')">แก้</button>
-        <button class="btn btn-d btn-sm" onclick="M.deleteTop('${esc(t.id)}')">ปิด</button>
-      </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>';
+    const tops=[...this.tops].sort((a,b)=>(a.order||0)-(b.order||0));
+    document.getElementById('catalogListTop').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กดค้าง ⋮⋮ แล้วลากเพื่อจัดลำดับ</p>`+(tops.map(t=>`
+      <div class="list-item" draggable="true" data-id="${esc(t.id)}" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropGeneric(event,'toppings')" ondragend="M.dragEnd(event)">
+        <span style="cursor:grab;color:#999">⋮⋮</span>
+        <div style="flex:1"><strong>${esc(t.name)}</strong> <span style="color:var(--p)">${money(t.price)}</span> ${t.isActive===false?'<span style="color:var(--d)">ปิด</span>':''}</div>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-o btn-sm" onclick="M.moveGeneric('toppings','${esc(t.id)}',-1)">↑</button>
+          <button class="btn btn-o btn-sm" onclick="M.moveGeneric('toppings','${esc(t.id)}',1)">↓</button>
+          <button class="btn btn-o btn-sm" onclick="M.editTop('${esc(t.id)}')">แก้</button>
+          <button class="btn btn-d btn-sm" onclick="M.deleteTop('${esc(t.id)}')">ปิด</button>
+        </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
   },
   editTop(id){ const t=this.tops.find(x=>x.id===id); if(!t)return; document.getElementById('topId').value=t.id; document.getElementById('topName').value=t.name; document.getElementById('topPrice').value=t.price; },
   async saveTop(){
@@ -679,7 +750,8 @@ const M={
     const name=document.getElementById('topName').value.trim();
     const price=Number(document.getElementById('topPrice').value);
     if(!name){toast('ใส่ชื่อ');return} if(isNaN(price)||price<0){toast('ราคาไม่ถูกต้อง');return}
-    await shopRef.collection('toppings').doc(id).set({id,name,price,isActive:true},{merge:true});
+    const prevT=this.tops.find(x=>x.id===id); const maxT=this.tops.reduce((m,x)=>Math.max(m,Number(x.order)||0),0);
+    await shopRef.collection('toppings').doc(id).set({id,name,price,isActive:true,order:prevT&&prevT.order!=null?prevT.order:maxT+1},{merge:true});
     toast('บันทึกท็อปปิ้งแล้ว'); this.renderTopAdmin();
   },
   async deleteTop(id){ if(!confirm('ปิดท็อปปิ้งนี้?'))return; await shopRef.collection('toppings').doc(id).update({isActive:false}); toast('ปิดแล้ว'); this.renderTopAdmin(); },
@@ -695,19 +767,25 @@ const M={
         <button class="btn btn-p" onclick="M.saveSpice()">บันทึก</button>
         <button class="btn btn-o" onclick="document.getElementById('spiceId').value='';document.getElementById('spiceName').value=''">ล้าง</button>
       </div>`;
-    document.getElementById('catalogListSpice').innerHTML=this.spice.map(s=>`
-      <div class="list-item"><div><strong>${esc(s.name)}</strong> ${s.isActive===false?'<span style="color:var(--d)">ปิด</span>':''}</div>
-      <div style="display:flex;gap:4px">
-        <button class="btn btn-o btn-sm" onclick="M.editSpice('${esc(s.id)}')">แก้</button>
-        <button class="btn btn-d btn-sm" onclick="M.deleteSpice('${esc(s.id)}')">ปิด</button>
-      </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>';
+    const spices=[...this.spice].sort((a,b)=>(a.order||0)-(b.order||0));
+    document.getElementById('catalogListSpice').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กดค้าง ⋮⋮ แล้วลากเพื่อจัดลำดับ</p>`+(spices.map(s=>`
+      <div class="list-item" draggable="true" data-id="${esc(s.id)}" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropGeneric(event,'spiceLevels')" ondragend="M.dragEnd(event)">
+        <span style="cursor:grab;color:#999">⋮⋮</span>
+        <div style="flex:1"><strong>${esc(s.name)}</strong> ${s.isActive===false?'<span style="color:var(--d)">ปิด</span>':''}</div>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-o btn-sm" onclick="M.moveGeneric('spiceLevels','${esc(s.id)}',-1)">↑</button>
+          <button class="btn btn-o btn-sm" onclick="M.moveGeneric('spiceLevels','${esc(s.id)}',1)">↓</button>
+          <button class="btn btn-o btn-sm" onclick="M.editSpice('${esc(s.id)}')">แก้</button>
+          <button class="btn btn-d btn-sm" onclick="M.deleteSpice('${esc(s.id)}')">ปิด</button>
+        </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
   },
   editSpice(id){ const s=this.spice.find(x=>x.id===id); if(!s)return; document.getElementById('spiceId').value=s.id; document.getElementById('spiceName').value=s.name; },
   async saveSpice(){
     const id=document.getElementById('spiceId').value||('s_'+uid());
     const name=document.getElementById('spiceName').value.trim();
     if(!name){toast('ใส่ชื่อ');return}
-    await shopRef.collection('spiceLevels').doc(id).set({id,name,isActive:true},{merge:true});
+    const prevS=this.spice.find(x=>x.id===id); const maxS=this.spice.reduce((m,x)=>Math.max(m,Number(x.order)||0),0);
+    await shopRef.collection('spiceLevels').doc(id).set({id,name,isActive:true,order:prevS&&prevS.order!=null?prevS.order:maxS+1},{merge:true});
     toast('บันทึกแล้ว'); this.renderSpiceAdmin();
   },
   async deleteSpice(id){ if(!confirm('ปิดรายการนี้?'))return; await shopRef.collection('spiceLevels').doc(id).update({isActive:false}); toast('ปิดแล้ว'); this.renderSpiceAdmin(); },
