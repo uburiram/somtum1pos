@@ -317,18 +317,18 @@ const C={
     if(!checkConfig()){ setConn('ยังไม่ตั้งค่า'); return; }
     setConn('กำลังเชื่อมต่อ…');
     try{
+      if(typeof firebase==='undefined'){
+        setConn('โหลด Firebase ไม่สำเร็จ');
+        showErr('โหลดไลบรารี Firebase ไม่ได้ — ตรวจเน็ตแล้วรีเฟรช');
+        return;
+      }
       // กัน initialize ซ้ำ (PWA / เปิดซ้ำ)
       if(!firebase.apps || !firebase.apps.length){
         firebase.initializeApp(window.FIREBASE_CONFIG);
       }
       db=firebase.firestore();
-      // enablePersistence บางเครื่องค้างไม่จบ → ใช้ timeout 2 วินาที แล้วไปต่อ
-      try{
-        await Promise.race([
-          db.enablePersistence({synchronizeTabs:true}).catch(function(){}),
-          new Promise(function(resolve){ setTimeout(resolve, 2000); })
-        ]);
-      }catch(e){}
+      // อย่า await persistence — บนมือถือมักค้าง ทำให้หน้าค้างที่กำลังเชื่อมต่อ
+      try{ db.enablePersistence({synchronizeTabs:true}).catch(function(){}); }catch(e){}
       shopRef=db.collection('shops').doc(window.SHOP_ID||'main');
       setConn('เชื่อมต่อแล้ว');
       // seed ไม่ควรบล็อกการแสดงผลนาน
@@ -345,11 +345,34 @@ const C={
         document.getElementById('shopName').textContent=this.shopName;
         document.title=this.shopName+' | สั่งอาหาร';
       });
-      shopRef.collection('categories').onSnapshot(s=>{this.cats=s.docs.map(d=>({id:d.id,...d.data()}));this.renderCats()});
-      shopRef.collection('menus').onSnapshot(s=>{this.menus=s.docs.map(d=>({id:d.id,...d.data()}));this.renderMenus()});
+      const bindCol=(name, assign)=>{
+        shopRef.collection(name).onSnapshot(s=>{
+          assign(s.docs.map(d=>({id:d.id,...d.data()})));
+        }, err=>{
+          console.error(name, err);
+          showErr('โหลด '+name+' ไม่สำเร็จ: '+(err.message||err));
+        });
+      };
+      bindCol('categories', list=>{ this.cats=list; this.renderCats(); });
+      bindCol('menus', list=>{ this.menus=list; this.renderMenus(); });
       this.loadBestSellers();
-      shopRef.collection('spiceLevels').onSnapshot(s=>{this.spice=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0))});
-      shopRef.collection('toppings').onSnapshot(s=>{this.tops=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0))});
+      bindCol('spiceLevels', list=>{ this.spice=list.slice().sort((a,b)=>(a.order||0)-(b.order||0)); });
+      bindCol('toppings', list=>{ this.tops=list.slice().sort((a,b)=>(a.order||0)-(b.order||0)); });
+      // ถ้า 4 วินาทียังไม่มีเมนู ลอง get ตรง ๆ ครั้งเดียว
+      setTimeout(async()=>{
+        try{
+          if((this.menus||[]).length) return;
+          const ms=await shopRef.collection('menus').get();
+          this.menus=ms.docs.map(d=>({id:d.id,...d.data()}));
+          const cs=await shopRef.collection('categories').get();
+          this.cats=cs.docs.map(d=>({id:d.id,...d.data()}));
+          this.renderCats(); this.renderMenus();
+          if(!this.menus.length){
+            const el=document.getElementById('menus');
+            if(el) el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#999">ยังไม่มีเมนู — ร้านเข้า POS เพื่อเพิ่มเมนู หรือรีเฟรชหน้านี้</div>';
+          }
+        }catch(e){ console.warn('fallback get', e); }
+      }, 4000);
       const u=new URL(location.href); const q=u.searchParams.get('queue');
       if(q){document.getElementById('trackQ').value=q;this.trackQueue()}
     }catch(e){console.error(e);try{showErr('เริ่มระบบไม่สำเร็จ: '+(e.message||e));}catch(x){} try{document.getElementById('conn').textContent='ผิดพลาด';}catch(x){}}
@@ -1013,7 +1036,7 @@ const C={
       <div class="huge">${esc(o.queue)}</div>
       <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
       <div class="receipt" id="receiptBox">
-        <h3>${esc(this.shopName)}</h3><div style="text-align:center;font-size:13px;font-weight:600;color:${paid?'var(--g)':'var(--p)'}">${paid?'ใบเสร็จรับเงิน':'ใบสั่งอาหาร (ยังไม่ชำระ)')}</div>
+        <h3>${esc(this.shopName)}</h3><div style="text-align:center;font-size:13px;font-weight:600;color:${paid?'var(--g)':'var(--p)'}">${paid?'ใบเสร็จรับเงิน':'ใบสั่งอาหาร (ยังไม่ชำระ)'}</div>
         <div style="text-align:center;font-size:13px;color:#666;margin-bottom:8px">${new Date(o.createdAt||Date.now()).toLocaleString('th-TH')}</div>
         ${lines}
         <div style="border-top:1px dashed #ccc;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700">
