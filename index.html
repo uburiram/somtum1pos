@@ -142,7 +142,7 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
     <div id="ppNum" style="font-weight:600"></div>
     <div id="ppName" style="font-size:13px;color:#555;margin-top:4px"></div>
     <p style="color:#1565C0;font-size:13px;margin-top:8px">โอนตามยอดให้ตรงเป๊ะ แล้วอัปโหลดสลิป (ถ้ามี) หรือรอร้านยืนยัน</p>
-    <input type="file" id="slipFile" accept="image/*" capture="environment" style="display:none" onchange="C.onSlipSelected(event)">
+    <input type="file" id="slipFile" accept="image/*" style="display:none" onchange="C.onSlipSelected(event)">
     <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:8px auto 0;display:inline-flex" onclick="document.getElementById('slipFile').click()">📎 แนบสลิปโอนเงิน</button>
     <div id="slipPreview" style="margin-top:8px"></div>
     <div id="slipAutoMsg" style="font-size:13px;margin-top:6px"></div>
@@ -756,10 +756,14 @@ const C={
   startPayWatch(id){
     if(this._payWatchTimer){ clearInterval(this._payWatchTimer); this._payWatchTimer=null; }
     if(!id) return;
+    this._payWatchId=id;
     let ticks=0;
     this._payWatchTimer=setInterval(async()=>{
       ticks++;
       if(ticks>180){ clearInterval(this._payWatchTimer); this._payWatchTimer=null; return; }
+      // ถ้าผู้ใช้กำลังดูคิวอื่นอยู่ อย่าเขียนทับ
+      if(this.orderId && this.orderId!==id) return;
+      if(this._payWatchId!==id) return;
       try{
         const snap=await shopRef.collection('orders').doc(id).get();
         if(!snap.exists) return;
@@ -774,6 +778,12 @@ const C={
         }
       }catch(e){}
     }, 4000);
+  },
+  stopOrderWatchers(){
+    if(this._payWatchTimer){ clearInterval(this._payWatchTimer); this._payWatchTimer=null; }
+    this._payWatchId=null;
+    if(this.unsub){ try{ this.unsub(); }catch(e){} this.unsub=null; }
+    if(this.trackUnsub){ try{ this.trackUnsub(); }catch(e){} this.trackUnsub=null; }
   },
   async confirmOrder(){
     // QR สร้างออเดอร์รอชำระแล้ว → แค่รอเงิน
@@ -857,11 +867,11 @@ const C={
     if(this.unsub) this.unsub();
     this.unsub=shopRef.collection('orders').doc(id).onSnapshot(snap=>{
       if(!snap.exists) return;
+      if(this.orderId && this.orderId!==snap.id) return;
       const o=snap.data(); if(!o) return;
       const prevPay=this.lastOrder && this.lastOrder.paymentStatus;
       this.lastOrder={id:snap.id,...o};
       this.renderTicket(this.lastOrder);
-      // เงินเข้าแล้ว → แจ้งลูกค้า
       if(prevPay!=='PAID' && o.paymentStatus==='PAID'){
         toast('ชำระเงินสำเร็จ · ออเดอร์เข้าครัวแล้ว');
         try{ C.writeReceipt({id:snap.id,...o}); }catch(e){}
@@ -1029,40 +1039,49 @@ const C={
   async trackQueue(){
     const q=document.getElementById('trackQ').value.trim().toUpperCase();
     if(!q){toast('ใส่เลขคิว');return}
+    // หยุด watcher อื่นก่อน เพื่อไม่ให้เด้งไปคิวอื่น
+    this.stopOrderWatchers();
     try{
       let docs=[];
       try{
         const snap=await shopRef.collection('orders').where('queue','==',q).get();
         docs=snap.docs.map(d=>({id:d.id,...d.data()}));
-      }catch(e){}
+      }catch(e){ console.warn(e); }
       if(!docs.length){
-        // ลองจาก local receipts
         try{
           const arr=JSON.parse(localStorage.getItem('receipts')||'[]');
           const local=arr.find(x=>String(x.queue).toUpperCase()===q);
           if(local){
-          // แสดงจาก cache ได้ แต่ต้องไม่บังคับว่าชำระแล้ว/เสร็จ — ดึง Firestore ถ้าออนไลน์
-          this.lastOrder={...local, paymentStatus: local.paymentStatus||'UNPAID', status: local.status||'Pending'};
-          this.renderTicket(this.lastOrder);
-          this.show('mTicket');
-          if(local.id||local.orderId){
-            const oid=local.id||local.orderId;
-            if(this.unsub) this.unsub();
-            this.unsub=shopRef.collection('orders').doc(oid).onSnapshot(s=>{
-              if(s.exists){ this.lastOrder={id:s.id,...s.data()}; this.renderTicket(this.lastOrder); }
-            });
+            const oid=local.id||local.orderId||null;
+            this.orderId=oid;
+            this.lastOrder={...local, id:oid, paymentStatus: local.paymentStatus||'UNPAID', status: local.status||'Pending'};
+            this.renderTicket(this.lastOrder);
+            this.show('mTicket');
+            if(oid){
+              this.trackUnsub=shopRef.collection('orders').doc(oid).onSnapshot(s=>{
+                if(!s.exists) return;
+                if(this.orderId!==s.id) return;
+                this.lastOrder={id:s.id,...s.data()};
+                this.renderTicket(this.lastOrder);
+              });
+            }
+            return;
           }
-          return;
-        }
         }catch(e){}
         toast('ไม่พบคิว '+q); return;
       }
+      // ถ้าคิวซ้ำหลายวัน เลือกอันล่าสุดของคิวนั้น — แล้วล็อก orderId นี้ไว้
       docs.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-      this.orderId=docs[0].id; this.lastOrder=docs[0];
-      this.renderTicket(docs[0]); this.show('mTicket');
-      if(this.unsub) this.unsub();
-      this.unsub=shopRef.collection('orders').doc(this.orderId).onSnapshot(s=>{
-        if(s.data()){ this.lastOrder={id:s.id,...s.data()}; this.renderTicket(this.lastOrder); }
+      const picked=docs[0];
+      this.orderId=picked.id;
+      this.lastOrder=picked;
+      this.renderTicket(picked);
+      this.show('mTicket');
+      this.trackUnsub=shopRef.collection('orders').doc(picked.id).onSnapshot(s=>{
+        if(!s.exists) return;
+        if(this.orderId!==s.id) return; // ห้ามสลับไปคิวอื่น
+        this.lastOrder={id:s.id,...s.data()};
+        this.renderTicket(this.lastOrder);
       });
     }catch(e){ toast('ค้นหาไม่สำเร็จ: '+(e.message||e)); }
   }

@@ -355,15 +355,20 @@ const M={
     if(!c.apiKey||String(c.apiKey).includes('PASTE')){document.getElementById('cfgBanner').classList.add('on');return}
     firebase.initializeApp(c);
     db=firebase.firestore();
-    this.auth=firebase.auth();
     try{await db.enablePersistence({synchronizeTabs:true})}catch(e){}
     shopRef=db.collection('shops').doc(window.SHOP_ID||'main');
-    // queue doc อนุญาตเขียนโดยไม่ต้อง login
     try{
       const q=await shopRef.collection('settings').doc('queue').get();
       if(!q.exists) await shopRef.collection('settings').doc('queue').set({queueCounter:1,queueDate:''},{merge:true});
     }catch(e){}
-    this.auth.onAuthStateChanged(async (user)=>{
+    const auth=this.getAuth();
+    this.auth=auth;
+    if(!auth){
+      document.getElementById('cfgBanner').classList.add('on');
+      document.getElementById('cfgBanner').textContent='⚠️ โหลด Firebase Auth ไม่ได้ — ตรวจเน็ต/รีเฟรชหน้า';
+      return;
+    }
+    auth.onAuthStateChanged(async (user)=>{
       if(user){
         this.staffUid=user.uid;
         await this.ensurePublicSeed();
@@ -403,15 +408,37 @@ const M={
       }
     }catch(e){ console.warn('seed public/menu', e); }
   },
+    getAuth(){
+    try{
+      if(typeof firebase==='undefined' || !firebase.auth){
+        return null;
+      }
+      return firebase.auth();
+    }catch(e){ return null; }
+  },
   async login(){
     const email=(document.getElementById('authEmail').value||'').trim();
     const pass=document.getElementById('authPass').value||'';
     if(!email||!pass){toast('ใส่อีเมลและรหัสผ่าน');return}
+    const auth=this.getAuth();
+    if(!auth){
+      toast('โหลด Firebase Auth ไม่สำเร็จ — รีเฟรชหน้าแล้วลองใหม่');
+      return;
+    }
     try{
-      await this.auth.signInWithEmailAndPassword(email, pass);
+      await auth.signInWithEmailAndPassword(email, pass);
       toast('เข้าสู่ระบบแล้ว');
     }catch(e){
-      toast('เข้าสู่ระบบไม่สำเร็จ: '+(e.message||e));
+      const code=e && e.code;
+      if(code==='auth/operation-not-allowed'){
+        toast('ยังไม่เปิด Email/Password ใน Firebase Console → Authentication');
+      } else if(code==='auth/user-not-found'||code==='auth/invalid-credential'||code==='auth/wrong-password'){
+        toast('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+      } else if(code==='auth/invalid-email'){
+        toast('รูปแบบอีเมลไม่ถูกต้อง');
+      } else {
+        toast('เข้าสู่ระบบไม่สำเร็จ: '+(e.message||e));
+      }
     }
   },
   async registerShop(){
@@ -419,15 +446,34 @@ const M={
     const pass=document.getElementById('authPass').value||'';
     if(!email||pass.length<6){toast('อีเมล + รหัสผ่านอย่างน้อย 6 ตัว');return}
     if(!confirm('สร้างบัญชีร้านใหม่ด้วยอีเมลนี้?\n(ใช้ครั้งแรกครั้งเดียว)')) return;
+    const auth=this.getAuth();
+    if(!auth){
+      toast('โหลด Firebase Auth ไม่สำเร็จ — รีเฟรชหน้าแล้วลองใหม่ (ตรวจว่ามี firebase-auth script)');
+      return;
+    }
     try{
-      await this.auth.createUserWithEmailAndPassword(email, pass);
+      await auth.createUserWithEmailAndPassword(email, pass);
       toast('สมัครสำเร็จ · เข้าสู่ระบบแล้ว');
     }catch(e){
-      toast('สมัครไม่สำเร็จ: '+(e.message||e));
+      const code=e && e.code;
+      if(code==='auth/operation-not-allowed'){
+        toast('เปิด Email/Password ใน Firebase Console ก่อน: Authentication → Sign-in method');
+      } else if(code==='auth/email-already-in-use'){
+        toast('อีเมลนี้มีบัญชีแล้ว — กดเข้าสู่ระบบ');
+      } else if(code==='auth/weak-password'){
+        toast('รหัสผ่านอ่อนเกินไป (อย่างน้อย 6 ตัว)');
+      } else if(code==='auth/invalid-email'){
+        toast('รูปแบบอีเมลไม่ถูกต้อง');
+      } else {
+        toast('สมัครไม่สำเร็จ: '+(e.message||e));
+      }
     }
   },
   async logout(){
-    try{ await this.auth.signOut(); }catch(e){}
+    try{
+      const auth=this.getAuth();
+      if(auth) await auth.signOut();
+    }catch(e){}
     location.reload();
   },
   async setupFcm(){
