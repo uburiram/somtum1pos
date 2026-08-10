@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#FF5722">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="ส้มตำนายหนึ่ง">
-<link rel="manifest" href="./manifest.webmanifest">
+<meta name="apple-mobile-web-app-title" content="สั่งอาหาร ส้มตำนายหนึ่ง">
+<!-- หน้าลูกค้าไม่ใช้ manifest ติดตั้งแอป — ติดตั้งได้เฉพาะหน้า POS -->
 <link rel="icon" type="image/png" sizes="32x32" href="./icon/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="./icon/icon-192.png">
 <link rel="apple-touch-icon" href="./icon/apple-touch-icon-180.png">
@@ -392,11 +392,12 @@ const C={
   },
   openProduct(id){
     const m=this.menus.find(x=>x.id===id); if(!m||m.isOut)return;
-    // หมวด "กินคู่ส้มตำ" หรือชื่อคล้ายกัน → ไม่มีตัวเลือกเพิ่ม แค่จำนวน
-    const cat = (this.cats||[]).find(c=>c.id===m.catId);
-    const catName = (cat && cat.name) ? String(cat.name) : '';
-    const isSimple = /กินคู่|เครื่องเคียง|ของทานเล่นคู่|side/i.test(catName);
-    this.modal={menu:m,qty:1,spice:null,topQty:{},note:'',plara:null,simple:isSimple};
+    // หมวด "กินคู่" = ไม่มีตัวเลือกเพิ่ม แค่จำนวน
+    const cat=(this.cats||[]).find(c=>c.id===m.catId);
+    const catName=(cat&&cat.name)||'';
+    const isSimple=/กินคู่|คู่ส้มตำ/.test(catName);
+    // tops: {id: qty}
+    this.modal={menu:m,qty:1,spice:this.spice.filter(s=>s.isActive!==false)[0]?.id||null,topQty:{},note:'',plara:null,isSimple};
     const pn=document.getElementById('pNote'); if(pn) pn.value='';
     // รองรับ boolean / string / number จาก Firestore
     const enablePlara = (function(v){
@@ -422,6 +423,13 @@ const C={
       }
     }
     document.getElementById('pTitle').textContent=m.name;
+    if(isSimple){
+      const pb=document.getElementById('plaraBox'); if(pb) pb.style.display='none';
+      const sb=document.getElementById('spiceBox'); if(sb) sb.style.display='none';
+      const tb=document.getElementById('topBox'); if(tb) tb.style.display='none';
+      this.modal.spice=null; this.modal.spiceSet={}; this.modal.topQty={}; this.modal.plara=null;
+    }
+
     const src=this.menuImg(m); const imgBox=document.getElementById('pImg');
     if(src){imgBox.style.display='flex';imgBox.innerHTML=`<img src="${esc(src)}" style="width:100%;height:100%;object-fit:cover">`}
     else{imgBox.style.display='none';imgBox.innerHTML=''}
@@ -438,7 +446,7 @@ const C={
         `<label class="rl ${i===0?'on':''}" onclick="C.pickSpice('${esc(s.id)}',this)"><span>${esc(s.name)}</span>
          <input type="radio" name="sp" ${i===0?'checked':''} style="width:18px;height:18px;accent-color:var(--p)"></label>`).join('');
     }
-    document.getElementById('spiceBox').style.display=activeSp.length?'block':'none';
+    document.getElementById('spiceBox').style.display=(isSimple||!activeSp.length)?'none':(activeSp.length?'block':'none');
     const ot=document.querySelector('#spiceBox .ot');
     if(ot) ot.textContent=spiceMulti?'ระดับความเผ็ด (เลือกได้หลายอย่าง)':'ระดับความเผ็ด *';
     const tops=this.tops.filter(t=>t.isActive!==false);
@@ -467,14 +475,7 @@ const C={
         `<label class="cl" id="topRow_${esc(t.id)}"><span>${esc(t.name)} <small style="color:#777">(+${money(t.price)})</small></span>
          <input type="checkbox" style="width:18px;height:18px;accent-color:var(--p)" onchange="C.toggleTopChk('${esc(t.id)}',this)"></label>`).join('');
     }
-    document.getElementById('topBox').style.display=tops.length?'block':'none';
-    // หมวดกินคู่ส้มตำ: ซ่อนตัวเลือกทั้งหมด
-    if(this.modal.simple){
-      document.getElementById('spiceBox').style.display='none';
-      document.getElementById('topBox').style.display='none';
-      const pb=document.getElementById('plaraBox'); if(pb) pb.style.display='none';
-      this.modal.spice=null; this.modal.topQty={}; this.modal.plara=null;
-    }
+    document.getElementById('topBox').style.display=(isSimple||!tops.length)?'none':'block';
     this.updPrice(); this.show('mProduct');
   },
   pickPlara(v,el){
@@ -522,25 +523,27 @@ const C={
   addCart(){
     const p=this.modal;
     let spiceName='';
-    if(!p.simple){
-      if(this.optionConfig.spiceMode==='multi'){
-        spiceName=Object.keys(p.spiceSet||{}).map(id=>(this.spice.find(s=>s.id===id)||{}).name).filter(Boolean).join(', ');
-        if(this.spice.filter(s=>s.isActive!==false).length && !spiceName){toast('เลือกระดับความเผ็ด');return}
-      } else {
-        if(this.spice.filter(s=>s.isActive!==false).length && !p.spice){toast('เลือกระดับความเผ็ด');return}
-        spiceName=(this.spice.find(s=>s.id===p.spice)||{}).name||'';
-      }
+    if(p.isSimple){
+      spiceName='';
+    } else if(this.optionConfig.spiceMode==='multi'){
+      spiceName=Object.keys(p.spiceSet||{}).map(id=>(this.spice.find(s=>s.id===id)||{}).name).filter(Boolean).join(', ');
+      if(this.spice.filter(s=>s.isActive!==false).length && !spiceName){toast('เลือกระดับความเผ็ด');return}
+    } else {
+      if(this.spice.filter(s=>s.isActive!==false).length && !p.spice){toast('เลือกระดับความเผ็ด');return}
+      spiceName=(this.spice.find(s=>s.id===p.spice)||{}).name||'';
     }
     const toppings=[];
-    Object.entries(p.topQty||{}).forEach(([id,q])=>{
-      const t=this.tops.find(x=>x.id===id);
-      if(t&&q>0) toppings.push({id:t.id,name:t.name,price:Number(t.price),qty:Number(q),total:Number(t.price)*Number(q)});
-    });
+    if(!p.isSimple){
+      Object.entries(p.topQty||{}).forEach(([id,q])=>{
+        const t=this.tops.find(x=>x.id===id);
+        if(t&&q>0) toppings.push({id:t.id,name:t.name,price:Number(t.price),qty:Number(q),total:Number(t.price)*Number(q)});
+      });
+    }
     const unit=this.calcUnit();
     const note=(document.getElementById('pNote')?.value||'').trim();
-    const needPlara=!p.simple && (p.menu.allowPlara===true||p.menu.allowPlara===1||p.menu.allowPlara==='true'||p.menu.allowPlara==='1');
+    const needPlara=!p.isSimple && (p.menu.allowPlara===true||p.menu.allowPlara===1||p.menu.allowPlara==='true'||p.menu.allowPlara==='1');
     if(needPlara && !p.plara){ toast('เลือกใส่หรือไม่ใส่ปลาร้า'); return; }
-    const plaraLabel=p.menu.allowPlara?(p.plara==='with'?'ใส่ปลาร้า':'ไม่ใส่ปลาร้า'):'';
+    const plaraLabel=(!p.isSimple && p.menu.allowPlara)?(p.plara==='with'?'ใส่ปลาร้า':'ไม่ใส่ปลาร้า'):'';
     this.cart.push({
       name:p.menu.name, qty:p.qty, spiceName,
       toppings, note, plara:plaraLabel, unitPrice:unit, total:unit*p.qty
@@ -591,7 +594,7 @@ const C={
     const btn=document.getElementById('btnOrder');
     if(btn){
       if(m==='CASH'){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์ (เงินสด)'; }
-      else if(this.orderId){ btn.disabled=true; btn.textContent='สั่งแล้ว — รอชำระเงิน'; }
+      else if(this.orderId){ btn.disabled=true; btn.textContent='ยืนยันแล้ว · รอโอนเงิน / แนบสลิป'; }
       else { btn.disabled=false; btn.textContent='ยืนยันออเดอร์ (QR)'; }
     }
     const cz=document.getElementById('cashZone');
@@ -729,6 +732,13 @@ const C={
         }
         setMsg('<span style="color:#E65100">'+(j.msg||'ส่งสลิปแล้ว รอร้านตรวจสอบ')+'</span>');
         toast(j.msg||'ส่งสลิปแล้ว');
+        try{
+          if(this.lastOrder && this.lastOrder.id===orderId){
+            this.lastOrder.slipData=dataUrl;
+            this.lastOrder.slipStatus='PENDING_REVIEW';
+            this.renderTicket(this.lastOrder);
+          }
+        }catch(e){}
         return;
       }catch(e){
         console.warn('verifySlip CF', e);
@@ -740,6 +750,14 @@ const C={
     });
     setMsg('<span style="color:#E65100">ส่งสลิปให้ร้านตรวจสอบแล้ว</span>');
     toast('ส่งสลิปแล้ว');
+    // อัปเดตตั๋ว → ซ่อน QR หลังแนบสลิปแล้ว
+    try{
+      if(this.lastOrder && this.lastOrder.id===orderId){
+        this.lastOrder.slipData=dataUrl;
+        this.lastOrder.slipStatus='PENDING_REVIEW';
+        this.renderTicket(this.lastOrder);
+      }
+    }catch(e){}
   },
     renderCart(){
     this.updFab();
@@ -755,10 +773,10 @@ const C={
     if(btn){ btn.disabled=true; btn.textContent='กำลังสร้างออเดอร์…'; }
     try{
       await this.createOrderInternal({
-        status:'Pending',  // ส่งเข้าครัวทันที
+        status:'Pending',
         paymentStatus:'UNPAID'
       });
-      if(btn){ btn.disabled=true; btn.textContent='สั่งแล้ว — รอชำระเงิน'; }
+      if(btn){ btn.disabled=true; btn.textContent='ยืนยันแล้ว · รอโอนเงิน / แนบสลิป'; }
     }catch(e){
       console.error(e);
       toast('สร้างออเดอร์ไม่สำเร็จ: '+(e.message||e));
@@ -800,7 +818,7 @@ const C={
   async confirmOrder(){
     // QR สร้างออเดอร์รอชำระแล้ว → แค่รอเงิน
     if(this.payM==='PROMPTPAY' && this.orderId){
-      toast('โอนตาม QR ได้เลย · เมื่อชำระแล้วออเดอร์เข้าครัวอัตโนมัติ');
+      toast('โอนตาม QR ได้เลย · ออเดอร์เข้าครัวแล้ว รอชำระเงิน');
       return;
     }
     const btn=document.getElementById('btnOrder');
@@ -821,14 +839,14 @@ const C={
         return;
       }
       await this.createOrderInternal({
-        status: 'Pending',  // ส่งเข้าครัวทันทีทุกช่องทางชำระ
+        status: 'Pending'  /* ส่งเข้าครัวทันทีทุกวิธีชำระ */,
         paymentStatus: 'UNPAID'
       });
       toast('สั่งสำเร็จ');
     }catch(e){ console.error(e); toast('ส่งไม่สำเร็จ: '+(e.message||e)); }
     finally{
       if(this.payM==='CASH'){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
-      else { btn.disabled=true; btn.textContent='สั่งแล้ว — รอชำระเงิน'; }
+      else { btn.disabled=true; btn.textContent='ยืนยันแล้ว · รอโอนเงิน / แนบสลิป'; }
     }
   },
   async createOrderInternal(opts){
@@ -947,16 +965,14 @@ const C={
   renderTicket(o){
     const paid=(o.paymentStatus==='PAID');
     const cancelled=(o.status==='Cancelled');
-    const hasSlip = !!(o.slipData) || (o.slipStatus && o.slipStatus!=='NONE' && o.slipStatus!=='');
-    // แสดง QR เฉพาะพร้อมเพย์ที่ยังไม่แนบสลิปและยังไม่ชำระ
+    const hasSlip=!!(o.slipData) || (o.slipStatus && o.slipStatus!=='NONE');
     const waitPay=!paid && !cancelled && (o.paymentMethod==='PROMPTPAY'||o.paymentMethod==='QR') && !hasSlip;
     const map={
-      Pending: paid ? ['bw','🟡 รอครัวรับออเดอร์'] : ['bw','🟡 เข้าครัวแล้ว · รอชำระเงิน'],
+      Pending: paid ? ['bw','🟡 รอครัวรับออเดอร์'] : ['bw','🟡 รอชำระเงิน / รอรับออเดอร์'],
       Cooking:['bi','🔵 กำลังทำ'],
-      Ready: paid ? ['bg','🟢 พร้อมรับ'] : ['bw','🟡 ทำเสร็จแล้ว · รอชำระเงิน'],
+      Ready:['bg','🟢 พร้อมรับ'],
       Completed:['bg','⚫ เสร็จสิ้น'],
-      Cancelled:['bd','❌ ยกเลิก'],
-      AwaitingPayment: ['bw','🟡 รอชำระเงิน']
+      Cancelled:['bd','❌ ยกเลิก']
     };
     const st=cancelled?map.Cancelled:(map[o.status]||map.Pending);
     const lines=(o.items||[]).map(i=>{
@@ -966,12 +982,12 @@ const C={
       return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span>${esc(i.name)} × ${i.qty}${tops?`<div style="font-size:12px;color:#777">${tops}</div>`:''}${pl}${note}</span><span>${money(i.total)}</span></div>`;
     }).join('');
     document.getElementById('ticketBody').innerHTML=`
-      <h2 style="color:${cancelled?'var(--d)':paid?'var(--g)':'var(--p)'};margin-bottom:8px">${cancelled?'<i class="fa-solid fa-xmark"></i> ยกเลิกแล้ว':paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> สั่งแล้ว · รอชำระเงิน'}</h2>
+      <h2 style="color:${cancelled?'var(--d)':paid?'var(--g)':'var(--p)'};margin-bottom:8px">${cancelled?'<i class="fa-solid fa-xmark"></i> ยกเลิกแล้ว':paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> รอชำระเงิน / รอรับออเดอร์'}</h2>
       <div>คิวของคุณ</div>
       <div class="huge">${esc(o.queue)}</div>
       <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
       <div class="receipt" id="receiptBox">
-        <h3>${esc(this.shopName)}</h3>
+        <h3>${esc(this.shopName)}</h3><div style="text-align:center;font-size:13px;font-weight:600;color:${paid?'var(--g)':'var(--p)'}">${paid?'ใบเสร็จรับเงิน':'ใบสั่งอาหาร (ยังไม่ชำระ)')}</div>
         <div style="text-align:center;font-size:13px;color:#666;margin-bottom:8px">${new Date(o.createdAt||Date.now()).toLocaleString('th-TH')}</div>
         ${lines}
         <div style="border-top:1px dashed #ccc;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700">
@@ -1108,24 +1124,13 @@ try{ if(C.isLineBrowser && C.isLineBrowser()){ const h=document.getElementById('
 
 <script>
 (function(){
+  // ลูกค้า: ลงทะเบียน SW เพื่อ offline ได้ แต่ไม่แสดงปุ่มติดตั้งแอป
+  // การติดตั้งแอปทำได้เฉพาะหน้า POS ร้านค้าเท่านั้น
   if('serviceWorker' in navigator){
     window.addEventListener('load', function(){
       navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(function(){});
     });
   }
-  window.deferredPwaPrompt = null;
-  window.addEventListener('beforeinstallprompt', function(e){
-    e.preventDefault();
-    // หน้าลูกค้าไม่ให้ติดตั้งแอป — ติดตั้งได้เฉพาะหน้า POS ร้านค้า
-    return;
-    var b = document.getElementById('btnInstallApp');
-    if(b) b.style.display = 'inline-flex';
-  });
-  window.addEventListener('appinstalled', function(){
-    window.deferredPwaPrompt = null;
-    var b = document.getElementById('btnInstallApp');
-    if(b) b.style.display = 'none';
-  });
 })();
 </script>
 

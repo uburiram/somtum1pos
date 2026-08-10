@@ -1,10 +1,10 @@
 {
-  "id": "/somtum1pos/",
-  "name": "POS ส้มตำนายหนึ่ง",
-  "short_name": "ส้มตำนายหนึ่ง",
+  "id": "/somtum1pos/pos",
+  "name": "POS ร้านค้า ส้มตำนายหนึ่ง",
+  "short_name": "POS ร้านค้า",
   "description": "ระบบสั่งอาหารและ POS ร้านส้มตำนายหนึ่ง",
-  "start_url": "./index.html",
-  "scope": "./",
+  "start_url": "/somtum1pos/pos.html",
+  "scope": "/somtum1pos/",
   "display": "standalone",
   "display_override": [
     "standalone",

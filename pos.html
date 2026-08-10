@@ -574,7 +574,7 @@ const M={
     // slip = พร้อมเพย์ + มีสลิปรอตรวจ
     // waitingPay = ทำเสร็จแล้ว (Ready) แต่ยังไม่จ่าย
     // ready = ทำเสร็จแล้ว + จ่ายแล้ว (พร้อมรับ)
-    if(this.filterKey==='kitchen') list=list.filter(o=>['Pending','Cooking'].includes(o.status) && o.status!=='Cancelled');
+    if(this.filterKey==='kitchen') list=list.filter(o=>['Pending','Cooking','AwaitingPayment'].includes(o.status));
     else if(this.filterKey==='unpaid') list=list.filter(o=>o.paymentStatus==='UNPAID' && o.status!=='Completed' && o.status!=='Cancelled');
     else if(this.filterKey==='paid') list=list.filter(o=>o.paymentStatus==='PAID' && o.status!=='Completed' && o.status!=='Cancelled');
     else if(this.filterKey==='slip') list=list.filter(o=>(o.paymentMethod==='PROMPTPAY'||o.paymentMethod==='QR') && (o.slipStatus==='PENDING_REVIEW'||o.slipStatus==='AUTO_APPROVED') && o.status!=='Cancelled');
@@ -655,7 +655,7 @@ const M={
       </div>
       <div style="text-align:center;margin-bottom:12px"><div style="color:#777">ยอดรวม</div>
         <div style="font-size:2rem;font-weight:700;color:var(--p)">${money(o.total)}</div>
-        <div style="margin-top:6px">${o.paymentStatus==='PAID'?'<span style="color:var(--g);font-weight:700">✓ ชำระแล้ว</span>':'<span style="color:var(--d);font-weight:700">ยังไม่ชำระ</span>'} · <span style="font-weight:600">${o.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์ / QR'}</span></div>
+        <div style="margin-top:6px">${o.paymentMethod==='CASH'?'<span style="background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">เงินสด</span>':'<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">พร้อมเพย์</span>'}${o.paymentStatus==='PAID'?'<span style="color:var(--g);font-weight:700">✓ ชำระแล้ว</span>':'<span style="color:var(--d);font-weight:700">ยังไม่ชำระ</span>'} · <span style="font-weight:600">${o.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์ / QR'}</span></div>
       </div>
       ${items}${slipBlock}
       ${statusBtns}
@@ -708,8 +708,15 @@ const M={
     try{
       await shopRef.collection('orders').doc(id).delete();
       try{ await shopRef.collection('receipts').doc(id).delete(); }catch(e){}
-      toast('ลบประวัติแล้ว');
+      // อัปเดต UI ทันที ไม่ต้องรอ refresh / snapshot
+      this.orders = (this.orders||[]).filter(o => o.id !== id);
+      if(this.seenIds) this.seenIds.delete(id);
+      if(this.unviewed) this.unviewed.delete(id);
       document.getElementById('detailModal').classList.remove('on');
+      this.loadHistory();
+      this.renderOrders();
+      this.updateAlarmBadge && this.updateAlarmBadge();
+      toast('ลบประวัติแล้ว');
     }catch(err){ toast('ลบไม่ได้: '+(err.message||err)); }
   },
   async markPaid(id, patch){
@@ -821,6 +828,36 @@ const M={
       window.print();
       setTimeout(()=>{ area.classList.add('hide'); area.style.display='none'; area.innerHTML=''; }, 400);
     }, 200);
+  },
+
+
+  scrollToForm(focusId){
+    try{
+      // เปิดแท็บจัดการร้านถ้ายังไม่เปิด
+      const panelShop=document.getElementById('panelShop');
+      if(panelShop && panelShop.classList.contains('hide')){
+        this.tab('shop');
+      }
+      const el=document.getElementById(focusId);
+      if(!el) return;
+      // เลื่อนทันทีหลายรอบ เผื่อรายการเยอะ / layout ยังไม่เสร็จ
+      const go=()=>{
+        try{
+          el.scrollIntoView({behavior:'smooth', block:'start', inline:'nearest'});
+          // สำรอง: เลื่อน window โดยตรง
+          const rect=el.getBoundingClientRect();
+          const y=window.pageYOffset + rect.top - 80; // เว้น header sticky
+          window.scrollTo({top: Math.max(0,y), behavior:'smooth'});
+          try{ el.focus({preventScroll:true}); }catch(e){ try{ el.focus(); }catch(e2){} }
+          el.classList.add('status-hl');
+          setTimeout(()=>{ try{ el.classList.remove('status-hl'); }catch(e){} }, 1800);
+        }catch(e){}
+      };
+      go();
+      setTimeout(go, 50);
+      setTimeout(go, 200);
+      setTimeout(go, 450);
+    }catch(e){}
   },
 
   tab(name){
@@ -963,7 +1000,9 @@ const M={
     this.pendingImageData=m.imageData||'';
     document.getElementById('menuPreview').innerHTML=this.pendingImageData?`<img src="${this.pendingImageData}" style="max-width:160px;border-radius:8px">`:'';
     this.shopTab('menu');
-    this.scrollToForm('menuName');
+    // รอ layout แล้วเลื่อนทันที (รายการเยอะ)
+    setTimeout(()=>this.scrollToForm('menuName'), 30);
+    setTimeout(()=>this.scrollToForm('menuName'), 150);
   },
   resetMenuForm(){
     document.getElementById('menuEditId').value='';
@@ -1094,7 +1133,7 @@ const M={
     }catch(err){ console.error(err); toast('เลื่อนไม่สำเร็จ: '+(err.message||err)); }
   },
   async moveCat(id, dir){ await this.moveGeneric('categories', id, dir); },
-  editCat(id){ const c=this.cats.find(x=>x.id===id); if(!c)return; document.getElementById('catId').value=c.id; document.getElementById('catName').value=c.name; document.getElementById('catOrder').value=c.order||1; this.shopTab('cat'); this.scrollToForm('catName'); },
+  editCat(id){ const c=this.cats.find(x=>x.id===id); if(!c)return; document.getElementById('catId').value=c.id; document.getElementById('catName').value=c.name; document.getElementById('catOrder').value=c.order||1; this.shopTab('cat'); setTimeout(()=>this.scrollToForm('catName'),30); setTimeout(()=>this.scrollToForm('catName'),150); },
   async saveCat(){
     const id=document.getElementById('catId').value||('c_'+uid());
     const name=document.getElementById('catName').value.trim();
@@ -1140,7 +1179,7 @@ const M={
         </div>
       </div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
   },
-  editTop(id){ const t=this.tops.find(x=>x.id===id); if(!t)return; document.getElementById('topId').value=t.id; document.getElementById('topName').value=t.name; document.getElementById('topPrice').value=t.price; },
+  editTop(id){ const t=this.tops.find(x=>x.id===id); if(!t)return; document.getElementById('topId').value=t.id; document.getElementById('topName').value=t.name; document.getElementById('topPrice').value=t.price; this.shopTab('top'); this.scrollToForm('topName'); },
   async saveTop(){
     const id=document.getElementById('topId').value||('t_'+uid());
     const name=document.getElementById('topName').value.trim();
@@ -1186,7 +1225,7 @@ const M={
         </div>
       </div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
   },
-  editSpice(id){ const s=this.spice.find(x=>x.id===id); if(!s)return; document.getElementById('spiceId').value=s.id; document.getElementById('spiceName').value=s.name; this.shopTab('spice'); this.scrollToForm('spiceName'); },
+  editSpice(id){ const s=this.spice.find(x=>x.id===id); if(!s)return; document.getElementById('spiceId').value=s.id; document.getElementById('spiceName').value=s.name; this.shopTab('spice'); setTimeout(()=>this.scrollToForm('spiceName'),30); setTimeout(()=>this.scrollToForm('spiceName'),150); },
   async saveSpice(){
     const id=document.getElementById('spiceId').value||('s_'+uid());
     const name=document.getElementById('spiceName').value.trim();
@@ -1275,6 +1314,14 @@ const M={
     document.getElementById('setPinOld').value=''; document.getElementById('setPin1').value=''; document.getElementById('setPin2').value='';
     toast('เปลี่ยน PIN แล้ว');
   },
+
+  installApp(){
+    var p=window.deferredPwaPrompt;
+    if(!p){ toast('Chrome: เมนู ⋮ → ติดตั้งแอป / เพิ่มไปยังหน้าจอหลัก'); return; }
+    p.prompt();
+    p.userChoice.then(function(){ window.deferredPwaPrompt=null; var b=document.getElementById('btnInstallApp'); if(b) b.style.display='none'; });
+  },
+
   printCustomerQR(){
     const cu=document.getElementById('qrUrl').textContent;
     const name=document.getElementById('shopTitle').textContent;
