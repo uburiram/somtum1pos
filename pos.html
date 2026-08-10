@@ -672,20 +672,23 @@ const M={
         toast('พร้อมบันทึกรูป');
       }catch(err){ toast(err.message); }
     };
-    const menus=this.menus.filter(m=>m.isActive!==false).sort((a,b)=>(a.order||0)-(b.order||0));
+    const menus=this.menus.slice().sort((a,b)=>((a.isActive===false)-(b.isActive===false))||((a.order||0)-(b.order||0)));
     document.getElementById('menuAdmin').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กดค้าง ⋮⋮ แล้วลากเพื่อจัดลำดับ</p>`+(menus.map(m=>{
       const src=m.imageData||m.imageUrl||'';
       return `<div class="list-item" draggable="true" data-id="${esc(m.id)}" data-col="menus" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropGeneric(event,'menus')" ondragend="M.dragEnd(event)">
         <span style="cursor:grab;color:#999">⋮⋮</span>
         ${src?`<img class="thumb" src="${esc(src)}">`:'<div class="thumb"></div>'}
-        <div style="flex:1"><strong>${esc(m.name)}</strong> ${m.isOut?'<span style="color:var(--d)">หมด</span>':''}
+        <div style="flex:1"><strong>${esc(m.name)}</strong> ${m.isOut?'<span style="color:var(--d)">หมด</span>':''} ${m.isActive===false?'<span style="color:var(--d)">ปิดขาย</span>':''}
           <div style="font-size:12px;color:#777">${money(m.price)} · #${m.order||0}</div></div>
         <div style="display:flex;gap:4px;flex-wrap:wrap">
           <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('menus','${esc(m.id)}',-1)">↑</button>
           <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('menus','${esc(m.id)}',1)">↓</button>
           <button class="btn btn-o btn-sm" onclick="M.editMenu('${esc(m.id)}')">แก้</button>
-          <button class="btn btn-o btn-sm" onclick="M.toggleOut('${esc(m.id)}',${!m.isOut})">${m.isOut?'มีของ':'หมด'}</button>
-          <button class="btn btn-d btn-sm" onclick="M.deleteMenu('${esc(m.id)}')">ปิด</button>
+          ${m.isActive===false
+            ? `<button class="btn btn-g btn-sm" onclick="M.reopenMenu('${esc(m.id)}')">เปิดขาย</button>`
+            : `<button class="btn btn-o btn-sm" onclick="M.toggleOut('${esc(m.id)}',${!m.isOut})">${m.isOut?'มีของ':'หมด'}</button>
+          <button class="btn btn-o btn-sm" onclick="M.closeMenu('${esc(m.id)}')">ปิดขาย</button>`}
+          <button class="btn btn-d btn-sm" onclick="M.deleteMenu('${esc(m.id)}')">ลบ</button>
         </div></div>`;
     }).join('')||'<div style="color:#888">ยังไม่มีเมนู</div>');
   },
@@ -725,7 +728,14 @@ const M={
     toast('บันทึกเมนูแล้ว'); this.resetMenuForm(); this.loadCatalogMenus();
   },
   async toggleOut(id,isOut){ await shopRef.collection('menus').doc(id).update({isOut:!!isOut}); toast('อัปเดตแล้ว'); this.loadCatalogMenus(); },
-  async deleteMenu(id){ if(!confirm('ปิดการขายเมนูนี้?'))return; await shopRef.collection('menus').doc(id).update({isActive:false}); toast('ปิดเมนูแล้ว'); this.loadCatalogMenus(); },
+  async closeMenu(id){ if(!confirm('ปิดการขายเมนูนี้? (เปิดใหม่ได้ภายหลัง)'))return; await shopRef.collection('menus').doc(id).update({isActive:false}); toast('ปิดเมนูแล้ว'); this.loadCatalogMenus(); },
+  async reopenMenu(id){ await shopRef.collection('menus').doc(id).update({isActive:true}); toast('เปิดขายเมนูแล้ว'); this.loadCatalogMenus(); },
+  async deleteMenu(id){
+    if(!confirm('ลบเมนูถาวร?\n(ขั้น 1/2)')) return;
+    if(!confirm('ยืนยันอีกครั้ง ข้อมูลเมนูนี้จะหาย\n(ขั้น 2/2)')) return;
+    await shopRef.collection('menus').doc(id).delete();
+    toast('ลบเมนูถาวรแล้ว'); this.loadCatalogMenus();
+  },
 
   subCatalog(tab){ this.shopTab(tab==='cat'?'cat':tab==='top'?'top':'spice'); },
   async renderCatAdmin(){
@@ -750,7 +760,10 @@ const M={
           <button class="btn btn-o btn-sm" onclick="M.moveCat('${esc(c.id)}',-1)">↑</button>
           <button class="btn btn-o btn-sm" onclick="M.moveCat('${esc(c.id)}',1)">↓</button>
           <button class="btn btn-o btn-sm" onclick="M.editCat('${esc(c.id)}')">แก้</button>
-          <button class="btn btn-d btn-sm" onclick="M.deleteCat('${esc(c.id)}')">ปิด</button>
+          ${c.isActive===false
+            ? `<button class="btn btn-g btn-sm" onclick="M.reopenCat('${esc(c.id)}')">เปิด</button>`
+            : `<button class="btn btn-o btn-sm" onclick="M.closeCat('${esc(c.id)}')">ปิด</button>`}
+          <button class="btn btn-d btn-sm" onclick="M.deleteCat('${esc(c.id)}')">ลบ</button>
         </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
   },
   dragId:null,
@@ -825,7 +838,14 @@ const M={
     await shopRef.collection('categories').doc(id).set({id,name,order,isActive:true},{merge:true});
     toast('บันทึกหมวดแล้ว'); this.renderCatAdmin();
   },
-  async deleteCat(id){ if(!confirm('ปิดหมวดนี้?'))return; await shopRef.collection('categories').doc(id).update({isActive:false}); toast('ปิดหมวดแล้ว'); this.renderCatAdmin(); },
+  async closeCat(id){ if(!confirm('ปิดหมวดนี้? (เปิดใหม่ได้)'))return; await shopRef.collection('categories').doc(id).update({isActive:false}); toast('ปิดหมวดแล้ว'); this.renderCatAdmin(); },
+  async reopenCat(id){ await shopRef.collection('categories').doc(id).update({isActive:true}); toast('เปิดหมวดแล้ว'); this.renderCatAdmin(); },
+  async deleteCat(id){
+    if(!confirm('ลบหมวดถาวร?\n(ขั้น 1/2)')) return;
+    if(!confirm('ยืนยันลบถาวร ขั้น 2/2')) return;
+    await shopRef.collection('categories').doc(id).delete();
+    toast('ลบหมวดแล้ว'); this.renderCatAdmin();
+  },
 
   async renderTopAdmin(){
     const snap=await shopRef.collection('toppings').get();
@@ -848,7 +868,10 @@ const M={
           <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('toppings','${esc(t.id)}',-1)">↑</button>
           <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('toppings','${esc(t.id)}',1)">↓</button>
           <button class="btn btn-o btn-sm" onclick="M.editTop('${esc(t.id)}')">แก้</button>
-          <button class="btn btn-d btn-sm" onclick="M.deleteTop('${esc(t.id)}')">ปิด</button>
+          ${t.isActive===false
+            ? `<button class="btn btn-g btn-sm" onclick="M.reopenTop('${esc(t.id)}')">เปิด</button>`
+            : `<button class="btn btn-o btn-sm" onclick="M.closeTop('${esc(t.id)}')">ปิด</button>`}
+          <button class="btn btn-d btn-sm" onclick="M.deleteTop('${esc(t.id)}')">ลบ</button>
         </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
   },
   editTop(id){ const t=this.tops.find(x=>x.id===id); if(!t)return; document.getElementById('topId').value=t.id; document.getElementById('topName').value=t.name; document.getElementById('topPrice').value=t.price; },
@@ -861,7 +884,14 @@ const M={
     await shopRef.collection('toppings').doc(id).set({id,name,price,isActive:true,order:prevT&&prevT.order!=null?prevT.order:maxT+1},{merge:true});
     toast('บันทึกท็อปปิ้งแล้ว'); this.renderTopAdmin();
   },
-  async deleteTop(id){ if(!confirm('ปิดท็อปปิ้งนี้?'))return; await shopRef.collection('toppings').doc(id).update({isActive:false}); toast('ปิดแล้ว'); this.renderTopAdmin(); },
+  async closeTop(id){ if(!confirm('ปิดท็อปปิ้งนี้?'))return; await shopRef.collection('toppings').doc(id).update({isActive:false}); toast('ปิดแล้ว'); this.renderTopAdmin(); },
+  async reopenTop(id){ await shopRef.collection('toppings').doc(id).update({isActive:true}); toast('เปิดแล้ว'); this.renderTopAdmin(); },
+  async deleteTop(id){
+    if(!confirm('ลบท็อปปิ้งถาวร?\n(ขั้น 1/2)')) return;
+    if(!confirm('ยืนยันลบถาวร ขั้น 2/2')) return;
+    await shopRef.collection('toppings').doc(id).delete();
+    toast('ลบแล้ว'); this.renderTopAdmin();
+  },
 
   async renderSpiceAdmin(){
     const snap=await shopRef.collection('spiceLevels').get();
@@ -883,7 +913,10 @@ const M={
           <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('spiceLevels','${esc(s.id)}',-1)">↑</button>
           <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('spiceLevels','${esc(s.id)}',1)">↓</button>
           <button class="btn btn-o btn-sm" onclick="M.editSpice('${esc(s.id)}')">แก้</button>
-          <button class="btn btn-d btn-sm" onclick="M.deleteSpice('${esc(s.id)}')">ปิด</button>
+          ${s.isActive===false
+            ? `<button class="btn btn-g btn-sm" onclick="M.reopenSpice('${esc(s.id)}')">เปิด</button>`
+            : `<button class="btn btn-o btn-sm" onclick="M.closeSpice('${esc(s.id)}')">ปิด</button>`}
+          <button class="btn btn-d btn-sm" onclick="M.deleteSpice('${esc(s.id)}')">ลบ</button>
         </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
   },
   editSpice(id){ const s=this.spice.find(x=>x.id===id); if(!s)return; document.getElementById('spiceId').value=s.id; document.getElementById('spiceName').value=s.name; },
@@ -895,7 +928,14 @@ const M={
     await shopRef.collection('spiceLevels').doc(id).set({id,name,isActive:true,order:prevS&&prevS.order!=null?prevS.order:maxS+1},{merge:true});
     toast('บันทึกแล้ว'); this.renderSpiceAdmin();
   },
-  async deleteSpice(id){ if(!confirm('ปิดรายการนี้?'))return; await shopRef.collection('spiceLevels').doc(id).update({isActive:false}); toast('ปิดแล้ว'); this.renderSpiceAdmin(); },
+  async closeSpice(id){ if(!confirm('ปิดรายการนี้?'))return; await shopRef.collection('spiceLevels').doc(id).update({isActive:false}); toast('ปิดแล้ว'); this.renderSpiceAdmin(); },
+  async reopenSpice(id){ await shopRef.collection('spiceLevels').doc(id).update({isActive:true}); toast('เปิดแล้ว'); this.renderSpiceAdmin(); },
+  async deleteSpice(id){
+    if(!confirm('ลบระดับเผ็ดถาวร?\n(ขั้น 1/2)')) return;
+    if(!confirm('ยืนยันลบถาวร ขั้น 2/2')) return;
+    await shopRef.collection('spiceLevels').doc(id).delete();
+    toast('ลบแล้ว'); this.renderSpiceAdmin();
+  },
 
   loadOptionConfigUI(){
     shopRef.collection('settings').doc('public').get().then(snap=>{

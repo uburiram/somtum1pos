@@ -11,6 +11,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="./firebase-config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
 :root{--p:#FF5722;--g:#4CAF50;--bg:#F5F7FA;--d:#F44336;--i:#2196F3;--m:#777}
 *{box-sizing:border-box;margin:0;padding:0;font-family:Prompt,sans-serif}
@@ -133,7 +134,7 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
 <div class="ov" id="mTicket"><div class="md" style="text-align:center">
   <div id="ticketBody"></div>
   <button class="btn btn-o" style="margin-top:12px" onclick="C.hide('mTicket')">ปิด</button>
-  <button class="btn btn-g" style="margin-top:8px" id="btnPrintReceipt" onclick="C.saveReceipt()">💾 บันทึกใบเสร็จลงเครื่อง</button>
+  <button class="btn btn-g" style="margin-top:8px" id="btnPrintReceipt" onclick="C.saveReceipt()">💾 บันทึกใบเสร็จเป็นรูปภาพ</button>
 </div></div>
 <div id="printReceipt" style="display:none"></div>
 <div class="toast" id="toast"></div>
@@ -302,7 +303,7 @@ async function migrateAndSeed(){
 
 const C={
   shopName:'ร้าน',promptpay:'',accountName:'',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:'',optionConfig:{spiceMode:'single',toppingMode:'multi',toppingAllowQty:true},cats:[],menus:[],spice:[],tops:[],
-  cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'PROMPTPAY',slipData:'',lastOrder:null,
+  cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'PROMPTPAY',slipData:'',lastOrder:null,bestSellerIds:[],bestSellerRank:{},
 
   async init(){
     if(!checkConfig()){document.getElementById('conn').textContent='ยังไม่ตั้งค่า';return}
@@ -327,6 +328,7 @@ const C={
       });
       shopRef.collection('categories').onSnapshot(s=>{this.cats=s.docs.map(d=>({id:d.id,...d.data()}));this.renderCats()});
       shopRef.collection('menus').onSnapshot(s=>{this.menus=s.docs.map(d=>({id:d.id,...d.data()}));this.renderMenus()});
+      this.loadBestSellers();
       shopRef.collection('spiceLevels').onSnapshot(s=>{this.spice=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0))});
       shopRef.collection('toppings').onSnapshot(s=>{this.tops=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0))});
       const u=new URL(location.href); const q=u.searchParams.get('queue');
@@ -345,16 +347,46 @@ const C={
   },
   setCat(id){this.cat=id;this.renderCats();this.renderMenus()},
   menuImg(m){return m.imageData||m.imageUrl||''},
+  async loadBestSellers(){
+    try{
+      const snap=await shopRef.collection('orders').limit(150).get();
+      const count={};
+      snap.docs.forEach(d=>{
+        const o=d.data()||{};
+        if(o.paymentStatus!=='PAID' && o.status==='Cancelled') return;
+        // นับจากออเดอร์ที่ไม่ยกเลิก
+        if(o.status==='Cancelled') return;
+        (o.items||[]).forEach(it=>{
+          const n=it.name||'';
+          if(!n) return;
+          count[n]=(count[n]||0)+Number(it.qty||1);
+        });
+      });
+      const ranked=Object.entries(count).sort((a,b)=>b[1]-a[1]).slice(0,3);
+      this.bestSellerIds=ranked.map(([name])=>name);
+      this.bestSellerRank={};
+      ranked.forEach(([name],i)=>{ this.bestSellerRank[name]=i+1; });
+      this.renderMenus();
+    }catch(e){ console.warn('best sellers', e); }
+  },
   renderMenus(){
-    let list=this.menus.filter(m=>m.isActive!==false&&(this.cat==='all'||m.catId===this.cat)).sort((a,b)=>(a.order||0)-(b.order||0));
+    let list=this.menus.filter(m=>m.isActive!==false&&(this.cat==='all'||m.catId===this.cat));
     if(this.q)list=list.filter(m=>(m.name||'').toLowerCase().includes(this.q));
+    // เรียง: ขายดีอันดับ 1-3 ก่อน แล้วตาม order ที่ร้านตั้ง
+    list=list.slice().sort((a,b)=>{
+      const ra=this.bestSellerRank[a.name]||99, rb=this.bestSellerRank[b.name]||99;
+      if(ra!==rb) return ra-rb;
+      return (Number(a.order)||0)-(Number(b.order)||0);
+    });
     const el=document.getElementById('menus');
     if(!list.length){el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#999">ไม่พบเมนู</div>';return}
     el.innerHTML=list.map(m=>{
       const src=this.menuImg(m);
       const img=src?`<img src="${esc(src)}" alt="">`:`<i class="fa-solid fa-utensils"></i>`;
+      const rank=this.bestSellerRank[m.name];
+      const badge=rank?`<div class="oosb" style="background:linear-gradient(135deg,#FF9800,#FF5722);left:6px;right:auto">🔥 ขายดี #${rank}</div>`:'';
       return `<div class="card ${m.isOut?'oos':''}" onclick="${m.isOut?'':`C.openProduct('${esc(m.id)}')`}">
-        ${m.isOut?'<div class="oosb">หมด</div>':''}<div class="ph">${img}</div>
+        ${m.isOut?'<div class="oosb">หมด</div>':''}${badge}<div class="ph">${img}</div>
         <div class="info"><div class="name">${esc(m.name)}</div><div class="price">${money(m.price)}</div></div></div>`;
     }).join('');
   },
@@ -679,25 +711,53 @@ const C={
   },
   saveReceipt(){
     const o=this.lastOrder; if(!o){ toast('ไม่มีใบเสร็จ'); return; }
+    if(o.paymentStatus!=='PAID'){ toast('บันทึกได้เมื่อชำระเงินแล้ว'); return; }
     const box=document.getElementById('receiptBox');
-    const inner=box?box.innerHTML:('');
-    const doc=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ใบเสร็จ ${esc(o.queue||'')}</title>
-<style>body{font-family:sans-serif;padding:20px;max-width:400px;margin:0 auto} h3{color:#FF5722;text-align:center}</style>
-</head><body>${inner}
-<p style="text-align:center;color:#888;font-size:12px;margin-top:16px">บันทึกจาก ${esc(this.shopName||'')}</p>
-</body></html>`;
-    const blob=new Blob([doc],{type:'text/html;charset=utf-8'});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url; a.download='receipt-'+(o.queue||'order')+'.html';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),1000);
-    // share if available
-    if(navigator.share){
-      try{ navigator.share({title:'ใบเสร็จ '+o.queue, text:'คิว '+o.queue+' ยอด '+(o.total||''), url:location.href.split('?')[0]+'?queue='+o.queue}); }catch(e){}
+    if(!box){ toast('ไม่พบใบเสร็จ'); return; }
+    toast('กำลังสร้างรูปใบเสร็จ…');
+    const doDownload=(dataUrl)=>{
+      const a=document.createElement('a');
+      a.href=dataUrl;
+      a.download='receipt-'+(o.queue||'order')+'.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      toast('บันทึกรูปใบเสร็จแล้ว');
+    };
+    // ใช้ html2canvas ถ้ามี ไม่งั้นวาดด้วย canvas เอง
+    if(window.html2canvas){
+      window.html2canvas(box,{backgroundColor:'#ffffff',scale:2,useCORS:true}).then(canvas=>{
+        doDownload(canvas.toDataURL('image/png'));
+      }).catch(err=>{
+        console.error(err); this.saveReceiptFallback(o, box);
+      });
+    } else {
+      this.saveReceiptFallback(o, box);
     }
-    toast('บันทึกใบเสร็จแล้ว');
+  },
+  saveReceiptFallback(o, box){
+    try{
+      const w=Math.max(360, box.offsetWidth||360), h=Math.max(box.offsetHeight||400, 200);
+      const c=document.createElement('canvas'); c.width=w*2; c.height=h*2;
+      const ctx=c.getContext('2d'); ctx.scale(2,2);
+      ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
+      ctx.fillStyle='#FF5722'; ctx.font='bold 18px sans-serif'; ctx.textAlign='center';
+      ctx.fillText(this.shopName||'ใบเสร็จ', w/2, 28);
+      ctx.fillStyle='#333'; ctx.font='14px sans-serif';
+      ctx.fillText('คิว '+(o.queue||''), w/2, 52);
+      ctx.fillText(new Date(o.paidAt||o.createdAt||Date.now()).toLocaleString('th-TH'), w/2, 72);
+      let y=100; ctx.textAlign='left'; ctx.font='13px sans-serif';
+      (o.items||[]).forEach(i=>{
+        ctx.fillText((i.name||'')+' x'+i.qty, 16, y);
+        ctx.textAlign='right'; ctx.fillText(String(i.total||0), w-16, y); ctx.textAlign='left';
+        y+=22;
+      });
+      y+=10; ctx.font='bold 16px sans-serif';
+      ctx.fillText('รวม', 16, y); ctx.textAlign='right'; ctx.fillText(String(o.total||0), w-16, y);
+      const a=document.createElement('a');
+      a.href=c.toDataURL('image/png');
+      a.download='receipt-'+(o.queue||'order')+'.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      toast('บันทึกรูปใบเสร็จแล้ว');
+    }catch(e){ console.error(e); toast('บันทึกรูปไม่สำเร็จ'); }
   },
   async trackQueue(){
     const q=document.getElementById('trackQ').value.trim().toUpperCase();
