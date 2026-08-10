@@ -280,50 +280,18 @@ function fileToDataUrl(file,maxSide=900,quality=.72){
 }
 
 async function migrateAndSeed(){
-  const old=await shopRef.collection('settings').doc('config').get();
-  const pub=await shopRef.collection('settings').doc('public').get();
-  const sec=await shopRef.collection('settings').doc('secure').get();
-  if(old.exists){
-    const d=old.data()||{};
-    if(!pub.exists){
-      await shopRef.collection('settings').doc('public').set({
-        shopName:d.shopName||'ส้มตำนายหนึ่ง',
-        promptpay:d.promptpay||'1319900156353',
-        accountName:d.accountName||'นาย นราทร วงค์แก่นท้าว',
-        payType:d.payType||'kshop',
-        merchantId:d.merchantId||'EMPKB000002198793001',
-        kshopPayload:d.kshopPayload||window.KSHOP_QR_PAYLOAD||''
-      },{merge:true});
+  // ลูกค้าไม่ login — เขียนได้เฉพาะ queue; เมนู/หมวด seed ต้องทำจากหน้า POS หลัง login ครั้งแรก
+  try{
+    const q=await shopRef.collection('settings').doc('queue').get();
+    if(!q.exists){
+      await shopRef.collection('settings').doc('queue').set({queueCounter:1,queueDate:''},{merge:true});
     }
-    if(!sec.exists){
-      await shopRef.collection('settings').doc('secure').set({
-        pinHash:await sha256(d.pin?String(d.pin):'1234'),
-        queueCounter:Number(d.queueCounter)||1
-      },{merge:true});
-    }
-    if(d.pin){const c=Object.assign({},d);delete c.pin;c.pinMigrated=true;await shopRef.collection('settings').doc('config').set(c)}
-  }else if(!pub.exists){
-    await shopRef.collection('settings').doc('public').set({shopName:'ส้มตำนายหนึ่ง',promptpay:'1319900156353',accountName:'นาย นราทร วงค์แก่นท้าว',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:window.KSHOP_QR_PAYLOAD||''});
-    await shopRef.collection('settings').doc('secure').set({pinHash:await sha256('1234'),queueCounter:1});
-  }
-  // ensure promptpay default for ถุงเงิน / บัตรประชาชน 13 หลัก จากร้าน
-  if(pub.exists){
-    const p=pub.data()||{};
-    if(!p.promptpay){
-      await shopRef.collection('settings').doc('public').set({promptpay:'1319900156353',accountName:p.accountName||'นายการันย์ ยามดี'},{merge:true});
-    }
-  }
+  }catch(e){ console.warn('queue seed', e); }
 
   const catSnap=await shopRef.collection('categories').limit(1).get();
   if(!catSnap.empty) return;
-  const batch=db.batch();
-  [['c1','เมนูส้มตำ',1],['c2','เมนูยำ',2],['c3','เมนูของทอด',3],['c4','เมนูทานเล่น',4],['c5','เครื่องดื่ม',5]]
-    .forEach(([id,name,order])=>batch.set(shopRef.collection('categories').doc(id),{id,name,isActive:true,order}));
-  const menus=[['m1','c1','ตำปูปลาร้า',40],['m2','c1','ตำไทย',40],['m3','c1','ตำป่า',45],['m4','c1','ตำแตง',40],['m5','c2','ยำวุ้นเส้น',50],['m6','c3','ไก่ทอด',50],['m7','c3','ปีกไก่ทอด',40],['m8','c4','ไข่ต้ม',10],['m9','c5','น้ำเปล่า',10],['m10','c5','น้ำอัดลม',15]];
-  menus.forEach(([id,catId,name,price])=>batch.set(shopRef.collection('menus').doc(id),{id,catId,name,price,isActive:true,isOut:false,imageUrl:'',imageData:''}));
-  [['s1','ไม่เผ็ด'],['s2','เผ็ดน้อย'],['s3','เผ็ดกลาง'],['s4','เผ็ดมาก']].forEach(([id,name])=>batch.set(shopRef.collection('spiceLevels').doc(id),{id,name,isActive:true}));
-  [['t1','ไข่ดาว',10],['t2','ไข่ต้ม',10],['t3','เพิ่มปู',20],['t4','หมูกรอบ',15]].forEach(([id,name,price])=>batch.set(shopRef.collection('toppings').doc(id),{id,name,price,isActive:true}));
-  await batch.commit();
+  // ถ้ายังไม่มีหมวด แสดงข้อความ — ร้านต้อง login POS เพื่อ seed
+  console.warn('ยังไม่มีเมนู/หมวด — ให้ร้านเข้า POS แล้วระบบจะ seed หรือเพิ่มเมนูเอง');
 }
 
 const C={
@@ -380,13 +348,14 @@ const C={
   menuImg(m){return m.imageData||m.imageUrl||''},
   async loadBestSellers(){
     try{
-      const snap=await shopRef.collection('orders').limit(150).get();
+      let snap;
+      try{ snap=await shopRef.collection('orders').orderBy('createdAt','desc').limit(300).get(); }
+      catch(e){ snap=await shopRef.collection('orders').limit(300).get(); }
       const count={};
       snap.docs.forEach(d=>{
         const o=d.data()||{};
-        if(o.paymentStatus!=='PAID' && o.status==='Cancelled') return;
-        // นับจากออเดอร์ที่ไม่ยกเลิก
         if(o.status==='Cancelled') return;
+        if(o.paymentStatus!=='PAID') return;
         (o.items||[]).forEach(it=>{
           const n=it.name||'';
           if(!n) return;
@@ -729,31 +698,35 @@ const C={
   },
   async uploadSlipToOrder(orderId, dataUrl){
     const sm=document.getElementById('slipAutoMsg');
-    if(sm) sm.innerHTML='กำลังตรวจสลิป…';
-    let slipStatus='PENDING_REVIEW';
-    let autoMsg='ส่งสลิปให้ร้านตรวจสอบแล้ว';
-    const total=(this.lastOrder&&this.lastOrder.total)||0;
-    if(window.EASYSLIP_API_KEY){
-      const r=await this.verifySlipEasy(dataUrl, total);
-      if(r.ok){
-        slipStatus='AUTO_APPROVED';
-        autoMsg=r.msg||'ตรวจสลิปอัตโนมัติผ่าน';
-        await shopRef.collection('orders').doc(orderId).update({
-          slipData:dataUrl, slipStatus:'APPROVED',
-          paymentStatus:'PAID', paidAmount:total, paidAt:Date.now(),
-          status:'Pending', paymentMethod:'PROMPTPAY'
+    const tsm=document.getElementById('ticketSlipMsg');
+    const setMsg=(html)=>{ if(sm) sm.innerHTML=html; if(tsm) tsm.innerHTML=html; };
+    setMsg('กำลังส่ง/ตรวจสลิป…');
+    const base=(window.FUNCTIONS_BASE||'').replace(/\/$/,'');
+    if(base){
+      try{
+        const r=await fetch(base+'/verifySlip',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({ shopId: window.SHOP_ID||'main', orderId, slipData: dataUrl })
         });
-        if(sm) sm.innerHTML='<span style="color:#2E7D32">✓ '+autoMsg+'</span>';
-        toast('ชำระเงินสำเร็จ');
+        const j=await r.json().catch(()=>({}));
+        if(j.ok && (j.autoPaid||j.alreadyPaid)){
+          setMsg('<span style="color:#2E7D32">✓ '+(j.msg||'ตรวจสลิปผ่าน · ชำระแล้ว')+'</span>');
+          toast('ชำระเงินสำเร็จ');
+          return;
+        }
+        setMsg('<span style="color:#E65100">'+(j.msg||'ส่งสลิปแล้ว รอร้านตรวจสอบ')+'</span>');
+        toast(j.msg||'ส่งสลิปแล้ว');
         return;
-      } else {
-        autoMsg=(r.msg||'รอร้านตรวจสลิป')+' — ส่งให้ร้านตรวจสอบแล้ว';
+      }catch(e){
+        console.warn('verifySlip CF', e);
       }
     }
+    // fallback: แนบสลิปอย่างเดียว (rules อนุญาตเฉพาะ slip fields)
     await shopRef.collection('orders').doc(orderId).update({
-      slipData:dataUrl, slipStatus:slipStatus
+      slipData:dataUrl, slipStatus:'PENDING_REVIEW'
     });
-    if(sm) sm.innerHTML='<span style="color:#E65100">'+autoMsg+'</span>';
+    setMsg('<span style="color:#E65100">ส่งสลิปให้ร้านตรวจสอบแล้ว</span>');
     toast('ส่งสลิปแล้ว');
   },
     renderCart(){
@@ -843,18 +816,18 @@ const C={
       note:i.note||'', plara:i.plara||'', unitPrice:i.unitPrice,total:i.total
     }));
     const total=items.reduce((s,i)=>s+i.total,0);
-    const secRef=shopRef.collection('settings').doc('secure');
+    const queueRef=shopRef.collection('settings').doc('queue');
     const today=new Date();
     const dayKey=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
     const queue=await db.runTransaction(async tx=>{
-      const snap=await tx.get(secRef);
+      const snap=await tx.get(queueRef);
       const data=snap.exists?snap.data():{};
       let qNum=1;
       if(data.queueDate===dayKey) qNum=Number(data.queueCounter)||1;
       else qNum=1;
       if(qNum>999) qNum=1;
       const q='A'+String(qNum).padStart(3,'0');
-      tx.set(secRef,{ queueCounter:qNum+1, queueDate:dayKey },{merge:true});
+      tx.set(queueRef,{ queueCounter:qNum+1, queueDate:dayKey },{merge:true});
       return q;
     });
     const id=uid();

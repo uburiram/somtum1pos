@@ -21,7 +21,9 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js"></script>
 <script src="./firebase-config.js"></script>
 <style>
 :root{--p:#FF5722;--g:#4CAF50;--bg:#E8E8E8;--d:#F44336;--i:#2196F3}
@@ -94,9 +96,14 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
 <div class="banner" id="cfgBanner">⚠️ ยังไม่ได้ตั้งค่า Firebase</div>
 <div id="loginView" class="pinbox">
   <h2 style="color:var(--p);margin-bottom:8px"><i class="fa-solid fa-lock"></i> POS ร้านค้า</h2>
-  <input type="password" id="pinIn" inputmode="numeric" maxlength="8" placeholder="PIN" style="text-align:center;font-size:1.5rem;letter-spacing:6px;margin:12px 0">
+  <p style="font-size:13px;color:#666;margin-bottom:10px">เข้าสู่ระบบด้วยบัญชีร้าน (Firebase Auth)</p>
+  <label class="lbl" style="text-align:left">อีเมล</label>
+  <input type="email" id="authEmail" placeholder="shop@example.com" autocomplete="username" style="margin-bottom:8px">
+  <label class="lbl" style="text-align:left">รหัสผ่าน</label>
+  <input type="password" id="authPass" placeholder="รหัสผ่าน" autocomplete="current-password" style="margin-bottom:8px">
   <button class="btn btn-p btn-block" onclick="M.login()">เข้าสู่ระบบ</button>
-  <p style="font-size:12px;color:#999;margin-top:12px">PIN ครั้งแรก: 1234</p>
+  <button class="btn btn-o btn-block" style="margin-top:8px" onclick="M.registerShop()">สมัครบัญชีร้านครั้งแรก</button>
+  <p style="font-size:12px;color:#999;margin-top:12px">สร้างบัญชีครั้งเดียวใน Firebase Auth แล้วใช้เครื่องนี้ login ค้างไว้</p>
   <p style="margin-top:16px"><a href="./" style="color:var(--p)">← หน้าลูกค้า</a></p>
 </div>
 
@@ -128,6 +135,7 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
     </div>
     <div class="filters">
       <button class="fc on" onclick="M.filter('kitchen',this)">ครัว (กำลังทำ)</button>
+      <button class="fc" onclick="M.filter('waitingPay',this)">รอชำระเงิน</button>
       <button class="fc" onclick="M.filter('unpaid',this)">ยังไม่ชำระ</button>
       <button class="fc" onclick="M.filter('paid',this)">ชำระแล้ว</button>
       <button class="fc" onclick="M.filter('slip',this)">รอตรวจสลิป</button>
@@ -345,36 +353,108 @@ const M={
   async boot(){
     const c=window.FIREBASE_CONFIG||{};
     if(!c.apiKey||String(c.apiKey).includes('PASTE')){document.getElementById('cfgBanner').classList.add('on');return}
-    firebase.initializeApp(c); db=firebase.firestore();
+    firebase.initializeApp(c);
+    db=firebase.firestore();
+    this.auth=firebase.auth();
     try{await db.enablePersistence({synchronizeTabs:true})}catch(e){}
     shopRef=db.collection('shops').doc(window.SHOP_ID||'main');
-    await this.ensureSecure();
-    if(Number(sessionStorage.getItem('pinUntil')||0)>Date.now()) this.enter();
+    // queue doc อนุญาตเขียนโดยไม่ต้อง login
+    try{
+      const q=await shopRef.collection('settings').doc('queue').get();
+      if(!q.exists) await shopRef.collection('settings').doc('queue').set({queueCounter:1,queueDate:''},{merge:true});
+    }catch(e){}
+    this.auth.onAuthStateChanged(async (user)=>{
+      if(user){
+        this.staffUid=user.uid;
+        await this.ensurePublicSeed();
+        this.enter();
+        this.setupFcm();
+      } else {
+        document.getElementById('loginView').classList.remove('hide');
+        document.getElementById('appView').classList.add('hide');
+      }
+    });
   },
-  async ensureSecure(){
-    const old=await shopRef.collection('settings').doc('config').get();
-    const sec=await shopRef.collection('settings').doc('secure').get();
-    const pub=await shopRef.collection('settings').doc('public').get();
-    if(old.exists){
-      const d=old.data()||{};
-      if(!pub.exists) await shopRef.collection('settings').doc('public').set({shopName:d.shopName||'ส้มตำนายหนึ่ง',promptpay:d.promptpay||'1319900156353',accountName:d.accountName||'นาย นราทร วงค์แก่นท้าว',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:window.KSHOP_QR_PAYLOAD||''},{merge:true});
-      if(!sec.exists) await shopRef.collection('settings').doc('secure').set({pinHash:await sha256(d.pin?String(d.pin):'1234'),queueCounter:Number(d.queueCounter)||1},{merge:true});
-      if(d.pin){const c=Object.assign({},d);delete c.pin;c.pinMigrated=true;await shopRef.collection('settings').doc('config').set(c)}
-    } else if(!sec.exists){
-      await shopRef.collection('settings').doc('public').set({shopName:'ส้มตำนายหนึ่ง',promptpay:'1319900156353',accountName:'นาย นราทร วงค์แก่นท้าว',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:window.KSHOP_QR_PAYLOAD||''},{merge:true});
-      await shopRef.collection('settings').doc('secure').set({pinHash:await sha256('1234'),queueCounter:1},{merge:true});
-    }
+  async ensurePublicSeed(){
+    try{
+      const pub=await shopRef.collection('settings').doc('public').get();
+      if(!pub.exists){
+        await shopRef.collection('settings').doc('public').set({
+          shopName:'ส้มตำนายหนึ่ง',
+          promptpay:'1319900156353',
+          accountName:'นาย นราทร วงค์แก่นท้าว',
+          payType:'kshop',
+          merchantId:'EMPKB000002198793001',
+          kshopPayload:window.KSHOP_QR_PAYLOAD||''
+        },{merge:true});
+      }
+      // seed เมนูเริ่มต้นถ้ายังว่าง (ต้อง login แล้ว)
+      const catSnap=await shopRef.collection('categories').limit(1).get();
+      if(catSnap.empty){
+        const batch=db.batch();
+        [['c1','เมนูส้มตำ',1],['c2','เมนูยำ',2],['c3','เมนูของทอด',3],['c4','เมนูทานเล่น',4],['c5','เครื่องดื่ม',5]]
+          .forEach(([id,name,order])=>batch.set(shopRef.collection('categories').doc(id),{id,name,isActive:true,order}));
+        const menus=[['m1','c1','ตำปูปลาร้า',40],['m2','c1','ตำไทย',40],['m3','c1','ตำป่า',45],['m4','c1','ตำแตง',40],['m5','c2','ยำวุ้นเส้น',50],['m6','c3','ไก่ทอด',50],['m7','c3','ปีกไก่ทอด',40],['m8','c4','ไข่ต้ม',10],['m9','c5','น้ำเปล่า',10],['m10','c5','น้ำอัดลม',15]];
+        menus.forEach(([id,catId,name,price])=>batch.set(shopRef.collection('menus').doc(id),{id,catId,name,price,isActive:true,isOut:false,imageUrl:'',imageData:''}));
+        [['s1','ไม่เผ็ด',1],['s2','เผ็ดน้อย',2],['s3','เผ็ดกลาง',3],['s4','เผ็ดมาก',4]].forEach(([id,name,order])=>batch.set(shopRef.collection('spiceLevels').doc(id),{id,name,isActive:true,order}));
+        [['t1','ไข่ดาว',10],['t2','ไข่ต้ม',10],['t3','เพิ่มปู',20],['t4','หมูกรอบ',15]].forEach(([id,name,price],i)=>batch.set(shopRef.collection('toppings').doc(id),{id,name,price,isActive:true,order:i+1}));
+        await batch.commit();
+        toast('ตั้งค่าเมนูเริ่มต้นแล้ว');
+      }
+    }catch(e){ console.warn('seed public/menu', e); }
   },
   async login(){
-    const input=document.getElementById('pinIn').value.trim();
-    if(!/^\d{4,8}$/.test(input)){toast('PIN ต้อง 4–8 ตัวเลข');return}
-    await this.ensureSecure();
-    const s=await shopRef.collection('settings').doc('secure').get();
-    const hash=s.exists?s.data().pinHash:'';
-    if(hash && await sha256(input)===hash){ sessionStorage.setItem('pinUntil',String(Date.now()+20*60*1000)); this.enter(); }
-    else toast('PIN ไม่ถูกต้อง');
+    const email=(document.getElementById('authEmail').value||'').trim();
+    const pass=document.getElementById('authPass').value||'';
+    if(!email||!pass){toast('ใส่อีเมลและรหัสผ่าน');return}
+    try{
+      await this.auth.signInWithEmailAndPassword(email, pass);
+      toast('เข้าสู่ระบบแล้ว');
+    }catch(e){
+      toast('เข้าสู่ระบบไม่สำเร็จ: '+(e.message||e));
+    }
   },
-  logout(){sessionStorage.removeItem('pinUntil');location.reload()},
+  async registerShop(){
+    const email=(document.getElementById('authEmail').value||'').trim();
+    const pass=document.getElementById('authPass').value||'';
+    if(!email||pass.length<6){toast('อีเมล + รหัสผ่านอย่างน้อย 6 ตัว');return}
+    if(!confirm('สร้างบัญชีร้านใหม่ด้วยอีเมลนี้?\n(ใช้ครั้งแรกครั้งเดียว)')) return;
+    try{
+      await this.auth.createUserWithEmailAndPassword(email, pass);
+      toast('สมัครสำเร็จ · เข้าสู่ระบบแล้ว');
+    }catch(e){
+      toast('สมัครไม่สำเร็จ: '+(e.message||e));
+    }
+  },
+  async logout(){
+    try{ await this.auth.signOut(); }catch(e){}
+    location.reload();
+  },
+  async setupFcm(){
+    try{
+      if(!firebase.messaging) return;
+      if(!window.FIREBASE_VAPID_KEY){ console.warn('ยังไม่มี FIREBASE_VAPID_KEY'); return; }
+      const messaging=firebase.messaging();
+      const perm=await Notification.requestPermission();
+      if(perm!=='granted'){ toast('ยังไม่อนุญาตการแจ้งเตือน'); return; }
+      // ลงทะเบียน SW สำหรับ FCM
+      const reg=await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+      const token=await messaging.getToken({ vapidKey: window.FIREBASE_VAPID_KEY, serviceWorkerRegistration: reg });
+      if(token){
+        await shopRef.collection('fcmTokens').doc(token).set({
+          token, uid:this.staffUid||'', updatedAt:Date.now(), ua:navigator.userAgent||''
+        },{merge:true});
+        console.log('FCM token saved');
+        this.notifyOn=true;
+      }
+      messaging.onMessage((payload)=>{
+        const t=(payload.notification&&payload.notification.title)||'ออเดอร์ใหม่';
+        const b=(payload.notification&&payload.notification.body)||'';
+        this.pushNotify(t,b);
+        this.beep();
+      });
+    }catch(e){ console.warn('FCM setup', e); }
+  },
   
   scrollToForm(focusId){
     try{
@@ -531,14 +611,15 @@ const M={
   renderOrders(){
     const today=new Date(); today.setHours(0,0,0,0); const t0=today.getTime();
     let list=this.orders.slice();
-    if(this.filterKey==='kitchen') list=list.filter(o=>['Pending','AwaitingPayment','Cooking','Ready'].includes(o.status));
+    if(this.filterKey==='kitchen') list=list.filter(o=>['Pending','Cooking','Ready'].includes(o.status));
+    else if(this.filterKey==='waitingPay') list=list.filter(o=>o.status==='AwaitingPayment'||(o.paymentStatus==='UNPAID'&&o.paymentMethod==='PROMPTPAY'&&o.status!=='Completed'&&o.status!=='Cancelled'));
     else if(this.filterKey==='unpaid') list=list.filter(o=>o.paymentStatus==='UNPAID'&&o.status!=='Completed'&&o.status!=='Cancelled');
     else if(this.filterKey==='slip') list=list.filter(o=>(o.slipStatus==='PENDING_REVIEW'||o.slipStatus==='AUTO_APPROVED')&&o.status!=='Cancelled');
     else if(this.filterKey==='paid') list=list.filter(o=>o.paymentStatus==='PAID'&&o.status!=='Completed'&&o.status!=='Cancelled');
     else if(this.filterKey==='ready') list=list.filter(o=>o.status==='Ready');
     else if(this.filterKey==='cancelled') list=list.filter(o=>o.status==='Cancelled');
     // ครัว: เรียงเก่า→ใหม่ (ออเดอร์ใหม่อยู่ล่าง)
-    if(this.filterKey==='kitchen'||this.filterKey==='unpaid'||this.filterKey==='paid'||this.filterKey==='slip'||this.filterKey==='ready'){
+    if(this.filterKey==='kitchen'||this.filterKey==='waitingPay'||this.filterKey==='unpaid'||this.filterKey==='paid'||this.filterKey==='slip'||this.filterKey==='ready'){
       list=list.slice().sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
     } else {
       list=list.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
@@ -622,10 +703,14 @@ const M={
     document.getElementById('detailModal').classList.add('on');
   },
   async setStatus(id,status){
+    const cur=this.orders.find(x=>x.id===id);
+    if(cur && (cur.status==='Completed' || cur.statusLocked)){
+      toast('ออเดอร์นี้เสร็จสิ้นแล้ว ย้อนขั้นตอนไม่ได้');
+      return;
+    }
     const patch={status};
     if(status==='Completed'){
       patch.completedAt=Date.now();
-      // ล็อกขั้นตอน — ไม่ให้ย้อนกลับ
       patch.statusLocked=true;
     }
     await shopRef.collection('orders').doc(id).update(patch);

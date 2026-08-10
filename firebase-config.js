@@ -1,5 +1,5 @@
 /**
- * Firebase — pos1-4d72a (ห้ามใช้ import/export)
+ * Firebase — pos1-4d72a
  */
 window.FIREBASE_CONFIG = {
   apiKey: "AIzaSyC4aJKI-HbwWhA6AcZqOS5Wx8ShKvCWN8U",
@@ -13,26 +13,16 @@ window.FIREBASE_CONFIG = {
 
 window.SHOP_ID = "main";
 
-/**
- * ตรวจสลิปอัตโนมัติ (ถ้ามี)
- * รองรับ EasySlip: ใส่ API key แล้วระบบจะยิงตรวจสลิปให้
- * ถ้าเว้นว่าง = ร้านตรวจสลิปมือ
- * สมัคร: https://easyslip.com
- */
+/** Web Push key จาก Firebase Console → Cloud Messaging → Web Push certificates */
+window.FIREBASE_VAPID_KEY = "";
+
+/** หลัง deploy functions เช่น https://asia-southeast1-pos1-4d72a.cloudfunctions.net */
+window.FUNCTIONS_BASE = "";
+
+/** เลิกใช้ EasySlip ฝั่ง client — ใส่ key ใน Functions config แทน */
 window.EASYSLIP_API_KEY = "";
 
-
-/** Thai QR Payment จาก K Shop ร้านส้มตำนายหนึ่ง (ถอดจาก QR จริง) */
 window.KSHOP_QR_PAYLOAD = "0002010102110216478772000526340904155303920005264131531343007640052044640122296664800130810016A00000067701011201150107536000315010214KB0000021987930320EMPKB00000219879300131900016A00000067701011301030040214KB0000021987930420EMPKB0000021987930010517KB00000219879300151430014A000000004101001064169710211123456789015204581253037645802TH5917SOM TUM NAI NEUNG6004CITY622505095155710130708422966646304AE9C";
 window.KSHOP_REF = "EMPKB000002198793001";
 window.KSHOP_ACCOUNT = "นาย นราทร วงค์แก่นท้าว";
-
-
-/**
- * การยืนยันรับเงินอัตโนมัติจากธนาคาร
- * บน GitHub Pages อย่างเดียว "ดึงยอดเข้าบัญชีธนาคาร" โดยตรงทำไม่ได้
- * ต้องมี Payment Gateway / Webhook (เช่น Omise, GBPrimePay) หรือระบบหลังบ้าน
- * ช่องนี้สำรองสำหรับ URL ตรวจสถานะในอนาคต:
- * window.PAYMENT_VERIFY_URL = "";
- */
 window.PAYMENT_VERIFY_URL = window.PAYMENT_VERIFY_URL || "";
