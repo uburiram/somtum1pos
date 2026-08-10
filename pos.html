@@ -78,8 +78,7 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
   </div>
   <div class="nav">
     <button class="on" id="navOrders" onclick="M.tab('orders')">🧾 ออเดอร์</button>
-    <button id="navMenu" onclick="M.tab('menu')">🍽️ เมนู</button>
-    <button id="navCatalog" onclick="M.tab('catalog')">📂 หมวด/ท็อป/เผ็ด</button>
+    <button id="navShop" onclick="M.tab('shop')">🏪 จัดการร้าน</button>
     <button id="navReport" onclick="M.tab('report')">📊 รายงาน</button>
     <button id="navSet" onclick="M.tab('settings')">⚙️ ตั้งค่า</button>
     <a href="./">ลูกค้า</a>
@@ -106,33 +105,84 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
     <div class="og" id="orderGrid"></div>
   </div>
 
-  <div id="panelMenu" class="hide">
-    <div class="form-card">
-      <h3 style="margin-bottom:8px">เพิ่ม / แก้ไขเมนู</h3>
-      <input type="hidden" id="menuEditId">
-      <label class="lbl">ชื่อเมนู</label><input id="menuName">
-      <label class="lbl">ราคา</label><input id="menuPrice" type="number" min="0">
-      <label class="lbl">หมวด</label><select id="menuCat"></select>
-      <label class="lbl">อัปโหลดรูปจากเครื่อง</label>
-      <input type="file" id="menuFile" accept="image/*">
-      <div id="menuPreview" style="margin-top:8px"></div>
-      <label class="lbl">หรือวาง URL รูป</label><input id="menuImg" placeholder="https://...">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
-        <button class="btn btn-p" onclick="M.saveMenu()">บันทึกเมนู</button>
-        <button class="btn btn-o" onclick="M.resetMenuForm()">ล้างฟอร์ม</button>
+  <div id="panelShop" class="hide">
+    <div class="form-card" style="padding:10px">
+      <div style="font-weight:700;margin-bottom:8px;color:var(--p)">🏪 ระบบจัดการร้าน</div>
+      <div class="subtabs" id="shopSubtabs">
+        <button class="on" id="stMenu" onclick="M.shopTab('menu')">🍽️ เมนู</button>
+        <button id="stCat" onclick="M.shopTab('cat')">📂 หมวดหมู่</button>
+        <button id="stTop" onclick="M.shopTab('top')">🧀 ท็อปปิ้ง</button>
+        <button id="stSpice" onclick="M.shopTab('spice')">🌶️ ความเผ็ด</button>
+        <button id="stOpt" onclick="M.shopTab('opt')">⚙️ โหมดตัวเลือก</button>
       </div>
     </div>
-    <div id="menuAdmin"></div>
-  </div>
 
-  <div id="panelCatalog" class="hide">
-    <div class="subtabs">
-      <button class="on" id="stCat" onclick="M.subCatalog('cat')">หมวดหมู่</button>
-      <button id="stTop" onclick="M.subCatalog('top')">ท็อปปิ้ง</button>
-      <button id="stSpice" onclick="M.subCatalog('spice')">ความเผ็ด</button>
+    <div id="shopPaneMenu">
+      <div class="form-card">
+        <h3 style="margin-bottom:8px">เพิ่ม / แก้ไขเมนู</h3>
+        <input type="hidden" id="menuEditId">
+        <label class="lbl">ชื่อเมนู</label><input id="menuName">
+        <label class="lbl">ราคา</label><input id="menuPrice" type="number" min="0">
+        <label class="lbl">หมวดหมู่</label><select id="menuCat"></select>
+        <label class="lbl">อัปโหลดรูปจากเครื่อง</label>
+        <input type="file" id="menuFile" accept="image/*">
+        <div id="menuPreview" style="margin-top:8px"></div>
+        <label class="lbl">หรือวาง URL รูป</label><input id="menuImg" placeholder="https://...">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+          <button class="btn btn-p" onclick="M.saveMenu()">บันทึกเมนู</button>
+          <button class="btn btn-o" onclick="M.resetMenuForm()">ล้างฟอร์ม</button>
+        </div>
+      </div>
+      <div id="menuAdmin"></div>
     </div>
-    <div id="catalogForm" class="form-card"></div>
-    <div id="catalogList"></div>
+
+    <div id="shopPaneCat" class="hide">
+      <div class="form-card" style="background:#FFF8F5">
+        <strong>วิธีจัดการหมวดหมู่</strong>
+        <ol style="margin:8px 0 0 18px;font-size:13px;color:#555;line-height:1.6">
+          <li>พิมพ์ชื่อหมวดด้านล่าง แล้วกดบันทึก</li>
+          <li>หมวดจะไปโชว์เป็นแถบบนหน้าลูกค้า</li>
+          <li>ตอนเพิ่มเมนู ให้เลือกหมวดที่ต้องการ</li>
+          <li>จัดลำดับ: กดค้าง ⋮⋮ ลาก หรือใช้ปุ่ม ↑ ↓</li>
+          <li>กด “ปิด” เพื่อซ่อนหมวด (ไม่ลบเมนูเก่า)</li>
+        </ol>
+      </div>
+      <div id="catalogFormCat" class="form-card"></div>
+      <div id="catalogListCat"></div>
+    </div>
+
+    <div id="shopPaneTop" class="hide">
+      <div id="catalogFormTop" class="form-card"></div>
+      <div id="catalogListTop"></div>
+    </div>
+
+    <div id="shopPaneSpice" class="hide">
+      <div id="catalogFormSpice" class="form-card"></div>
+      <div id="catalogListSpice"></div>
+    </div>
+
+    <div id="shopPaneOpt" class="hide">
+      <div class="form-card">
+        <h3>โหมดตัวเลือกบนเมนูหลัก</h3>
+        <p style="font-size:13px;color:#666;margin:6px 0 10px">กำหนดว่าลูกค้าเลือกความเผ็ด/ท็อปปิ้งแบบไหนเวลาสั่ง</p>
+        <label class="lbl">ความเผ็ด</label>
+        <select id="setSpiceMode">
+          <option value="single">เลือกได้เพียง 1 อย่าง</option>
+          <option value="multi">เลือกได้หลายอย่าง</option>
+        </select>
+        <label class="lbl">ท็อปปิ้ง</label>
+        <select id="setTopMode">
+          <option value="multi">เลือกได้หลายอย่าง</option>
+          <option value="single">เลือกได้เพียง 1 อย่าง</option>
+        </select>
+        <label class="lbl">จำนวนท็อปปิ้ง (เมื่อเลือกหลายอย่าง)</label>
+        <select id="setTopQty">
+          <option value="yes">กำหนดจำนวนได้ (− / +)</option>
+          <option value="no">แค่ติ๊กเลือก ไม่มีจำนวน</option>
+        </select>
+        <button class="btn btn-p btn-block" style="margin-top:10px" onclick="M.saveOptionConfig()">บันทึกโหมดตัวเลือก</button>
+      </div>
+    </div>
   </div>
 
   <div id="panelReport" class="hide">
@@ -152,31 +202,29 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
 
   <div id="panelSettings" class="hide">
     <div class="form-card">
-      <h3>ร้านค้า / พร้อมเพย์ (ถุงเงิน)</h3>
+      <h3>ร้านค้า</h3>
       <label class="lbl">ชื่อร้าน</label><input id="setName">
-      <label class="lbl">ชื่อบัญชี</label><input id="setAccount" placeholder="นายการันย์ ยามดี">
-      <label class="lbl">พร้อมเพย์ (10 หรือ 13 หลัก)</label><input id="setPP" placeholder="1319900156353">
-      <p style="font-size:12px;color:#777;margin-top:6px">เบอร์ 10 หลัก หรือ บัตรประชาชน 13 หลัก — ระบบเลือก tag EMV ให้ถูกต้องอัตโนมัติ</p>
-      <button class="btn btn-p btn-block" style="margin-top:10px" onclick="M.saveSettings()">บันทึก</button>
+      <label class="lbl">ชื่อบัญชีผู้รับเงิน</label><input id="setAccount" placeholder="นายการันย์ ยามดี">
+      <button class="btn btn-p btn-block" style="margin-top:10px" onclick="M.saveSettings()">บันทึกชื่อร้าน</button>
     </div>
     <div class="form-card">
-      <h3>โหมดตัวเลือกในเมนูหลัก</h3>
-      <label class="lbl">ความเผ็ด</label>
-      <select id="setSpiceMode">
-        <option value="single">เลือกได้เพียง 1 อย่าง</option>
-        <option value="multi">เลือกได้หลายอย่าง</option>
+      <h3>ช่องทางรับเงิน QR</h3>
+      <label class="lbl">ประเภท QR</label>
+      <select id="setPayType" onchange="M.togglePayTypeUI()">
+        <option value="promptpay">พร้อมเพย์ (เบอร์ / บัตรประชาชน)</option>
+        <option value="merchant">Thai QR ร้านค้า (K Shop / รหัสร้าน)</option>
       </select>
-      <label class="lbl">ท็อปปิ้ง</label>
-      <select id="setTopMode">
-        <option value="multi">เลือกได้หลายอย่าง</option>
-        <option value="single">เลือกได้เพียง 1 อย่าง</option>
-      </select>
-      <label class="lbl">จำนวนท็อปปิ้ง (เมื่อเลือกหลายอย่าง)</label>
-      <select id="setTopQty">
-        <option value="yes">กำหนดจำนวนได้ (− / +)</option>
-        <option value="no">แค่ติ๊กเลือก ไม่มีจำนวน</option>
-      </select>
-      <button class="btn btn-p btn-block" style="margin-top:10px" onclick="M.saveOptionConfig()">บันทึกโหมดตัวเลือก</button>
+      <div id="payPromptpayBox">
+        <label class="lbl">เลขพร้อมเพย์ (10 หรือ 13 หลัก)</label>
+        <input id="setPP" placeholder="1319900156353">
+        <p style="font-size:12px;color:#777;margin-top:6px">เบอร์มือถือ 10 หลัก หรือบัตรประชาชน 13 หลัก</p>
+      </div>
+      <div id="payMerchantBox" class="hide">
+        <label class="lbl">รหัสร้าน / Merchant–Biller ID (จาก K Shop)</label>
+        <input id="setMerchantId" placeholder="เช่น รหัสจากแอป K Shop">
+        <p style="font-size:12px;color:#777;margin-top:6px">วางรหัสร้านจาก K Shop หรือธนาคาร — ระบบจะสร้าง Thai QR แบบร้านค้า</p>
+      </div>
+      <button class="btn btn-p btn-block" style="margin-top:10px" onclick="M.saveSettings()">บันทึกช่องทางรับเงิน</button>
     </div>
     <div class="form-card">
       <h3>เปลี่ยน PIN</h3>
@@ -430,17 +478,32 @@ const M={
   },
 
   tab(name){
-    ['orders','menu','catalog','report','settings'].forEach(n=>{
+    ['orders','shop','report','settings'].forEach(n=>{
       const el=document.getElementById('panel'+n.charAt(0).toUpperCase()+n.slice(1));
       if(el) el.classList.toggle('hide', n!==name);
     });
     document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('on'));
-    const map={orders:'navOrders',menu:'navMenu',catalog:'navCatalog',report:'navReport',settings:'navSet'};
+    const map={orders:'navOrders',shop:'navShop',report:'navReport',settings:'navSet'};
     if(map[name]) document.getElementById(map[name]).classList.add('on');
     if(name==='report') this.loadReport();
-    if(name==='menu') this.loadCatalogMenus();
-    if(name==='catalog') this.subCatalog(this.catalogTab);
+    if(name==='shop') this.shopTab(this.shopTabName||'menu');
     if(name==='settings') this.loadSettingsUI();
+  },
+  shopTabName:'menu',
+  shopTab(name){
+    this.shopTabName=name;
+    ['menu','cat','top','spice','opt'].forEach(n=>{
+      const el=document.getElementById('shopPane'+n.charAt(0).toUpperCase()+n.slice(1));
+      if(el) el.classList.toggle('hide', n!==name);
+    });
+    document.querySelectorAll('#shopSubtabs button').forEach(b=>b.classList.remove('on'));
+    const map={menu:'stMenu',cat:'stCat',top:'stTop',spice:'stSpice',opt:'stOpt'};
+    if(map[name]) document.getElementById(map[name]).classList.add('on');
+    if(name==='menu') this.loadCatalogMenus();
+    if(name==='cat') this.renderCatAdmin();
+    if(name==='top') this.renderTopAdmin();
+    if(name==='spice') this.renderSpiceAdmin();
+    if(name==='opt') this.loadOptionConfigUI();
   },
 
   loadReport(){
@@ -526,19 +589,11 @@ const M={
   async toggleOut(id,isOut){ await shopRef.collection('menus').doc(id).update({isOut:!!isOut}); toast('อัปเดตแล้ว'); this.loadCatalogMenus(); },
   async deleteMenu(id){ if(!confirm('ปิดการขายเมนูนี้?'))return; await shopRef.collection('menus').doc(id).update({isActive:false}); toast('ปิดเมนูแล้ว'); this.loadCatalogMenus(); },
 
-  subCatalog(tab){
-    this.catalogTab=tab;
-    document.getElementById('stCat').classList.toggle('on',tab==='cat');
-    document.getElementById('stTop').classList.toggle('on',tab==='top');
-    document.getElementById('stSpice').classList.toggle('on',tab==='spice');
-    if(tab==='cat') this.renderCatAdmin();
-    if(tab==='top') this.renderTopAdmin();
-    if(tab==='spice') this.renderSpiceAdmin();
-  },
+  subCatalog(tab){ this.shopTab(tab==='cat'?'cat':tab==='top'?'top':'spice'); },
   async renderCatAdmin(){
     const snap=await shopRef.collection('categories').get();
     this.cats=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0));
-    document.getElementById('catalogForm').innerHTML=`
+    document.getElementById('catalogFormCat').innerHTML=`
       <h3>หมวดหมู่เมนู</h3>
       <input type="hidden" id="catId">
       <label class="lbl">ชื่อหมวด</label><input id="catName">
@@ -547,7 +602,7 @@ const M={
         <button class="btn btn-p" onclick="M.saveCat()">บันทึก</button>
         <button class="btn btn-o" onclick="document.getElementById('catId').value='';document.getElementById('catName').value=''">ล้าง</button>
       </div>`;
-    document.getElementById('catalogList').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กดค้างแล้วลากเพื่อจัดลำดับ หรือใช้ปุ่ม ↑ ↓</p>`+(this.cats.map((c,idx)=>`
+    document.getElementById('catalogListCat').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กดค้างแล้วลากเพื่อจัดลำดับ หรือใช้ปุ่ม ↑ ↓</p>`+(this.cats.map((c,idx)=>`
       <div class="list-item" draggable="true" data-id="${esc(c.id)}" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropCat(event)" ondragend="M.dragEnd(event)" style="touch-action:none;user-select:none">
         <div style="display:flex;align-items:center;gap:8px;flex:1">
           <span style="cursor:grab;font-size:18px;color:#999">⋮⋮</span>
@@ -602,7 +657,7 @@ const M={
   async renderTopAdmin(){
     const snap=await shopRef.collection('toppings').get();
     this.tops=snap.docs.map(d=>({id:d.id,...d.data()}));
-    document.getElementById('catalogForm').innerHTML=`
+    document.getElementById('catalogFormTop').innerHTML=`
       <h3>ท็อปปิ้ง</h3>
       <input type="hidden" id="topId">
       <label class="lbl">ชื่อ</label><input id="topName">
@@ -611,7 +666,7 @@ const M={
         <button class="btn btn-p" onclick="M.saveTop()">บันทึก</button>
         <button class="btn btn-o" onclick="document.getElementById('topId').value='';document.getElementById('topName').value=''">ล้าง</button>
       </div>`;
-    document.getElementById('catalogList').innerHTML=this.tops.map(t=>`
+    document.getElementById('catalogListTop').innerHTML=this.tops.map(t=>`
       <div class="list-item"><div><strong>${esc(t.name)}</strong> <span style="color:var(--p)">${money(t.price)}</span> ${t.isActive===false?'<span style="color:var(--d)">ปิด</span>':''}</div>
       <div style="display:flex;gap:4px">
         <button class="btn btn-o btn-sm" onclick="M.editTop('${esc(t.id)}')">แก้</button>
@@ -632,7 +687,7 @@ const M={
   async renderSpiceAdmin(){
     const snap=await shopRef.collection('spiceLevels').get();
     this.spice=snap.docs.map(d=>({id:d.id,...d.data()}));
-    document.getElementById('catalogForm').innerHTML=`
+    document.getElementById('catalogFormSpice').innerHTML=`
       <h3>ระดับความเผ็ด</h3>
       <input type="hidden" id="spiceId">
       <label class="lbl">ชื่อ</label><input id="spiceName">
@@ -640,7 +695,7 @@ const M={
         <button class="btn btn-p" onclick="M.saveSpice()">บันทึก</button>
         <button class="btn btn-o" onclick="document.getElementById('spiceId').value='';document.getElementById('spiceName').value=''">ล้าง</button>
       </div>`;
-    document.getElementById('catalogList').innerHTML=this.spice.map(s=>`
+    document.getElementById('catalogListSpice').innerHTML=this.spice.map(s=>`
       <div class="list-item"><div><strong>${esc(s.name)}</strong> ${s.isActive===false?'<span style="color:var(--d)">ปิด</span>':''}</div>
       <div style="display:flex;gap:4px">
         <button class="btn btn-o btn-sm" onclick="M.editSpice('${esc(s.id)}')">แก้</button>
@@ -657,16 +712,30 @@ const M={
   },
   async deleteSpice(id){ if(!confirm('ปิดรายการนี้?'))return; await shopRef.collection('spiceLevels').doc(id).update({isActive:false}); toast('ปิดแล้ว'); this.renderSpiceAdmin(); },
 
+  loadOptionConfigUI(){
+    shopRef.collection('settings').doc('public').get().then(snap=>{
+      const d=snap.exists?snap.data():{};
+      const oc=d.optionConfig||{};
+      const sm=document.getElementById('setSpiceMode'); if(sm) sm.value=oc.spiceMode||'single';
+      const tm=document.getElementById('setTopMode'); if(tm) tm.value=oc.toppingMode||'multi';
+      const tq=document.getElementById('setTopQty'); if(tq) tq.value=(oc.toppingAllowQty===false?'no':'yes');
+    });
+  },
+  togglePayTypeUI(){
+    const t=document.getElementById('setPayType')?.value||'promptpay';
+    document.getElementById('payPromptpayBox')?.classList.toggle('hide', t!=='promptpay');
+    document.getElementById('payMerchantBox')?.classList.toggle('hide', t!=='merchant');
+  },
   async loadSettingsUI(){
     const snap=await shopRef.collection('settings').doc('public').get();
     const d=snap.exists?snap.data():{};
     document.getElementById('setName').value=d.shopName||'';
     document.getElementById('setAccount').value=d.accountName||'';
     document.getElementById('setPP').value=d.promptpay||'1319900156353';
-    const oc=d.optionConfig||{};
-    const sm=document.getElementById('setSpiceMode'); if(sm) sm.value=oc.spiceMode||'single';
-    const tm=document.getElementById('setTopMode'); if(tm) tm.value=oc.toppingMode||'multi';
-    const tq=document.getElementById('setTopQty'); if(tq) tq.value=(oc.toppingAllowQty===false?'no':'yes');
+    const payType=d.payType||'promptpay';
+    const pt=document.getElementById('setPayType'); if(pt) pt.value=payType;
+    const mid=document.getElementById('setMerchantId'); if(mid) mid.value=d.merchantId||'';
+    this.togglePayTypeUI();
     const cu=new URL('index.html', location.href).href;
     document.getElementById('qrUrl').textContent=cu;
     const box=document.getElementById('qrBox'); box.innerHTML='';
@@ -684,11 +753,15 @@ const M={
   async saveSettings(){
     const name=document.getElementById('setName').value.trim();
     const accountName=document.getElementById('setAccount').value.trim();
-    const pp=document.getElementById('setPP').value.replace(/\D/g,'');
+    const payType=document.getElementById('setPayType')?.value||'promptpay';
+    const pp=(document.getElementById('setPP')?.value||'').replace(/\D/g,'');
+    const merchantId=(document.getElementById('setMerchantId')?.value||'').trim();
     if(!name){toast('ใส่ชื่อร้าน');return}
-    if(pp && pp.length!==10 && pp.length!==13){toast('PromptPay ต้อง 10 หรือ 13 หลัก');return}
-    const data={shopName:name, accountName};
+    if(payType==='promptpay' && pp && pp.length!==10 && pp.length!==13){toast('PromptPay ต้อง 10 หรือ 13 หลัก');return}
+    if(payType==='merchant' && !merchantId){toast('ใส่รหัสร้าน K Shop / Merchant ID');return}
+    const data={shopName:name, accountName, payType};
     if(pp) data.promptpay=pp;
+    if(merchantId) data.merchantId=merchantId;
     await shopRef.collection('settings').doc('public').set(data,{merge:true});
     await shopRef.collection('settings').doc('config').set(data,{merge:true});
     toast('บันทึกแล้ว'); this.loadSettingsUI();

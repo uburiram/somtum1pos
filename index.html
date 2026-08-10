@@ -158,6 +158,26 @@ const PP={
     if(Number(amount)>0) p+=this.tlv('54', Number(amount).toFixed(2));
     p+=this.tlv('58','TH')+'6304';
     return p+this.crc(p);
+  },
+  /* Thai QR ร้านค้า / Bill Payment (K Shop ฯลฯ) — Tag 30 + AID A000000677010112 */
+  genMerchant(merchantId, amount){
+    let id=String(merchantId||'').trim();
+    if(!id) return null;
+    const digits=id.replace(/\D/g,'');
+    let mai;
+    if(digits.length>=10 && digits.length<=15 && digits===id.replace(/\s/g,'')){
+      const biller=digits.padStart(15,'0');
+      mai=this.tlv('00','A000000677010112')+this.tlv('01',biller);
+    } else {
+      // รหัสผสมตัวอักษร — ใส่ใน merchant account info 29/03
+      const mid=id.slice(0,25);
+      mai=this.tlv('00','A000000677010111')+this.tlv('03',mid);
+    }
+    const tag = (digits.length>=10 && digits.length<=15 && digits===id.replace(/\s/g,'')) ? '30' : '29';
+    let p=this.tlv('00','01')+this.tlv('01', Number(amount)>0?'12':'11')+this.tlv(tag,mai)+this.tlv('53','764');
+    if(Number(amount)>0) p+=this.tlv('54', Number(amount).toFixed(2));
+    p+=this.tlv('58','TH')+'6304';
+    return p+this.crc(p);
   }
 };
 
@@ -232,7 +252,7 @@ async function migrateAndSeed(){
 }
 
 const C={
-  shopName:'ร้าน',promptpay:'',accountName:'',optionConfig:{spiceMode:'single',toppingMode:'multi',toppingAllowQty:true},cats:[],menus:[],spice:[],tops:[],
+  shopName:'ร้าน',promptpay:'',accountName:'',payType:'promptpay',merchantId:'',optionConfig:{spiceMode:'single',toppingMode:'multi',toppingAllowQty:true},cats:[],menus:[],spice:[],tops:[],
   cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'CASH',slipData:'',lastOrder:null,
 
   async init(){
@@ -249,6 +269,8 @@ const C={
         this.shopName=d.shopName||'ส้มตำนายหนึ่ง';
         this.promptpay=d.promptpay||'1319900156353';
         this.accountName=d.accountName||'';
+        this.payType=d.payType||'promptpay';
+        this.merchantId=d.merchantId||'';
         if(d.optionConfig) this.optionConfig=Object.assign({spiceMode:'single',toppingMode:'multi',toppingAllowQty:true}, d.optionConfig);
         document.getElementById('shopName').textContent=this.shopName;
         document.title=this.shopName+' | สั่งอาหาร';
@@ -434,12 +456,19 @@ const C={
     if(m==='PROMPTPAY'){
       z.style.display='block';
       const total=this.cart.reduce((s,i)=>s+i.total,0);
-      const payload=PP.gen(this.promptpay,total);
-      document.getElementById('ppNum').textContent='พร้อมเพย์: '+(this.promptpay||'-');
+      let payload=null, label='';
+      if(this.payType==='merchant'){
+        payload=PP.genMerchant(this.merchantId, total);
+        label='Thai QR ร้านค้า: '+(this.merchantId||'-');
+      } else {
+        payload=PP.gen(this.promptpay, total);
+        label='พร้อมเพย์: '+(this.promptpay||'-');
+      }
+      document.getElementById('ppNum').textContent=label;
       document.getElementById('ppName').textContent=(this.accountName?('ชื่อบัญชี: '+this.accountName+' · '):'')+('ร้าน: '+this.shopName);
       const qr=document.getElementById('ppQR'); qr.innerHTML='';
       if(payload) new QRCode(qr,{text:payload,width:200,height:200});
-      else qr.innerHTML='<p style="color:var(--d)">ตั้งค่า PromptPay ไม่ถูกต้อง (ต้อง 10 หรือ 13 หลัก)</p>';
+      else qr.innerHTML='<p style="color:var(--d)">'+(this.payType==='merchant'?'ตั้งค่ารหัสร้าน K Shop ไม่ถูกต้อง':'ตั้งค่า PromptPay ไม่ถูกต้อง (ต้อง 10 หรือ 13 หลัก)')+'</p>';
     } else z.style.display='none';
   },
   async confirmOrder(){
