@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#FF5722">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ส้มตำนายหนึ่ง">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="./icon/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon/icon-192.png">
+<link rel="apple-touch-icon" href="./icon/apple-touch-icon-180.png">
 <title>สั่งอาหาร</title>
 <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -91,6 +98,10 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
   <div class="opt" id="topBox"><div class="ot">ท็อปปิ้ง (เลือกได้หลายอย่าง · กำหนดจำนวนได้)</div><div id="topList"></div></div>
   <div class="ot">จำนวนเมนูหลัก</div>
   <div class="qty"><button class="qb" onclick="C.qty(-1)">−</button><span id="pQty" style="font-weight:700;font-size:1.2rem">1</span><button class="qb" onclick="C.qty(1)">+</button></div>
+  <div class="opt" id="plaraBox" style="display:none">
+    <div class="ot">ปลาร้า *</div>
+    <div id="plaraList"></div>
+  </div>
   <div class="opt"><div class="ot">หมายเหตุ (ถ้ามี)</div>
     <textarea id="pNote" rows="2" placeholder="เช่น ไม่ใส่ถั่ว, เผ็ดแยก, ขอช้อนส้อม..." style="resize:vertical"></textarea>
   </div>
@@ -393,8 +404,21 @@ const C={
   openProduct(id){
     const m=this.menus.find(x=>x.id===id); if(!m||m.isOut)return;
     // tops: {id: qty}
-    this.modal={menu:m,qty:1,spice:this.spice.filter(s=>s.isActive!==false)[0]?.id||null,topQty:{},note:''};
+    this.modal={menu:m,qty:1,spice:this.spice.filter(s=>s.isActive!==false)[0]?.id||null,topQty:{},note:'',plara:null};
     const pn=document.getElementById('pNote'); if(pn) pn.value='';
+    const pb=document.getElementById('plaraBox');
+    if(m.allowPlara){
+      pb.style.display='block';
+      this.modal.plara='with';
+      document.getElementById('plaraList').innerHTML=`
+        <label class="rl on" onclick="C.pickPlara('with',this)"><span>ใส่ปลาร้า</span>
+          <input type="radio" name="plara" checked style="width:18px;height:18px;accent-color:var(--p)"></label>
+        <label class="rl" onclick="C.pickPlara('without',this)"><span>ไม่ใส่ปลาร้า</span>
+          <input type="radio" name="plara" style="width:18px;height:18px;accent-color:var(--p)"></label>`;
+    } else {
+      pb.style.display='none';
+      this.modal.plara=null;
+    }
     document.getElementById('pTitle').textContent=m.name;
     const src=this.menuImg(m); const imgBox=document.getElementById('pImg');
     if(src){imgBox.style.display='flex';imgBox.innerHTML=`<img src="${esc(src)}" style="width:100%;height:100%;object-fit:cover">`}
@@ -443,6 +467,11 @@ const C={
     }
     document.getElementById('topBox').style.display=tops.length?'block':'none';
     this.updPrice(); this.show('mProduct');
+  },
+  pickPlara(v,el){
+    this.modal.plara=v;
+    document.querySelectorAll('#plaraList .rl').forEach(x=>x.classList.remove('on'));
+    el.classList.add('on');
   },
   pickSpice(id,el){this.modal.spice=id;document.querySelectorAll('#spiceList .rl').forEach(x=>x.classList.remove('on'));el.classList.add('on')},
   toggleSpice(id,el){
@@ -498,9 +527,11 @@ const C={
     });
     const unit=this.calcUnit();
     const note=(document.getElementById('pNote')?.value||'').trim();
+    if(p.menu.allowPlara && !p.plara){ toast('เลือกใส่/ไม่ใส่ปลาร้า'); return; }
+    const plaraLabel=p.menu.allowPlara?(p.plara==='with'?'ใส่ปลาร้า':'ไม่ใส่ปลาร้า'):'';
     this.cart.push({
       name:p.menu.name, qty:p.qty, spiceName,
-      toppings, note, unitPrice:unit, total:unit*p.qty
+      toppings, note, plara:plaraLabel, unitPrice:unit, total:unit*p.qty
     });
     this.hide('mProduct'); this.updFab(); toast('เพิ่มลงตะกร้าแล้ว');
   },
@@ -515,7 +546,7 @@ const C={
     if(!this.cart.length) el.innerHTML='<div style="text-align:center;color:#999;padding:20px">ตะกร้าว่าง</div>';
     else el.innerHTML=this.cart.map((i,idx)=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty} (${money(t.total)})`).join(', ');
-      const meta=[i.spiceName, tops, i.note?('หมายเหตุ: '+i.note):''].filter(Boolean).join(' · ');
+      const meta=[i.spiceName, i.plara, tops, i.note?('หมายเหตุ: '+i.note):''].filter(Boolean).join(' · ');
       return `<div class="ci"><div><div style="font-weight:600">${esc(i.name)} × ${i.qty}</div>
         ${meta?`<div style="font-size:13px;color:#777">${meta}</div>`:''}
         <button style="color:var(--d);font-size:13px;margin-top:4px" onclick="C.rmCart(${idx})">ลบ</button></div>
@@ -580,16 +611,25 @@ const C={
       const items=this.cart.map(i=>({
         name:i.name,qty:i.qty,spiceName:i.spiceName,
         toppings:(i.toppings||[]).map(t=>({name:t.name,price:t.price,qty:t.qty,total:t.total})),
-        note:i.note||'', unitPrice:i.unitPrice,total:i.total
+        note:i.note||'', plara:i.plara||'', unitPrice:i.unitPrice,total:i.total
       }));
       const total=items.reduce((s,i)=>s+i.total,0);
       const secRef=shopRef.collection('settings').doc('secure');
+      const today=new Date();
+      const dayKey=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
       const queue=await db.runTransaction(async tx=>{
         const snap=await tx.get(secRef);
-        let qNum=1; if(snap.exists) qNum=Number(snap.data().queueCounter)||1;
+        const data=snap.exists?snap.data():{};
+        let qNum=1;
+        // รีเซ็ตคิวทุกวันใหม่
+        if(data.queueDate===dayKey){
+          qNum=Number(data.queueCounter)||1;
+        } else {
+          qNum=1;
+        }
         if(qNum>999) qNum=1;
         const q='A'+String(qNum).padStart(3,'0');
-        tx.set(secRef,{queueCounter:qNum+1},{merge:true});
+        tx.set(secRef,{ queueCounter:qNum+1, queueDate:dayKey },{merge:true});
         return q;
       });
       const id=uid();
@@ -689,7 +729,8 @@ const C={
     const lines=(o.items||[]).map(i=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty}`).join(', ');
       const note=i.note?`<div style="font-size:12px;color:#E65100">📝 ${esc(i.note)}</div>`:'';
-      return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span>${esc(i.name)} × ${i.qty}${tops?`<div style="font-size:12px;color:#777">${tops}</div>`:''}${note}</span><span>${money(i.total)}</span></div>`;
+      const pl=i.plara?`<div style="font-size:12px;color:#555">🐟 ${esc(i.plara)}</div>`:'';
+      return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span>${esc(i.name)} × ${i.qty}${tops?`<div style="font-size:12px;color:#777">${tops}</div>`:''}${pl}${note}</span><span>${money(i.total)}</span></div>`;
     }).join('');
     document.getElementById('ticketBody').innerHTML=`
       <h2 style="color:${cancelled?'var(--d)':paid?'var(--g)':'var(--p)'};margin-bottom:8px">${cancelled?'<i class="fa-solid fa-xmark"></i> ยกเลิกแล้ว':paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> รอชำระเงิน / รอรับออเดอร์'}</h2>
@@ -801,6 +842,11 @@ const C={
   }
 };
 C.init();
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('./sw.js').catch(e=>console.warn('SW',e));
+  });
+}
 </script>
 </body>
 </html>
