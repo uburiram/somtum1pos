@@ -420,6 +420,23 @@ const M={
       toast('เข้าสู่ระบบไม่สำเร็จ: '+(e.message||e));
     }
   },
+  enter(){
+    document.getElementById('loginView').classList.add('hide');
+    document.getElementById('appView').classList.remove('hide');
+    this.ready = false;
+    this.lastActive = 0;
+    this.listenOrders();
+    this.loadSettingsUI();
+    // อัปเดตชื่อร้านแบบ realtime
+    if (shopRef) {
+      shopRef.collection('settings').doc('public').onSnapshot(s => {
+        if (s.exists) {
+          const el = document.getElementById('shopTitle');
+          if (el) el.textContent = s.data().shopName || 'POS';
+        }
+      });
+    }
+  },
   logout(){
     sessionStorage.removeItem('pinUntil');
     location.reload();
