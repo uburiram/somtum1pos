@@ -392,8 +392,11 @@ const C={
   },
   openProduct(id){
     const m=this.menus.find(x=>x.id===id); if(!m||m.isOut)return;
-    // tops: {id: qty}
-    this.modal={menu:m,qty:1,spice:this.spice.filter(s=>s.isActive!==false)[0]?.id||null,topQty:{},note:'',plara:null};
+    // หมวด "กินคู่ส้มตำ" หรือชื่อคล้ายกัน → ไม่มีตัวเลือกเพิ่ม แค่จำนวน
+    const cat = (this.cats||[]).find(c=>c.id===m.catId);
+    const catName = (cat && cat.name) ? String(cat.name) : '';
+    const isSimple = /กินคู่|เครื่องเคียง|ของทานเล่นคู่|side/i.test(catName);
+    this.modal={menu:m,qty:1,spice:null,topQty:{},note:'',plara:null,simple:isSimple};
     const pn=document.getElementById('pNote'); if(pn) pn.value='';
     // รองรับ boolean / string / number จาก Firestore
     const enablePlara = (function(v){
@@ -465,6 +468,13 @@ const C={
          <input type="checkbox" style="width:18px;height:18px;accent-color:var(--p)" onchange="C.toggleTopChk('${esc(t.id)}',this)"></label>`).join('');
     }
     document.getElementById('topBox').style.display=tops.length?'block':'none';
+    // หมวดกินคู่ส้มตำ: ซ่อนตัวเลือกทั้งหมด
+    if(this.modal.simple){
+      document.getElementById('spiceBox').style.display='none';
+      document.getElementById('topBox').style.display='none';
+      const pb=document.getElementById('plaraBox'); if(pb) pb.style.display='none';
+      this.modal.spice=null; this.modal.topQty={}; this.modal.plara=null;
+    }
     this.updPrice(); this.show('mProduct');
   },
   pickPlara(v,el){
@@ -512,12 +522,14 @@ const C={
   addCart(){
     const p=this.modal;
     let spiceName='';
-    if(this.optionConfig.spiceMode==='multi'){
-      spiceName=Object.keys(p.spiceSet||{}).map(id=>(this.spice.find(s=>s.id===id)||{}).name).filter(Boolean).join(', ');
-      if(this.spice.filter(s=>s.isActive!==false).length && !spiceName){toast('เลือกระดับความเผ็ด');return}
-    } else {
-      if(this.spice.filter(s=>s.isActive!==false).length && !p.spice){toast('เลือกระดับความเผ็ด');return}
-      spiceName=(this.spice.find(s=>s.id===p.spice)||{}).name||'';
+    if(!p.simple){
+      if(this.optionConfig.spiceMode==='multi'){
+        spiceName=Object.keys(p.spiceSet||{}).map(id=>(this.spice.find(s=>s.id===id)||{}).name).filter(Boolean).join(', ');
+        if(this.spice.filter(s=>s.isActive!==false).length && !spiceName){toast('เลือกระดับความเผ็ด');return}
+      } else {
+        if(this.spice.filter(s=>s.isActive!==false).length && !p.spice){toast('เลือกระดับความเผ็ด');return}
+        spiceName=(this.spice.find(s=>s.id===p.spice)||{}).name||'';
+      }
     }
     const toppings=[];
     Object.entries(p.topQty||{}).forEach(([id,q])=>{
@@ -526,7 +538,7 @@ const C={
     });
     const unit=this.calcUnit();
     const note=(document.getElementById('pNote')?.value||'').trim();
-    const needPlara=(p.menu.allowPlara===true||p.menu.allowPlara===1||p.menu.allowPlara==='true'||p.menu.allowPlara==='1');
+    const needPlara=!p.simple && (p.menu.allowPlara===true||p.menu.allowPlara===1||p.menu.allowPlara==='true'||p.menu.allowPlara==='1');
     if(needPlara && !p.plara){ toast('เลือกใส่หรือไม่ใส่ปลาร้า'); return; }
     const plaraLabel=p.menu.allowPlara?(p.plara==='with'?'ใส่ปลาร้า':'ไม่ใส่ปลาร้า'):'';
     this.cart.push({
@@ -579,7 +591,7 @@ const C={
     const btn=document.getElementById('btnOrder');
     if(btn){
       if(m==='CASH'){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์ (เงินสด)'; }
-      else if(this.orderId){ btn.disabled=true; btn.textContent='รอชำระเงิน — ออเดอร์จะเข้าครัวเมื่อเงินเข้า'; }
+      else if(this.orderId){ btn.disabled=true; btn.textContent='สั่งแล้ว — รอชำระเงิน'; }
       else { btn.disabled=false; btn.textContent='ยืนยันออเดอร์ (QR)'; }
     }
     const cz=document.getElementById('cashZone');
@@ -743,10 +755,10 @@ const C={
     if(btn){ btn.disabled=true; btn.textContent='กำลังสร้างออเดอร์…'; }
     try{
       await this.createOrderInternal({
-        status:'AwaitingPayment',
+        status:'Pending',  // ส่งเข้าครัวทันที
         paymentStatus:'UNPAID'
       });
-      if(btn){ btn.disabled=true; btn.textContent='รอชำระเงิน — ออเดอร์จะเข้าครัวเมื่อเงินเข้า'; }
+      if(btn){ btn.disabled=true; btn.textContent='สั่งแล้ว — รอชำระเงิน'; }
     }catch(e){
       console.error(e);
       toast('สร้างออเดอร์ไม่สำเร็จ: '+(e.message||e));
@@ -772,7 +784,7 @@ const C={
         this.lastOrder={id:snap.id,...o};
         this.renderTicket(this.lastOrder);
         if(prev!=='PAID' && o.paymentStatus==='PAID'){
-          toast('ชำระเงินสำเร็จ · ออเดอร์เข้าครัวแล้ว');
+          toast('ชำระเงินสำเร็จ');
           try{ this.writeReceipt({id:snap.id,...o}); }catch(e){}
           clearInterval(this._payWatchTimer); this._payWatchTimer=null;
         }
@@ -809,14 +821,14 @@ const C={
         return;
       }
       await this.createOrderInternal({
-        status: this.payM==='CASH' ? 'Pending' : 'AwaitingPayment',
+        status: 'Pending',  // ส่งเข้าครัวทันทีทุกช่องทางชำระ
         paymentStatus: 'UNPAID'
       });
       toast('สั่งสำเร็จ');
     }catch(e){ console.error(e); toast('ส่งไม่สำเร็จ: '+(e.message||e)); }
     finally{
       if(this.payM==='CASH'){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
-      else { btn.disabled=true; btn.textContent='รอชำระเงิน — ออเดอร์จะเข้าครัวเมื่อเงินเข้า'; }
+      else { btn.disabled=true; btn.textContent='สั่งแล้ว — รอชำระเงิน'; }
     }
   },
   async createOrderInternal(opts){
@@ -873,7 +885,7 @@ const C={
       this.lastOrder={id:snap.id,...o};
       this.renderTicket(this.lastOrder);
       if(prevPay!=='PAID' && o.paymentStatus==='PAID'){
-        toast('ชำระเงินสำเร็จ · ออเดอร์เข้าครัวแล้ว');
+        toast('ชำระเงินสำเร็จ');
         try{ C.writeReceipt({id:snap.id,...o}); }catch(e){}
       }
     });
@@ -935,13 +947,16 @@ const C={
   renderTicket(o){
     const paid=(o.paymentStatus==='PAID');
     const cancelled=(o.status==='Cancelled');
-    const waitPay=!paid && !cancelled && (o.paymentMethod==='PROMPTPAY'||o.paymentMethod==='QR');
+    const hasSlip = !!(o.slipData) || (o.slipStatus && o.slipStatus!=='NONE' && o.slipStatus!=='');
+    // แสดง QR เฉพาะพร้อมเพย์ที่ยังไม่แนบสลิปและยังไม่ชำระ
+    const waitPay=!paid && !cancelled && (o.paymentMethod==='PROMPTPAY'||o.paymentMethod==='QR') && !hasSlip;
     const map={
-      Pending: paid ? ['bw','🟡 รอครัวรับออเดอร์'] : ['bw','🟡 รอชำระเงิน / รอรับออเดอร์'],
+      Pending: paid ? ['bw','🟡 รอครัวรับออเดอร์'] : ['bw','🟡 เข้าครัวแล้ว · รอชำระเงิน'],
       Cooking:['bi','🔵 กำลังทำ'],
-      Ready:['bg','🟢 พร้อมรับ'],
+      Ready: paid ? ['bg','🟢 พร้อมรับ'] : ['bw','🟡 ทำเสร็จแล้ว · รอชำระเงิน'],
       Completed:['bg','⚫ เสร็จสิ้น'],
-      Cancelled:['bd','❌ ยกเลิก']
+      Cancelled:['bd','❌ ยกเลิก'],
+      AwaitingPayment: ['bw','🟡 รอชำระเงิน']
     };
     const st=cancelled?map.Cancelled:(map[o.status]||map.Pending);
     const lines=(o.items||[]).map(i=>{
@@ -951,7 +966,7 @@ const C={
       return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span>${esc(i.name)} × ${i.qty}${tops?`<div style="font-size:12px;color:#777">${tops}</div>`:''}${pl}${note}</span><span>${money(i.total)}</span></div>`;
     }).join('');
     document.getElementById('ticketBody').innerHTML=`
-      <h2 style="color:${cancelled?'var(--d)':paid?'var(--g)':'var(--p)'};margin-bottom:8px">${cancelled?'<i class="fa-solid fa-xmark"></i> ยกเลิกแล้ว':paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> รอชำระเงิน / รอรับออเดอร์'}</h2>
+      <h2 style="color:${cancelled?'var(--d)':paid?'var(--g)':'var(--p)'};margin-bottom:8px">${cancelled?'<i class="fa-solid fa-xmark"></i> ยกเลิกแล้ว':paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> สั่งแล้ว · รอชำระเงิน'}</h2>
       <div>คิวของคุณ</div>
       <div class="huge">${esc(o.queue)}</div>
       <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
@@ -1101,7 +1116,8 @@ try{ if(C.isLineBrowser && C.isLineBrowser()){ const h=document.getElementById('
   window.deferredPwaPrompt = null;
   window.addEventListener('beforeinstallprompt', function(e){
     e.preventDefault();
-    window.deferredPwaPrompt = e;
+    // หน้าลูกค้าไม่ให้ติดตั้งแอป — ติดตั้งได้เฉพาะหน้า POS ร้านค้า
+    return;
     var b = document.getElementById('btnInstallApp');
     if(b) b.style.display = 'inline-flex';
   });

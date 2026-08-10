@@ -129,10 +129,10 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
     </div>
     <div class="filters">
       <button class="fc on" onclick="M.filter('kitchen',this)">ครัว (กำลังทำ)</button>
-      <button class="fc" onclick="M.filter('waitingPay',this)">รอชำระเงิน</button>
       <button class="fc" onclick="M.filter('unpaid',this)">ยังไม่ชำระ</button>
       <button class="fc" onclick="M.filter('paid',this)">ชำระแล้ว</button>
       <button class="fc" onclick="M.filter('slip',this)">รอตรวจสลิป</button>
+      <button class="fc" onclick="M.filter('waitingPay',this)">รอชำระเงิน</button>
       <button class="fc" onclick="M.filter('ready',this)">พร้อมรับ</button>
       <button class="fc" onclick="M.filter('cancelled',this)">ยกเลิก</button>
     </div>
@@ -567,12 +567,19 @@ const M={
   renderOrders(){
     const today=new Date(); today.setHours(0,0,0,0); const t0=today.getTime();
     let list=this.orders.slice();
-    if(this.filterKey==='kitchen') list=list.filter(o=>['Pending','Cooking','Ready'].includes(o.status));
-    else if(this.filterKey==='waitingPay') list=list.filter(o=>o.status==='AwaitingPayment'||(o.paymentStatus==='UNPAID'&&o.paymentMethod==='PROMPTPAY'&&o.status!=='Completed'&&o.status!=='Cancelled'));
-    else if(this.filterKey==='unpaid') list=list.filter(o=>o.paymentStatus==='UNPAID'&&o.status!=='Completed'&&o.status!=='Cancelled');
-    else if(this.filterKey==='slip') list=list.filter(o=>(o.slipStatus==='PENDING_REVIEW'||o.slipStatus==='AUTO_APPROVED')&&o.status!=='Cancelled');
-    else if(this.filterKey==='paid') list=list.filter(o=>o.paymentStatus==='PAID'&&o.status!=='Completed'&&o.status!=='Cancelled');
-    else if(this.filterKey==='ready') list=list.filter(o=>o.status==='Ready');
+    // กฎตามที่ร้านต้องการ:
+    // kitchen = กำลังทำ (Pending/Cooking) — ส่งเข้าครัวทันทีทุกช่องทาง
+    // unpaid = ยังไม่ชำระ (ทุกสถานะยกเว้น Completed/Cancelled)
+    // paid = ชำระแล้ว (ยังไม่เสร็จ)
+    // slip = พร้อมเพย์ + มีสลิปรอตรวจ
+    // waitingPay = ทำเสร็จแล้ว (Ready) แต่ยังไม่จ่าย
+    // ready = ทำเสร็จแล้ว + จ่ายแล้ว (พร้อมรับ)
+    if(this.filterKey==='kitchen') list=list.filter(o=>['Pending','Cooking'].includes(o.status) && o.status!=='Cancelled');
+    else if(this.filterKey==='unpaid') list=list.filter(o=>o.paymentStatus==='UNPAID' && o.status!=='Completed' && o.status!=='Cancelled');
+    else if(this.filterKey==='paid') list=list.filter(o=>o.paymentStatus==='PAID' && o.status!=='Completed' && o.status!=='Cancelled');
+    else if(this.filterKey==='slip') list=list.filter(o=>(o.paymentMethod==='PROMPTPAY'||o.paymentMethod==='QR') && (o.slipStatus==='PENDING_REVIEW'||o.slipStatus==='AUTO_APPROVED') && o.status!=='Cancelled');
+    else if(this.filterKey==='waitingPay') list=list.filter(o=>o.status==='Ready' && o.paymentStatus==='UNPAID');
+    else if(this.filterKey==='ready') list=list.filter(o=>o.status==='Ready' && o.paymentStatus==='PAID');
     else if(this.filterKey==='cancelled') list=list.filter(o=>o.status==='Cancelled');
     // ครัว: เรียงเก่า→ใหม่ (ออเดอร์ใหม่อยู่ล่าง)
     if(this.filterKey==='kitchen'||this.filterKey==='waitingPay'||this.filterKey==='unpaid'||this.filterKey==='paid'||this.filterKey==='slip'||this.filterKey==='ready'){
@@ -595,13 +602,16 @@ const M={
     g.innerHTML=list.map(o=>{
       let prev=(o.items||[]).map(i=>i.name+' x'+i.qty).join(', '); if(prev.length>40) prev=prev.slice(0,40)+'…';
       const pay=o.paymentStatus==='PAID'?'<span style="background:#E8F5E9;color:#2E7D32;padding:2px 8px;border-radius:4px;font-size:12px">ชำระแล้ว</span>':'<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px">ยังไม่ชำระ</span>';
-      const slip=o.slipStatus==='PENDING_REVIEW'?' <span style="background:#FFF3E0;color:#E65100;padding:2px 6px;border-radius:4px;font-size:11px">สลิป</span>':'';
+      const method = (o.paymentMethod==='CASH')
+        ? '<span style="background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:4px;font-size:11px">เงินสด</span>'
+        : '<span style="background:#E8EAF6;color:#3949AB;padding:2px 6px;border-radius:4px;font-size:11px">พร้อมเพย์</span>';
+      const slip=o.slipStatus==='PENDING_REVIEW'?' <span style="background:#FFF3E0;color:#E65100;padding:2px 6px;border-radius:4px;font-size:11px">รอตรวจสลิป</span>':(o.slipStatus==='APPROVED'||o.slipStatus==='AUTO_APPROVED'?' <span style="background:#E8F5E9;color:#2E7D32;padding:2px 6px;border-radius:4px;font-size:11px">สลิปผ่าน</span>':'');
       const isNew=this.unviewed&&this.unviewed.has(o.id);
       return `<div class="oc ${esc(o.status||'')}" style="${isNew?'box-shadow:0 0 0 3px #F44336;':''}" onclick="M.openDetail('${esc(o.id)}')">
         <div style="display:flex;justify-content:space-between"><div class="q">${esc(o.queue)}</div>
         <div style="color:#888;font-size:13px">${o.createdAt?new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}</div></div>
         <div style="margin:8px 0;color:#444">${esc(prev)}</div>
-        <div style="display:flex;justify-content:space-between;align-items:center"><strong style="color:var(--p);font-size:1.25rem">${money(o.total)}</strong><span>${pay}${slip}</span></div></div>`;
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px"><strong style="color:var(--p);font-size:1.25rem">${money(o.total)}</strong><span style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${method}${pay}${slip}</span></div></div>`;
     }).join('');
   },
   openDetail(id){
@@ -645,7 +655,7 @@ const M={
       </div>
       <div style="text-align:center;margin-bottom:12px"><div style="color:#777">ยอดรวม</div>
         <div style="font-size:2rem;font-weight:700;color:var(--p)">${money(o.total)}</div>
-        <div style="margin-top:6px">${o.paymentStatus==='PAID'?'<span style="color:var(--g);font-weight:700">✓ ชำระแล้ว</span>':'<span style="color:var(--d);font-weight:700">ยังไม่ชำระ</span>'}</div>
+        <div style="margin-top:6px">${o.paymentStatus==='PAID'?'<span style="color:var(--g);font-weight:700">✓ ชำระแล้ว</span>':'<span style="color:var(--d);font-weight:700">ยังไม่ชำระ</span>'} · <span style="font-weight:600">${o.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์ / QR'}</span></div>
       </div>
       ${items}${slipBlock}
       ${statusBtns}
