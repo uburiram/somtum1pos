@@ -20,8 +20,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="./firebase-config.js"></script>
-<!-- Firebase โหลดแบบ sequential ด้านล่างก่อน boot เพื่อกัน auth ไม่ทัน -->
 <style>
 :root{--p:#FF5722;--g:#4CAF50;--bg:#E8E8E8;--d:#F44336;--i:#2196F3}
 *{box-sizing:border-box;margin:0;padding:0;font-family:Prompt,sans-serif}
@@ -93,15 +94,10 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
 <div class="banner" id="cfgBanner">⚠️ ยังไม่ได้ตั้งค่า Firebase</div>
 <div id="loginView" class="pinbox">
   <h2 style="color:var(--p);margin-bottom:8px"><i class="fa-solid fa-lock"></i> POS ร้านค้า</h2>
-  <p style="font-size:13px;color:#666;margin-bottom:10px">เข้าสู่ระบบด้วยบัญชีร้าน (Firebase Auth)</p>
-  <label class="lbl" style="text-align:left">อีเมล</label>
-  <input type="email" id="authEmail" placeholder="shop@example.com" autocomplete="username" style="margin-bottom:8px">
-  <label class="lbl" style="text-align:left">รหัสผ่าน</label>
-  <input type="password" id="authPass" placeholder="รหัสผ่าน" autocomplete="current-password" style="margin-bottom:8px">
+  <p style="font-size:13px;color:#666;margin-bottom:10px">ใส่ PIN ร้านเพื่อเข้าใช้งาน</p>
+  <input type="password" id="pinIn" inputmode="numeric" maxlength="8" placeholder="PIN 4–8 หลัก" style="text-align:center;font-size:1.5rem;letter-spacing:6px;margin:12px 0">
   <button class="btn btn-p btn-block" onclick="M.login()">เข้าสู่ระบบ</button>
-  <button class="btn btn-o btn-block" style="margin-top:8px" onclick="M.registerShop()">สมัครบัญชีร้านครั้งแรก</button>
-  <p style="font-size:12px;color:#999;margin-top:12px">สร้างบัญชีครั้งเดียวใน Firebase Auth แล้วใช้เครื่องนี้ login ค้างไว้</p>
-  <p style="font-size:11px;color:#C62828;margin-top:8px;line-height:1.4">ถ้าสมัครไม่ได้: Firebase Console → Authentication → Settings → Authorized domains ต้องมี <strong>uburiram.github.io</strong></p>
+  <p style="font-size:12px;color:#999;margin-top:12px">PIN เริ่มต้น: <strong>1234</strong> (เปลี่ยนได้ในตั้งค่าหลังเข้าสู่ระบบ)</p>
   <p style="margin-top:16px"><a href="./" style="color:var(--p)">← หน้าลูกค้า</a></p>
 </div>
 
@@ -351,36 +347,27 @@ const M={
   async boot(){
     const c=window.FIREBASE_CONFIG||{};
     if(!c.apiKey||String(c.apiKey).includes('PASTE')){document.getElementById('cfgBanner').classList.add('on');return}
-    if(!firebase.apps || !firebase.apps.length){
-      firebase.initializeApp(c);
-    }
-    db=firebase.firestore();
-    try{await db.enablePersistence({synchronizeTabs:true})}catch(e){}
-    shopRef=db.collection('shops').doc(window.SHOP_ID||'main');
     try{
-      const q=await shopRef.collection('settings').doc('queue').get();
-      if(!q.exists) await shopRef.collection('settings').doc('queue').set({queueCounter:1,queueDate:''},{merge:true});
-    }catch(e){}
-    const auth=this.getAuth();
-    this.auth=auth;
-    if(!auth){
-      document.getElementById('cfgBanner').classList.add('on');
-      document.getElementById('cfgBanner').textContent='⚠️ โหลด Firebase Auth ไม่ได้ — ตรวจเน็ต/รีเฟรชหน้า';
-      return;
-    }
-    auth.onAuthStateChanged(async (user)=>{
-      if(user){
-        this.staffUid=user.uid;
-        await this.ensurePublicSeed();
+      if(!firebase.apps || !firebase.apps.length) firebase.initializeApp(c);
+      db=firebase.firestore();
+      try{await db.enablePersistence({synchronizeTabs:true})}catch(e){}
+      shopRef=db.collection('shops').doc(window.SHOP_ID||'main');
+      // queue doc
+      try{
+        const q=await shopRef.collection('settings').doc('queue').get();
+        if(!q.exists) await shopRef.collection('settings').doc('queue').set({queueCounter:1,queueDate:''},{merge:true});
+      }catch(e){}
+      await this.ensureSecure();
+      // session PIN ยังไม่หมดอายุ
+      if(Number(sessionStorage.getItem('pinUntil')||0) > Date.now()){
         this.enter();
-        this.setupFcm();
-      } else {
-        document.getElementById('loginView').classList.remove('hide');
-        document.getElementById('appView').classList.add('hide');
       }
-    });
+    }catch(e){
+      console.error(e);
+      toast('เริ่มระบบไม่สำเร็จ: '+(e.message||e));
+    }
   },
-  async ensurePublicSeed(){
+  async ensureSecure(){
     try{
       const pub=await shopRef.collection('settings').doc('public').get();
       if(!pub.exists){
@@ -393,7 +380,14 @@ const M={
           kshopPayload:window.KSHOP_QR_PAYLOAD||''
         },{merge:true});
       }
-      // seed เมนูเริ่มต้นถ้ายังว่าง (ต้อง login แล้ว)
+      const sec=await shopRef.collection('settings').doc('secure').get();
+      if(!sec.exists){
+        await shopRef.collection('settings').doc('secure').set({
+          pinHash: await sha256('1234'),
+          queueCounter:1
+        },{merge:true});
+      }
+      // seed เมนูถ้ายังว่าง
       const catSnap=await shopRef.collection('categories').limit(1).get();
       if(catSnap.empty){
         const batch=db.batch();
@@ -404,141 +398,31 @@ const M={
         [['s1','ไม่เผ็ด',1],['s2','เผ็ดน้อย',2],['s3','เผ็ดกลาง',3],['s4','เผ็ดมาก',4]].forEach(([id,name,order])=>batch.set(shopRef.collection('spiceLevels').doc(id),{id,name,isActive:true,order}));
         [['t1','ไข่ดาว',10],['t2','ไข่ต้ม',10],['t3','เพิ่มปู',20],['t4','หมูกรอบ',15]].forEach(([id,name,price],i)=>batch.set(shopRef.collection('toppings').doc(id),{id,name,price,isActive:true,order:i+1}));
         await batch.commit();
-        toast('ตั้งค่าเมนูเริ่มต้นแล้ว');
       }
-    }catch(e){ console.warn('seed public/menu', e); }
-  },
-    getAuth(){
-    try{
-      if(typeof firebase==='undefined'){
-        console.error('firebase undefined');
-        return null;
-      }
-      // compat SDK ต้องเป็น function
-      if(typeof firebase.auth !== 'function'){
-        console.error('firebase.auth type=', typeof firebase.auth, 'keys=', Object.keys(firebase));
-        return null;
-      }
-      return firebase.auth();
-    }catch(e){
-      console.error('getAuth error', e);
-      return null;
-    }
+    }catch(e){ console.warn('ensureSecure', e); }
   },
   async login(){
-    const email=(document.getElementById('authEmail').value||'').trim();
-    const pass=document.getElementById('authPass').value||'';
-    if(!email||!pass){toast('ใส่อีเมลและรหัสผ่าน');return}
-    const auth=this.getAuth();
-    if(!auth){
-      toast('โหลด Firebase Auth ไม่สำเร็จ — รีเฟรชหน้าแล้วลองใหม่');
-      return;
-    }
+    const input=(document.getElementById('pinIn').value||'').trim();
+    if(!/^\d{4,8}$/.test(input)){ toast('PIN ต้องเป็นตัวเลข 4–8 หลัก'); return; }
     try{
-      await auth.signInWithEmailAndPassword(email, pass);
-      toast('เข้าสู่ระบบแล้ว');
-    }catch(e){
-      const code=e && e.code;
-      if(code==='auth/operation-not-allowed'){
-        toast('ยังไม่เปิด Email/Password ใน Firebase Console → Authentication');
-      } else if(code==='auth/user-not-found'||code==='auth/invalid-credential'||code==='auth/wrong-password'){
-        toast('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
-      } else if(code==='auth/invalid-email'){
-        toast('รูปแบบอีเมลไม่ถูกต้อง');
+      await this.ensureSecure();
+      const s=await shopRef.collection('settings').doc('secure').get();
+      const hash=s.exists ? (s.data().pinHash||'') : '';
+      const inputHash=await sha256(input);
+      if(hash && inputHash===hash){
+        sessionStorage.setItem('pinUntil', String(Date.now()+8*60*60*1000)); // 8 ชม.
+        this.enter();
+        toast('เข้าสู่ระบบแล้ว');
       } else {
-        toast('เข้าสู่ระบบไม่สำเร็จ: '+(e.message||e));
+        toast('PIN ไม่ถูกต้อง');
       }
+    }catch(e){
+      toast('เข้าสู่ระบบไม่สำเร็จ: '+(e.message||e));
     }
   },
-  async registerShop(){
-    const email=(document.getElementById('authEmail').value||'').trim();
-    const pass=document.getElementById('authPass').value||'';
-    if(!email||pass.length<6){toast('อีเมล + รหัสผ่านอย่างน้อย 6 ตัว');return}
-    if(!confirm('สร้างบัญชีร้านใหม่ด้วยอีเมลนี้?\n(ใช้ครั้งแรกครั้งเดียว)')) return;
-    const auth=this.getAuth();
-    if(!auth){
-      toast('โหลด Firebase Auth ไม่สำเร็จ — รีเฟรชหน้าแล้วลองใหม่ (ตรวจว่ามี firebase-auth script)');
-      return;
-    }
-    try{
-      await auth.createUserWithEmailAndPassword(email, pass);
-      toast('สมัครสำเร็จ · เข้าสู่ระบบแล้ว');
-    }catch(e){
-      const code=e && e.code;
-      if(code==='auth/operation-not-allowed'){
-        toast('เปิด Email/Password ใน Firebase Console ก่อน: Authentication → Sign-in method');
-      } else if(code==='auth/email-already-in-use'){
-        toast('อีเมลนี้มีบัญชีแล้ว — กดเข้าสู่ระบบ');
-      } else if(code==='auth/weak-password'){
-        toast('รหัสผ่านอ่อนเกินไป (อย่างน้อย 6 ตัว)');
-      } else if(code==='auth/invalid-email'){
-        toast('รูปแบบอีเมลไม่ถูกต้อง');
-      } else {
-        toast('สมัครไม่สำเร็จ: '+(e.message||e));
-      }
-    }
-  },
-  async logout(){
-    try{
-      const auth=this.getAuth();
-      if(auth) await auth.signOut();
-    }catch(e){}
+  logout(){
+    sessionStorage.removeItem('pinUntil');
     location.reload();
-  },
-  async setupFcm(){
-    try{
-      if(!firebase.messaging) return;
-      if(!window.FIREBASE_VAPID_KEY){ console.warn('ยังไม่มี FIREBASE_VAPID_KEY'); return; }
-      const messaging=firebase.messaging();
-      const perm=await Notification.requestPermission();
-      if(perm!=='granted'){ toast('ยังไม่อนุญาตการแจ้งเตือน'); return; }
-      // ลงทะเบียน SW สำหรับ FCM
-      const reg=await navigator.serviceWorker.register('./firebase-messaging-sw.js');
-      const token=await messaging.getToken({ vapidKey: window.FIREBASE_VAPID_KEY, serviceWorkerRegistration: reg });
-      if(token){
-        await shopRef.collection('fcmTokens').doc(token).set({
-          token, uid:this.staffUid||'', updatedAt:Date.now(), ua:navigator.userAgent||''
-        },{merge:true});
-        console.log('FCM token saved');
-        this.notifyOn=true;
-      }
-      messaging.onMessage((payload)=>{
-        const t=(payload.notification&&payload.notification.title)||'ออเดอร์ใหม่';
-        const b=(payload.notification&&payload.notification.body)||'';
-        this.pushNotify(t,b);
-        this.beep();
-      });
-    }catch(e){ console.warn('FCM setup', e); }
-  },
-  
-  scrollToForm(focusId){
-    try{
-      const el=document.getElementById(focusId);
-      const panel=document.getElementById('panelShop')||document.body;
-      // เปิดแท็บจัดการร้านถ้ายังไม่เปิด
-      if(document.getElementById('panelShop') && !document.getElementById('panelShop').classList.contains('on')){
-        // leave as is — already on shop when editing
-      }
-      if(el){
-        setTimeout(()=>{
-          el.scrollIntoView({behavior:'smooth', block:'center'});
-          try{ el.focus({preventScroll:true}); }catch(e){ try{ el.focus(); }catch(e2){} }
-        }, 80);
-      }
-    }catch(e){}
-  },
-
-  installApp(){
-    var p=window.deferredPwaPrompt;
-    if(!p){ toast('Chrome: เมนู ⋮ → ติดตั้งแอป'); return; }
-    p.prompt();
-    p.userChoice.then(function(){ window.deferredPwaPrompt=null; var b=document.getElementById('btnInstallApp'); if(b) b.style.display='none'; });
-  },
-  enter(){
-    document.getElementById('loginView').classList.add('hide');
-    document.getElementById('appView').classList.remove('hide');
-    this.ready=false; this.lastActive=0; this.listenOrders(); this.loadSettingsUI();
-    shopRef.collection('settings').doc('public').onSnapshot(s=>{ if(s.exists) document.getElementById('shopTitle').textContent=s.data().shopName||'POS'; });
   },
   enableAudio(){
     this.audio=new (window.AudioContext||window.webkitAudioContext)();
@@ -1381,54 +1265,7 @@ const M={
 
 document.getElementById('pinIn').addEventListener('keydown',e=>{if(e.key==='Enter')M.login()});
 
-(function loadFirebaseThenBoot(){
-  var urls = [
-    'https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js',
-    'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js',
-    'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js',
-    'https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js'
-  ];
-  function loadOne(src){
-    return new Promise(function(resolve, reject){
-      // ถ้ามีอยู่แล้วข้าม
-      var exists = Array.prototype.some.call(document.scripts, function(s){ return (s.src||'').indexOf(src.split('/').pop()) !== -1; });
-      if(exists && typeof firebase !== 'undefined'){ resolve(); return; }
-      var el = document.createElement('script');
-      el.src = src;
-      el.async = false;
-      el.onload = function(){ resolve(); };
-      el.onerror = function(){ reject(new Error('โหลดไม่สำเร็จ: ' + src)); };
-      document.head.appendChild(el);
-    });
-  }
-  function run(){
-    var i = 0;
-    function next(){
-      if(i >= urls.length){
-        // ตรวจ Auth พร้อม
-        if(typeof firebase === 'undefined'){
-          toast('Firebase โหลดไม่สำเร็จ — ตรวจเน็ตแล้วรีเฟรช');
-          return;
-        }
-        if(typeof firebase.auth !== 'function'){
-          toast('Firebase Auth ยังไม่พร้อม — รอ 2 วิแล้วลองสมัครใหม่ หรือรีเฟรช');
-          console.error('firebase keys', Object.keys(firebase||{}));
-          return;
-        }
-        M.boot().catch(function(e){ console.error(e); toast('เริ่มไม่สำเร็จ: '+(e.message||e)); });
-        return;
-      }
-      loadOne(urls[i++]).then(next).catch(function(err){
-        console.error(err);
-        toast(err.message||'โหลด Firebase ไม่สำเร็จ');
-      });
-    }
-    next();
-  }
-  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
-  else run();
-})();
-
+M.boot().catch(function(e){ console.error(e); toast("เริ่มไม่สำเร็จ: "+(e.message||e)); });
 </script>
 
 <script>
