@@ -20,11 +20,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js"></script>
 <script src="./firebase-config.js"></script>
+<!-- Firebase โหลดแบบ sequential ด้านล่างก่อน boot เพื่อกัน auth ไม่ทัน -->
 <style>
 :root{--p:#FF5722;--g:#4CAF50;--bg:#E8E8E8;--d:#F44336;--i:#2196F3}
 *{box-sizing:border-box;margin:0;padding:0;font-family:Prompt,sans-serif}
@@ -104,6 +101,7 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
   <button class="btn btn-p btn-block" onclick="M.login()">เข้าสู่ระบบ</button>
   <button class="btn btn-o btn-block" style="margin-top:8px" onclick="M.registerShop()">สมัครบัญชีร้านครั้งแรก</button>
   <p style="font-size:12px;color:#999;margin-top:12px">สร้างบัญชีครั้งเดียวใน Firebase Auth แล้วใช้เครื่องนี้ login ค้างไว้</p>
+  <p style="font-size:11px;color:#C62828;margin-top:8px;line-height:1.4">ถ้าสมัครไม่ได้: Firebase Console → Authentication → Settings → Authorized domains ต้องมี <strong>uburiram.github.io</strong></p>
   <p style="margin-top:16px"><a href="./" style="color:var(--p)">← หน้าลูกค้า</a></p>
 </div>
 
@@ -353,7 +351,9 @@ const M={
   async boot(){
     const c=window.FIREBASE_CONFIG||{};
     if(!c.apiKey||String(c.apiKey).includes('PASTE')){document.getElementById('cfgBanner').classList.add('on');return}
-    firebase.initializeApp(c);
+    if(!firebase.apps || !firebase.apps.length){
+      firebase.initializeApp(c);
+    }
     db=firebase.firestore();
     try{await db.enablePersistence({synchronizeTabs:true})}catch(e){}
     shopRef=db.collection('shops').doc(window.SHOP_ID||'main');
@@ -410,11 +410,20 @@ const M={
   },
     getAuth(){
     try{
-      if(typeof firebase==='undefined' || !firebase.auth){
+      if(typeof firebase==='undefined'){
+        console.error('firebase undefined');
+        return null;
+      }
+      // compat SDK ต้องเป็น function
+      if(typeof firebase.auth !== 'function'){
+        console.error('firebase.auth type=', typeof firebase.auth, 'keys=', Object.keys(firebase));
         return null;
       }
       return firebase.auth();
-    }catch(e){ return null; }
+    }catch(e){
+      console.error('getAuth error', e);
+      return null;
+    }
   },
   async login(){
     const email=(document.getElementById('authEmail').value||'').trim();
@@ -1371,7 +1380,55 @@ const M={
 };
 
 document.getElementById('pinIn').addEventListener('keydown',e=>{if(e.key==='Enter')M.login()});
-M.boot().catch(e=>{console.error(e);toast('เริ่มไม่สำเร็จ')});
+
+(function loadFirebaseThenBoot(){
+  var urls = [
+    'https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js',
+    'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js',
+    'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js',
+    'https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js'
+  ];
+  function loadOne(src){
+    return new Promise(function(resolve, reject){
+      // ถ้ามีอยู่แล้วข้าม
+      var exists = Array.prototype.some.call(document.scripts, function(s){ return (s.src||'').indexOf(src.split('/').pop()) !== -1; });
+      if(exists && typeof firebase !== 'undefined'){ resolve(); return; }
+      var el = document.createElement('script');
+      el.src = src;
+      el.async = false;
+      el.onload = function(){ resolve(); };
+      el.onerror = function(){ reject(new Error('โหลดไม่สำเร็จ: ' + src)); };
+      document.head.appendChild(el);
+    });
+  }
+  function run(){
+    var i = 0;
+    function next(){
+      if(i >= urls.length){
+        // ตรวจ Auth พร้อม
+        if(typeof firebase === 'undefined'){
+          toast('Firebase โหลดไม่สำเร็จ — ตรวจเน็ตแล้วรีเฟรช');
+          return;
+        }
+        if(typeof firebase.auth !== 'function'){
+          toast('Firebase Auth ยังไม่พร้อม — รอ 2 วิแล้วลองสมัครใหม่ หรือรีเฟรช');
+          console.error('firebase keys', Object.keys(firebase||{}));
+          return;
+        }
+        M.boot().catch(function(e){ console.error(e); toast('เริ่มไม่สำเร็จ: '+(e.message||e)); });
+        return;
+      }
+      loadOne(urls[i++]).then(next).catch(function(err){
+        console.error(err);
+        toast(err.message||'โหลด Firebase ไม่สำเร็จ');
+      });
+    }
+    next();
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
+  else run();
+})();
+
 </script>
 
 <script>
