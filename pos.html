@@ -699,7 +699,7 @@ const M={
       <div class="rc"><div class="v">${money(pp)}</div><div class="l">พร้อมเพย์</div></div>`;
     const mc={}; list.forEach(o=>(o.items||[]).forEach(i=>{mc[i.name]=(mc[i.name]||0)+Number(i.qty||0)}));
     const top=Object.entries(mc).sort((a,b)=>b[1]-a[1]).slice(0,8);
-    document.getElementById('topMenus').innerHTML=top.length?top.map(([n,q],i)=>`<div class="list-item" style="justify-content:space-between"><div class="meta"><div class="name">${i+1}. ${esc(n)}</div></div><strong style="flex:0 0 auto;white-space:nowrap">${q} จาน</strong></div>`).join(''):'<div style="color:#888">ยังไม่มี</div>';
+    document.getElementById('topMenus').innerHTML=top.length?top.map(([n,q],i)=>`<div class="list-item" style="justify-content:space-between"><div class="meta"><div class="name">${i+1}. ${esc(n)}</div></div><strong style="flex:0 0 auto;white-space:nowrap">${q}</strong></div>`).join(''):'<div style="color:#888">ยังไม่มี</div>';
   },
 
   async loadCatalogMenus(){
