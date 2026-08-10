@@ -583,11 +583,17 @@ const C={
   rmCart(i){this.cart.splice(i,1);this.updFab();this.openCart()},
   checkout(){
     if(!this.cart.length)return;
+    // ออเดอร์ใหม่ — เคลียร์ id เก่า
+    this.orderId=null;
+    this.lastOrder=null;
+    if(this._payWatchTimer){ clearInterval(this._payWatchTimer); this._payWatchTimer=null; }
     document.getElementById('payTotal').textContent=money(this.cart.reduce((s,i)=>s+i.total,0));
     this.slipData='';
     const sf=document.getElementById('slipFile'); if(sf) sf.value='';
     const sp=document.getElementById('slipPreview'); if(sp) sp.innerHTML='';
     const sm=document.getElementById('slipAutoMsg'); if(sm) sm.textContent='';
+    const btn=document.getElementById('btnOrder');
+    if(btn){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
     this.payM='PROMPTPAY';
     this.payMethod('PROMPTPAY');
     this.hide('mCart'); this.show('mPay');
@@ -598,6 +604,12 @@ const C={
     this.payM=m;
     document.getElementById('lbCash').classList.toggle('on',m==='CASH');
     document.getElementById('lbPP').classList.toggle('on',m==='PROMPTPAY');
+    const btn=document.getElementById('btnOrder');
+    if(btn){
+      if(m==='CASH'){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
+      else if(this.orderId){ btn.disabled=true; btn.textContent='รอชำระเงิน — ออเดอร์จะเข้าครัวเมื่อเงินเข้า'; }
+      else { btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
+    }
     const z=document.getElementById('ppZone');
     if(m==='PROMPTPAY'){
       z.style.display='block';
@@ -692,8 +704,54 @@ const C={
       toast('ถ้าไม่เจอไฟล์: กดค้างที่รูป QR เพื่อบันทึก');
     }
   },
+  renderCart(){
+    this.updFab();
+  },
+  attachTicketQR(){
+    try{ this.ensurePayQRAsImage(); }catch(e){}
+  },
+  async autoSubmitQROrder(){
+    if(this.payM!=='PROMPTPAY') return;
+    if(this.orderId) return;
+    if(!this.cart || !this.cart.length) return;
+    const btn=document.getElementById('btnOrder');
+    if(btn){ btn.disabled=true; btn.textContent='กำลังสร้างออเดอร์…'; }
+    try{
+      await this.createOrderInternal({
+        status:'AwaitingPayment',
+        paymentStatus:'UNPAID'
+      });
+      if(btn){ btn.disabled=true; btn.textContent='รอชำระเงิน — ออเดอร์จะเข้าครัวเมื่อเงินเข้า'; }
+    }catch(e){
+      console.error(e);
+      toast('สร้างออเดอร์ไม่สำเร็จ: '+(e.message||e));
+      if(btn){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
+    }
+  },
+  startPayWatch(id){
+    if(this._payWatchTimer){ clearInterval(this._payWatchTimer); this._payWatchTimer=null; }
+    if(!id) return;
+    let ticks=0;
+    this._payWatchTimer=setInterval(async()=>{
+      ticks++;
+      if(ticks>180){ clearInterval(this._payWatchTimer); this._payWatchTimer=null; return; }
+      try{
+        const snap=await shopRef.collection('orders').doc(id).get();
+        if(!snap.exists) return;
+        const o=snap.data()||{};
+        const prev=(this.lastOrder&&this.lastOrder.paymentStatus)||'';
+        this.lastOrder={id:snap.id,...o};
+        this.renderTicket(this.lastOrder);
+        if(prev!=='PAID' && o.paymentStatus==='PAID'){
+          toast('ชำระเงินสำเร็จ · ออเดอร์เข้าครัวแล้ว');
+          try{ this.writeReceipt({id:snap.id,...o}); }catch(e){}
+          clearInterval(this._payWatchTimer); this._payWatchTimer=null;
+        }
+      }catch(e){}
+    }, 4000);
+  },
   async confirmOrder(){
-    // ถ้าเป็น QR และสร้างออเดอร์รอชำระแล้ว → แค่รอเงิน
+    // QR สร้างออเดอร์รอชำระแล้ว → แค่รอเงิน
     if(this.payM==='PROMPTPAY' && this.orderId){
       toast('โอนตาม QR ได้เลย · เมื่อชำระแล้วออเดอร์เข้าครัวอัตโนมัติ');
       return;
@@ -701,6 +759,20 @@ const C={
     const btn=document.getElementById('btnOrder');
     btn.disabled=true; btn.textContent='กำลังส่ง…';
     try{
+      // เปลี่ยนจาก QR → เงินสด หลังสร้างออเดอร์ไปแล้ว
+      if(this.payM==='CASH' && this.orderId){
+        await shopRef.collection('orders').doc(this.orderId).update({
+          paymentMethod:'CASH',
+          status:'Pending',
+          paymentStatus:'UNPAID'
+        });
+        const snap=await shopRef.collection('orders').doc(this.orderId).get();
+        this.lastOrder={id:snap.id,...(snap.data()||{})};
+        this.renderTicket(this.lastOrder);
+        this.hide('mPay'); this.show('mTicket');
+        toast('สั่งสำเร็จ (เงินสด) · รอร้านรับออเดอร์');
+        return;
+      }
       await this.createOrderInternal({
         status: this.payM==='CASH' ? 'Pending' : 'AwaitingPayment',
         paymentStatus: 'UNPAID'

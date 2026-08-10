@@ -396,30 +396,54 @@ const M={
   listenOrders(){
     if(this.unsub) this.unsub();
     this.unviewed=this.unviewed||new Set();
-    this.unsub=shopRef.collection('orders').limit(150).onSnapshot(snap=>{
-      this.orders=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-      const activeOrders=this.orders.filter(o=>o.status!=='Completed');
-      const active=activeOrders.length;
-      if(this.ready){
-        // หาออเดอร์ใหม่ที่ยังไม่เคยเห็น
-        activeOrders.forEach(o=>{
-          if(o.status==='Pending' && !this.seenIds.has(o.id)){
-            this.unviewed.add(o.id);
+    const attach=()=>{
+      this.unsub=shopRef.collection('orders').orderBy('createdAt','desc').limit(300).onSnapshot(snap=>{
+        this.orders=snap.docs.map(d=>({id:d.id,...d.data()}));
+        const activeOrders=this.orders.filter(o=>o.status!=='Completed'&&o.status!=='Cancelled');
+        const active=activeOrders.length;
+        if(this.ready){
+          activeOrders.forEach(o=>{
+            // ออเดอร์ใหม่รอครัว / รอชำระ
+            if((o.status==='Pending'||o.status==='AwaitingPayment') && !this.seenIds.has(o.id)){
+              this.unviewed.add(o.id);
+            }
+            // เพิ่งชำระเงิน → แจ้งร้านอีกครั้ง
+            if(o.paymentStatus==='PAID' && (o.status==='Pending'||o.status==='Cooking') && this.seenIds.has(o.id) && !(this.seenPaid&&this.seenPaid.has(o.id))){
+              this.seenPaid=this.seenPaid||new Set();
+              this.seenPaid.add(o.id);
+              this.unviewed.add(o.id);
+            }
+          });
+          if(this.unviewed.size>0){
+            this.startAlarm();
+            toast('🔔 มีออเดอร์ใหม่ / อัปเดต '+this.unviewed.size+' รายการ');
           }
-        });
-        if(this.unviewed.size>0){
-          this.startAlarm();
-          toast('🔔 มีออเดอร์ใหม่ '+this.unviewed.size+' รายการ');
+        } else {
+          this.seenIds=new Set(this.orders.map(o=>o.id));
+          this.seenPaid=new Set(this.orders.filter(o=>o.paymentStatus==='PAID').map(o=>o.id));
+          this.unviewed=new Set();
+          this.ready=true;
         }
-      } else {
-        // snapshot แรก: ถือว่าเห็นแล้วทั้งหมด (ไม่ปลุกตอนเปิดหน้า)
-        this.seenIds=new Set(this.orders.map(o=>o.id));
-        this.unviewed=new Set();
-        this.ready=true;
-      }
-      this.lastActive=active; this.renderOrders();
-      this.updateAlarmBadge();
-    }, err=>toast('ฟังออเดอร์ไม่สำเร็จ: '+err.message));
+        this.lastActive=active; this.renderOrders();
+        this.updateAlarmBadge();
+      }, err=>{
+        console.warn('orderBy snapshot failed, fallback', err);
+        // fallback ไม่มี index
+        this.unsub=shopRef.collection('orders').limit(300).onSnapshot(snap=>{
+          this.orders=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+          const activeOrders=this.orders.filter(o=>o.status!=='Completed'&&o.status!=='Cancelled');
+          if(!this.ready){
+            this.seenIds=new Set(this.orders.map(o=>o.id));
+            this.seenPaid=new Set(this.orders.filter(o=>o.paymentStatus==='PAID').map(o=>o.id));
+            this.unviewed=new Set();
+            this.ready=true;
+          }
+          this.lastActive=activeOrders.length; this.renderOrders();
+          this.updateAlarmBadge();
+        }, e2=>toast('ฟังออเดอร์ไม่สำเร็จ: '+e2.message));
+      });
+    };
+    attach();
   },
   seenIds:new Set(),
   unviewed:new Set(),
@@ -471,7 +495,7 @@ const M={
     else if(this.filterKey==='completed') list=list.filter(o=>o.status==='Completed'&&(o.createdAt||0)>=t0);
     else if(this.filterKey==='cancelled') list=list.filter(o=>o.status==='Cancelled');
     const active=this.orders.filter(o=>o.status!=='Completed'&&o.status!=='Cancelled');
-    document.getElementById('sPending').textContent=active.filter(o=>o.status==='Pending').length;
+    document.getElementById('sPending').textContent=active.filter(o=>o.status==='Pending'||o.status==='AwaitingPayment').length;
     document.getElementById('sCooking').textContent=active.filter(o=>o.status==='Cooking').length;
     document.getElementById('sReady').textContent=active.filter(o=>o.status==='Ready').length;
     document.getElementById('sUnpaid').textContent=active.filter(o=>o.paymentStatus==='UNPAID').length;
