@@ -86,6 +86,8 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
   #printArea{position:fixed;left:0;top:0;width:100%;padding:16px;background:#fff;z-index:99999;display:block!important}
   .ov, header, .nav, .wrap, .toast, .banner { display:none!important; }
 }
+.status-hl{outline:3px solid #FF5722!important;box-shadow:0 0 0 3px rgba(255,87,34,.25);font-weight:700;transform:scale(1.02)}
+.order-card .st-hl{font-weight:700}
 </style>
 </head>
 <body>
@@ -525,11 +527,12 @@ const M={
       </div>
       ${items}${slipBlock}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
-        <button class="btn btn-o" onclick="M.setStatus('${esc(o.id)}','Pending')">รอรับ</button>
-        <button class="btn btn-i" onclick="M.setStatus('${esc(o.id)}','Cooking')">กำลังทำ</button>
-        <button class="btn btn-g" onclick="M.setStatus('${esc(o.id)}','Ready')">พร้อมรับ</button>
-        <button class="btn btn-p" onclick="M.setStatus('${esc(o.id)}','Completed')">เสร็จสิ้น</button>
+        <button class="btn btn-o ${o.status==='Pending'||o.status==='AwaitingPayment'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Pending')">⏳ รอรับ ${o.status==='Pending'||o.status==='AwaitingPayment'?'✓':''}</button>
+        <button class="btn btn-i ${o.status==='Cooking'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Cooking')">🔵 กำลังทำ ${o.status==='Cooking'?'✓':''}</button>
+        <button class="btn btn-g ${o.status==='Ready'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Ready')">🟢 พร้อมรับ ${o.status==='Ready'?'✓':''}</button>
+        <button class="btn btn-p ${o.status==='Completed'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Completed')">✅ เสร็จสิ้น ${o.status==='Completed'?'✓':''}</button>
       </div>
+      <div style="font-size:12px;color:#666;margin-top:6px;text-align:center">ขั้นตอนปัจจุบัน: <strong>${({AwaitingPayment:'รอชำระเงิน',Pending:'รอรับ',Cooking:'กำลังทำ',Ready:'พร้อมรับ',Completed:'เสร็จสิ้น',Cancelled:'ยกเลิก'})[o.status]||o.status}</strong></div>
       <button class="btn btn-d btn-block" style="margin-top:10px" onclick="M.cancelOrder('${esc(o.id)}')">ยกเลิกออเดอร์</button>
       <button class="btn btn-o btn-block" style="margin-top:6px;border-color:#999;color:#666" onclick="M.deleteOrder('${esc(o.id)}')">ลบประวัติออเดอร์นี้</button>
       ${o.paymentStatus!=='PAID'?`<div style="margin-top:12px">
@@ -568,6 +571,7 @@ const M={
   },
   async markPaid(id, patch){
     const paidAt=Date.now();
+    const cur=this.orders.find(x=>x.id===id);
     const payload=Object.assign({
       paymentStatus:'PAID',
       paidAt,
@@ -575,6 +579,10 @@ const M={
       changeAmount: patch.changeAmount||0,
       paymentMethod: patch.paymentMethod
     }, patch);
+    // เงินเข้าแล้ว → ส่งเข้าครัวอัตโนมัติ
+    if(!cur || cur.status==='AwaitingPayment' || cur.status==='Pending'){
+      payload.status='Pending';
+    }
     await shopRef.collection('orders').doc(id).update(payload);
     // รีโหลดจาก Firestore เป็นแหล่งจริง
     const snap=await shopRef.collection('orders').doc(id).get();

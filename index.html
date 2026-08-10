@@ -132,6 +132,8 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
     <p style="font-size:13px;margin-bottom:6px">สแกนด้วยแอปธนาคาร / ถุงเงิน / วอลเล็ต</p>
     <div id="ppQR" style="display:flex;justify-content:center;margin-bottom:8px"></div>
     <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0 auto 8px;display:inline-flex" onclick="C.savePayQR()">💾 บันทึกรูป QR ไปจ่ายในแอปธนาคาร</button>
+    <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0 auto 8px;display:inline-flex" onclick="C.openPayQRFull()">🔍 เปิดรูปเต็มจอ (LINE กดค้างบันทึก)</button>
+    <div id="ppQRHint" style="font-size:12px;color:#E65100;margin:6px 0;display:none">ใน LINE: กดค้างที่รูป QR → บันทึกรูปภาพ</div>
     <div id="ppNum" style="font-weight:600"></div>
     <div id="ppName" style="font-size:13px;color:#555;margin-top:4px"></div>
     <p style="color:#1565C0;font-size:13px;margin-top:8px">สแกน QR แล้วโอนตามยอดให้ตรงเป๊ะ · สถานะชำระอัปเดตอัตโนมัติเมื่อร้าน/ระบบยืนยันรับเงิน</p>
@@ -148,6 +150,12 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
   <button class="btn btn-g" style="margin-top:8px" id="btnPrintReceipt" onclick="C.saveReceipt()">💾 บันทึกใบเสร็จเป็นรูปภาพ</button>
 </div></div>
 <div id="printReceipt" style="display:none"></div>
+<div class="ov" id="mQRFull"><div class="md" style="text-align:center">
+  <div class="mh"><span>QR ชำระเงิน</span><button class="x" onclick="C.hide('mQRFull')">×</button></div>
+  <p style="font-size:13px;color:#E65100;margin-bottom:8px">กดค้างที่รูป → บันทึกรูปภาพ (ใช้ได้ใน LINE)</p>
+  <img id="qrFullImg" alt="QR" style="width:100%;max-width:320px;height:auto;background:#fff;border-radius:12px">
+  <button type="button" class="btn btn-o btn-block" style="margin-top:12px" onclick="C.savePayQR()">บันทึก / แชร์รูป</button>
+</div></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -576,11 +584,15 @@ const C={
   checkout(){
     if(!this.cart.length)return;
     document.getElementById('payTotal').textContent=money(this.cart.reduce((s,i)=>s+i.total,0));
-    this.slipData='';document.getElementById('slipFile').value='';document.getElementById('slipPreview').innerHTML='';
-    document.getElementById('slipAutoMsg').textContent='';
+    this.slipData='';
+    const sf=document.getElementById('slipFile'); if(sf) sf.value='';
+    const sp=document.getElementById('slipPreview'); if(sp) sp.innerHTML='';
+    const sm=document.getElementById('slipAutoMsg'); if(sm) sm.textContent='';
     this.payM='PROMPTPAY';
     this.payMethod('PROMPTPAY');
     this.hide('mCart'); this.show('mPay');
+    // QR: สร้างออเดอร์อัตโนมัติ (รอชำระ) — ลูกค้าไม่ต้องกดยืนยันซ้ำ
+    this.autoSubmitQROrder();
   },
   payMethod(m){
     this.payM=m;
@@ -602,85 +614,162 @@ const C={
       document.getElementById('ppNum').textContent=label;
       document.getElementById('ppName').textContent=(this.accountName?('ชื่อบัญชี: '+this.accountName+' · '):'')+('ร้าน: '+this.shopName);
       const qr=document.getElementById('ppQR'); qr.innerHTML='';
-      if(payload) new QRCode(qr,{text:payload,width:200,height:200});
+      if(payload){ new QRCode(qr,{text:payload,width:200,height:200}); try{C.ensurePayQRAsImage();}catch(e){}
+        try{ const h=document.getElementById('ppQRHint'); if(h) h.style.display=C.isLineBrowser()?'block':'none'; }catch(e){} }
       else qr.innerHTML='<p style="color:var(--d)">'+(this.payType==='merchant'?'ตั้งค่ารหัสร้าน K Shop ไม่ถูกต้อง':'ตั้งค่า PromptPay ไม่ถูกต้อง (ต้อง 10 หรือ 13 หลัก)')+'</p>';
     } else z.style.display='none';
   },
-  savePayQR(){
+  isLineBrowser(){
+    return /Line\//i.test(navigator.userAgent||'');
+  },
+  getPayQRDataUrl(){
     const box=document.getElementById('ppQR');
+    if(!box) return '';
     const canvas=box.querySelector('canvas');
     const img=box.querySelector('img');
-    let dataUrl='';
-    if(canvas) dataUrl=canvas.toDataURL('image/png');
-    else if(img) dataUrl=img.src;
+    if(img && img.src) return img.src;
+    if(canvas){
+      try{ return canvas.toDataURL('image/png'); }catch(e){ return ''; }
+    }
+    return this._payQRDataUrl||'';
+  },
+  ensurePayQRAsImage(){
+    const box=document.getElementById('ppQR');
+    if(!box) return '';
+    let dataUrl=this.getPayQRDataUrl();
+    const canvas=box.querySelector('canvas');
+    if(canvas && !box.querySelector('img[data-payqr]')){
+      try{
+        dataUrl=canvas.toDataURL('image/png');
+        const img=document.createElement('img');
+        img.setAttribute('data-payqr','1');
+        img.src=dataUrl;
+        img.alt='QR ชำระเงิน';
+        img.style.cssText='width:100%;max-width:220px;height:auto;background:#fff;border-radius:8px;-webkit-touch-callout:default;pointer-events:auto';
+        box.innerHTML='';
+        box.appendChild(img);
+      }catch(e){ console.warn(e); }
+    }
+    this._payQRDataUrl=dataUrl||this._payQRDataUrl||'';
+    return this._payQRDataUrl;
+  },
+  openPayQRFull(){
+    const dataUrl=this.ensurePayQRAsImage()||this.getPayQRDataUrl();
     if(!dataUrl){ toast('ยังไม่มี QR'); return; }
-    const a=document.createElement('a');
-    a.href=dataUrl;
-    a.download='promptpay-qr-'+Date.now()+'.png';
-    document.body.appendChild(a); a.click(); a.remove();
-    toast('บันทึกรูป QR แล้ว — เปิดแอปธนาคารแล้วเลือกสแกนจากรูปภาพ');
+    const im=document.getElementById('qrFullImg');
+    if(im) im.src=dataUrl;
+    this.show('mQRFull');
+    if(this.isLineBrowser()) toast('กดค้างที่รูป QR แล้วเลือกบันทึกรูปภาพ');
+  },
+  async savePayQR(){
+    const dataUrl=this.ensurePayQRAsImage()||this.getPayQRDataUrl();
+    if(!dataUrl){ toast('ยังไม่มี QR'); return; }
+    // 1) Web Share Level 2 (Android Chrome / บาง WebView)
+    try{
+      const res=await fetch(dataUrl);
+      const blob=await res.blob();
+      const file=new File([blob], 'promptpay-qr.png', {type:'image/png'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({ files:[file], title:'QR ชำระเงิน', text:'QR พร้อมเพย์' });
+        toast('แชร์รูป QR แล้ว');
+        return;
+      }
+    }catch(e){ /* fall through */ }
+    // 2) ดาวน์โหลดปกติ
+    try{
+      const a=document.createElement('a');
+      a.href=dataUrl;
+      a.download='promptpay-qr-'+Date.now()+'.png';
+      a.target='_blank';
+      a.rel='noopener';
+      document.body.appendChild(a); a.click(); a.remove();
+    }catch(e){}
+    // 3) LINE / WebView ที่บล็อกดาวน์โหลด
+    if(this.isLineBrowser()){
+      this.openPayQRFull();
+      toast('ใน LINE: กดค้างที่รูป QR → บันทึกรูปภาพ');
+    } else {
+      toast('ถ้าไม่เจอไฟล์: กดค้างที่รูป QR เพื่อบันทึก');
+    }
   },
   async confirmOrder(){
+    // ถ้าเป็น QR และสร้างออเดอร์รอชำระแล้ว → แค่รอเงิน
+    if(this.payM==='PROMPTPAY' && this.orderId){
+      toast('โอนตาม QR ได้เลย · เมื่อชำระแล้วออเดอร์เข้าครัวอัตโนมัติ');
+      return;
+    }
     const btn=document.getElementById('btnOrder');
     btn.disabled=true; btn.textContent='กำลังส่ง…';
     try{
-      // ไม่บังคับอัปสลิป — สถานะชำระตาม Firestore เท่านั้น
-      const items=this.cart.map(i=>({
-        name:i.name,qty:i.qty,spiceName:i.spiceName,
-        toppings:(i.toppings||[]).map(t=>({name:t.name,price:t.price,qty:t.qty,total:t.total})),
-        note:i.note||'', plara:i.plara||'', unitPrice:i.unitPrice,total:i.total
-      }));
-      const total=items.reduce((s,i)=>s+i.total,0);
-      const secRef=shopRef.collection('settings').doc('secure');
-      const today=new Date();
-      const dayKey=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
-      const queue=await db.runTransaction(async tx=>{
-        const snap=await tx.get(secRef);
-        const data=snap.exists?snap.data():{};
-        let qNum=1;
-        // รีเซ็ตคิวทุกวันใหม่
-        if(data.queueDate===dayKey){
-          qNum=Number(data.queueCounter)||1;
-        } else {
-          qNum=1;
-        }
-        if(qNum>999) qNum=1;
-        const q='A'+String(qNum).padStart(3,'0');
-        tx.set(secRef,{ queueCounter:qNum+1, queueDate:dayKey },{merge:true});
-        return q;
+      await this.createOrderInternal({
+        status: this.payM==='CASH' ? 'Pending' : 'AwaitingPayment',
+        paymentStatus: 'UNPAID'
       });
-      const id=uid();
-      // สถานะชำระเงินเริ่มต้น: เงินสดและ QR ต้องเป็น UNPAID จนกว่าฝั่งร้าน/ระบบยืนยันใน Firestore
-      const paymentStatus='UNPAID';
-      const slipStatus='NONE';
-      const order={
-        id,queue,items,total,status:'Pending',
-        paymentMethod:this.payM, paymentStatus,
-        paidAmount:0, changeAmount:0,
-        slipData:'', slipStatus,
-        payRef: id,
-        createdAt:Date.now()
-      };
-      await shopRef.collection('orders').doc(id).set(order);
-      try{localStorage.setItem('lastQueue',queue);localStorage.setItem('lastOrderId',id)}catch(e){}
-      this.cart=[]; this.updFab(); this.hide('mPay');
-      this.orderId=id; this.lastOrder=order;
-      this.renderTicket(order);
-      this.show('mTicket');
-      toast('สั่งสำเร็จ คิว '+queue);
-      if(this.unsub) this.unsub();
-      this.unsub=shopRef.collection('orders').doc(id).onSnapshot(snap=>{
-        if(!snap.exists){ toast('ออเดอร์ถูกยกเลิกหรือลบ'); return; }
-        const o=snap.data(); if(!o) return;
-        this.lastOrder={id:snap.id,...o};
-        this.renderTicket(this.lastOrder);
-        if(o.paymentStatus==='PAID') C.writeReceipt({id:snap.id,...o});
-      });
-      // ตรวจสถานะชำระเงินซ้ำจาก Firestore (แหล่งเดียวกับร้าน)
-      this.startPayWatch(id);
-    }catch(e){console.error(e);toast('ส่งไม่สำเร็จ: '+(e.message||e))}
-    finally{btn.disabled=false;btn.textContent='ยืนยันออเดอร์'}
+      toast('สั่งสำเร็จ');
+    }catch(e){ console.error(e); toast('ส่งไม่สำเร็จ: '+(e.message||e)); }
+    finally{
+      if(this.payM==='CASH'){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
+      else { btn.disabled=true; btn.textContent='รอชำระเงิน — ออเดอร์จะเข้าครัวเมื่อเงินเข้า'; }
+    }
   },
+  async createOrderInternal(opts){
+    const items=this.cart.map(i=>({
+      name:i.name,qty:i.qty,spiceName:i.spiceName,
+      toppings:(i.toppings||[]).map(t=>({name:t.name,price:t.price,qty:t.qty,total:t.total})),
+      note:i.note||'', plara:i.plara||'', unitPrice:i.unitPrice,total:i.total
+    }));
+    const total=items.reduce((s,i)=>s+i.total,0);
+    const secRef=shopRef.collection('settings').doc('secure');
+    const today=new Date();
+    const dayKey=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+    const queue=await db.runTransaction(async tx=>{
+      const snap=await tx.get(secRef);
+      const data=snap.exists?snap.data():{};
+      let qNum=1;
+      if(data.queueDate===dayKey) qNum=Number(data.queueCounter)||1;
+      else qNum=1;
+      if(qNum>999) qNum=1;
+      const q='A'+String(qNum).padStart(3,'0');
+      tx.set(secRef,{ queueCounter:qNum+1, queueDate:dayKey },{merge:true});
+      return q;
+    });
+    const id=uid();
+    const order={
+      id, queue, items, total,
+      status: opts.status||'Pending',
+      paymentMethod: this.payM,
+      paymentStatus: opts.paymentStatus||'UNPAID',
+      paidAmount:0, changeAmount:0,
+      slipData:'', slipStatus:'NONE',
+      payRef: id,
+      createdAt: Date.now()
+    };
+    await shopRef.collection('orders').doc(id).set(order);
+    this.orderId=id;
+    this.lastOrder={id,...order};
+    this.cart=[]; this.renderCart();
+    try{ localStorage.setItem('somtum_last_order', JSON.stringify(this.lastOrder)); }catch(e){}
+    try{ this.ensurePayQRAsImage(); }catch(e){}
+    this.renderTicket(this.lastOrder);
+    this.hide('mPay'); this.show('mTicket');
+    this.attachTicketQR();
+    if(this.unsub) this.unsub();
+    this.unsub=shopRef.collection('orders').doc(id).onSnapshot(snap=>{
+      if(!snap.exists) return;
+      const o=snap.data(); if(!o) return;
+      const prevPay=this.lastOrder && this.lastOrder.paymentStatus;
+      this.lastOrder={id:snap.id,...o};
+      this.renderTicket(this.lastOrder);
+      // เงินเข้าแล้ว → แจ้งลูกค้า
+      if(prevPay!=='PAID' && o.paymentStatus==='PAID'){
+        toast('ชำระเงินสำเร็จ · ออเดอร์เข้าครัวแล้ว');
+        try{ C.writeReceipt({id:snap.id,...o}); }catch(e){}
+      }
+    });
+    this.startPayWatch(id);
+    return order;
+  },
+
   async verifySlipEasy(dataUrl, amount){
     try{
       // EasySlip รับ binary — ส่งเป็น blob จาก dataUrl
@@ -735,6 +824,7 @@ const C={
   renderTicket(o){
     const paid=(o.paymentStatus==='PAID');
     const cancelled=(o.status==='Cancelled');
+    const waitPay=!paid && !cancelled && (o.paymentMethod==='PROMPTPAY'||o.paymentMethod==='QR');
     const map={
       Pending: paid ? ['bw','🟡 รอครัวรับออเดอร์'] : ['bw','🟡 รอชำระเงิน / รอรับออเดอร์'],
       Cooking:['bi','🔵 กำลังทำ'],
@@ -766,6 +856,22 @@ const C={
       </div>
       <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;
     document.getElementById('btnPrintReceipt').style.display = paid ? 'inline-flex' : 'none';
+    // แสดง QR บนตั๋วถ้ายังไม่ชำระ (รวม LINE)
+    let qz=document.getElementById('ticketQRZone');
+    if(!qz){
+      qz=document.createElement('div'); qz.id='ticketQRZone'; qz.style.cssText='text-align:center;margin-top:12px';
+      const tb=document.getElementById('ticketBody'); if(tb) tb.appendChild(qz);
+    }
+    if(waitPay){
+      const dataUrl=this._payQRDataUrl||this.getPayQRDataUrl()||'';
+      qz.style.display='block';
+      qz.innerHTML= (dataUrl?('<img data-payqr="1" src="'+dataUrl+'" alt="QR" style="width:220px;max-width:100%;background:#fff;border-radius:12px;-webkit-touch-callout:default">'):'<div style="color:#999">QR อยู่หน้าชำระเงิน</div>') +
+        '<div style="font-size:12px;color:#E65100;margin-top:6px">'+(this.isLineBrowser()?'ใน LINE: กดค้างที่รูป → บันทึกรูป':'กดค้างที่รูปเพื่อบันทึก')+'</div>'+
+        '<button type="button" class="btn btn-o btn-sm" style="margin-top:8px;width:auto" onclick="C.openPayQRFull()">เปิดรูป QR เต็มจอ</button>'+
+        '<button type="button" class="btn btn-o btn-sm" style="margin-top:8px;width:auto" onclick="C.savePayQR()">บันทึก / แชร์ QR</button>';
+    } else {
+      qz.style.display='none'; qz.innerHTML='';
+    }
   },
   saveReceipt(){
     const o=this.lastOrder; if(!o){ toast('ไม่มีใบเสร็จ'); return; }
@@ -859,6 +965,7 @@ const C={
   }
 };
 C.init();
+try{ if(C.isLineBrowser && C.isLineBrowser()){ const h=document.getElementById('ppQRHint'); if(h) h.style.display='block'; } }catch(e){}
 
 </script>
 
