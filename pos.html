@@ -482,7 +482,10 @@ const M={
   async setStatus(id,status){ await shopRef.collection('orders').doc(id).update({status}); toast('อัปเดต '+status); },
   async cancelOrder(id){
     if(!confirm('ยืนยันยกเลิกออเดอร์นี้?')) return;
-    await shopRef.collection('orders').doc(id).update({ status:'Cancelled', cancelledAt:Date.now() });
+    await shopRef.collection('orders').doc(id).update({
+      status:'Cancelled', cancelledAt:Date.now(),
+      paymentStatus:'UNPAID', paidAmount:0, changeAmount:0
+    });
     toast('ยกเลิกออเดอร์แล้ว');
     document.getElementById('detailModal').classList.remove('on');
   },
@@ -504,10 +507,22 @@ const M={
   },
   async markPaid(id, patch){
     const paidAt=Date.now();
-    await shopRef.collection('orders').doc(id).update(Object.assign({paymentStatus:'PAID', paidAt}, patch));
-    const o=this.orders.find(x=>x.id===id) || (await shopRef.collection('orders').doc(id).get()).data();
-    const full={id,...o,...patch,paymentStatus:'PAID',paidAt};
+    const payload=Object.assign({
+      paymentStatus:'PAID',
+      paidAt,
+      paidAmount: patch.paidAmount,
+      changeAmount: patch.changeAmount||0,
+      paymentMethod: patch.paymentMethod
+    }, patch);
+    await shopRef.collection('orders').doc(id).update(payload);
+    // รีโหลดจาก Firestore เป็นแหล่งจริง
+    const snap=await shopRef.collection('orders').doc(id).get();
+    const full={id, ...(snap.data()||{})};
     await this.writeReceipt(full);
+    // อัปเดต local list ให้ตรง
+    const idx=this.orders.findIndex(x=>x.id===id);
+    if(idx>=0) this.orders[idx]=full;
+    this.renderOrders();
     toast('ชำระแล้ว · บันทึกใบเสร็จ');
   },
   async writeReceipt(order){

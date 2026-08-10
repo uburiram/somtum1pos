@@ -122,10 +122,10 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
     <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0 auto 8px;display:inline-flex" onclick="C.savePayQR()">💾 บันทึกรูป QR ไปจ่ายในแอปธนาคาร</button>
     <div id="ppNum" style="font-weight:600"></div>
     <div id="ppName" style="font-size:13px;color:#555;margin-top:4px"></div>
-    <p style="color:var(--d);font-size:13px;margin-top:8px">โอนตามยอดแล้วอัปโหลดสลิปด้านล่าง</p>
-    <input type="file" id="slipFile" accept="image/*" capture="environment" style="margin-top:8px">
-    <div id="slipPreview" style="margin-top:8px"></div>
-    <div id="slipAutoMsg" style="font-size:13px;margin-top:6px;color:#1565C0"></div>
+    <p style="color:#1565C0;font-size:13px;margin-top:8px">สแกน QR แล้วโอนตามยอดให้ตรงเป๊ะ · สถานะชำระอัปเดตอัตโนมัติเมื่อร้าน/ระบบยืนยันรับเงิน</p>
+    <input type="file" id="slipFile" accept="image/*" capture="environment" style="display:none">
+    <div id="slipPreview" style="display:none"></div>
+    <div id="slipAutoMsg" style="display:none"></div>
   </div>
   <button class="btn btn-p" id="btnOrder" onclick="C.confirmOrder()">ยืนยันออเดอร์</button>
 </div></div>
@@ -544,18 +544,7 @@ const C={
     const btn=document.getElementById('btnOrder');
     btn.disabled=true; btn.textContent='กำลังส่ง…';
     try{
-      const f=document.getElementById('slipFile').files[0];
-      let slipAuto=null;
-      if(f && this.payM==='PROMPTPAY'){
-        try{ this.slipData=await fileToDataUrl(f,1000,.7); document.getElementById('slipPreview').innerHTML=`<img src="${this.slipData}" style="max-width:180px;border-radius:8px">`; }
-        catch(e){ toast(e.message); btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; return; }
-        // ตรวจสลิปอัตโนมัติถ้ามี API key
-        if(window.EASYSLIP_API_KEY){
-          document.getElementById('slipAutoMsg').textContent='กำลังตรวจสลิปอัตโนมัติ…';
-          slipAuto=await C.verifySlipEasy(this.slipData, this.cart.reduce((s,i)=>s+i.total,0));
-          document.getElementById('slipAutoMsg').textContent=slipAuto.msg;
-        }
-      }
+      // ไม่บังคับอัปสลิป — สถานะชำระตาม Firestore เท่านั้น
       const items=this.cart.map(i=>({
         name:i.name,qty:i.qty,spiceName:i.spiceName,
         toppings:(i.toppings||[]).map(t=>({name:t.name,price:t.price,qty:t.qty,total:t.total})),
@@ -572,18 +561,18 @@ const C={
         return q;
       });
       const id=uid();
-      let paymentStatus='UNPAID', slipStatus=this.slipData?'PENDING_REVIEW':'NONE';
-      if(slipAuto && slipAuto.ok){ paymentStatus='PAID'; slipStatus='AUTO_APPROVED'; }
+      // สถานะชำระเงินเริ่มต้น: เงินสดและ QR ต้องเป็น UNPAID จนกว่าฝั่งร้าน/ระบบยืนยันใน Firestore
+      const paymentStatus='UNPAID';
+      const slipStatus='NONE';
       const order={
         id,queue,items,total,status:'Pending',
         paymentMethod:this.payM, paymentStatus,
-        paidAmount: paymentStatus==='PAID'?total:0, changeAmount:0,
-        slipData:this.slipData||'', slipStatus,
-        slipAuto: slipAuto||null,
+        paidAmount:0, changeAmount:0,
+        slipData:'', slipStatus,
+        payRef: id,
         createdAt:Date.now()
       };
       await shopRef.collection('orders').doc(id).set(order);
-      if(paymentStatus==='PAID') await C.writeReceipt(order);
       try{localStorage.setItem('lastQueue',queue);localStorage.setItem('lastOrderId',id)}catch(e){}
       this.cart=[]; this.updFab(); this.hide('mPay');
       this.orderId=id; this.lastOrder=order;
@@ -592,11 +581,14 @@ const C={
       toast('สั่งสำเร็จ คิว '+queue);
       if(this.unsub) this.unsub();
       this.unsub=shopRef.collection('orders').doc(id).onSnapshot(snap=>{
+        if(!snap.exists){ toast('ออเดอร์ถูกยกเลิกหรือลบ'); return; }
         const o=snap.data(); if(!o) return;
-        this.lastOrder={id,...o};
+        this.lastOrder={id:snap.id,...o};
         this.renderTicket(this.lastOrder);
-        if(o.paymentStatus==='PAID') C.writeReceipt({id,...o});
+        if(o.paymentStatus==='PAID') C.writeReceipt({id:snap.id,...o});
       });
+      // ตรวจสถานะชำระเงินซ้ำจาก Firestore (แหล่งเดียวกับร้าน)
+      this.startPayWatch(id);
     }catch(e){console.error(e);toast('ส่งไม่สำเร็จ: '+(e.message||e))}
     finally{btn.disabled=false;btn.textContent='ยืนยันออเดอร์'}
   },
@@ -652,16 +644,23 @@ const C={
     }catch(e){}
   },
   renderTicket(o){
-    const map={Pending:['bw','🟡 รอรับออเดอร์'],Cooking:['bi','🔵 กำลังทำ'],Ready:['bg','🟢 พร้อมรับ'],Completed:['bg','⚫ เสร็จสิ้น']};
-    const st=map[o.status]||map.Pending;
-    const paid=o.paymentStatus==='PAID';
+    const paid=(o.paymentStatus==='PAID');
+    const cancelled=(o.status==='Cancelled');
+    const map={
+      Pending: paid ? ['bw','🟡 รอครัวรับออเดอร์'] : ['bw','🟡 รอชำระเงิน / รอรับออเดอร์'],
+      Cooking:['bi','🔵 กำลังทำ'],
+      Ready:['bg','🟢 พร้อมรับ'],
+      Completed:['bg','⚫ เสร็จสิ้น'],
+      Cancelled:['bd','❌ ยกเลิก']
+    };
+    const st=cancelled?map.Cancelled:(map[o.status]||map.Pending);
     const lines=(o.items||[]).map(i=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty}`).join(', ');
       const note=i.note?`<div style="font-size:12px;color:#E65100">📝 ${esc(i.note)}</div>`:'';
       return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span>${esc(i.name)} × ${i.qty}${tops?`<div style="font-size:12px;color:#777">${tops}</div>`:''}${note}</span><span>${money(i.total)}</span></div>`;
     }).join('');
     document.getElementById('ticketBody').innerHTML=`
-      <h2 style="color:${paid?'var(--g)':'var(--p)'};margin-bottom:8px">${paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> ส่งออเดอร์แล้ว'}</h2>
+      <h2 style="color:${cancelled?'var(--d)':paid?'var(--g)':'var(--p)'};margin-bottom:8px">${cancelled?'<i class="fa-solid fa-xmark"></i> ยกเลิกแล้ว':paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> รอชำระเงิน / รอรับออเดอร์'}</h2>
       <div>คิวของคุณ</div>
       <div class="huge">${esc(o.queue)}</div>
       <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
@@ -714,7 +713,20 @@ const C={
         try{
           const arr=JSON.parse(localStorage.getItem('receipts')||'[]');
           const local=arr.find(x=>String(x.queue).toUpperCase()===q);
-          if(local){ this.lastOrder=local; this.renderTicket({...local,status:local.status||'Completed',paymentStatus:'PAID'}); this.show('mTicket'); return; }
+          if(local){
+          // แสดงจาก cache ได้ แต่ต้องไม่บังคับว่าชำระแล้ว/เสร็จ — ดึง Firestore ถ้าออนไลน์
+          this.lastOrder={...local, paymentStatus: local.paymentStatus||'UNPAID', status: local.status||'Pending'};
+          this.renderTicket(this.lastOrder);
+          this.show('mTicket');
+          if(local.id||local.orderId){
+            const oid=local.id||local.orderId;
+            if(this.unsub) this.unsub();
+            this.unsub=shopRef.collection('orders').doc(oid).onSnapshot(s=>{
+              if(s.exists){ this.lastOrder={id:s.id,...s.data()}; this.renderTicket(this.lastOrder); }
+            });
+          }
+          return;
+        }
         }catch(e){}
         toast('ไม่พบคิว '+q); return;
       }
