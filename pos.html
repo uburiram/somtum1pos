@@ -107,6 +107,7 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
   </div>
   <div class="nav">
     <button class="on" id="navOrders" onclick="M.tab('orders')">🧾 ออเดอร์ <span id="navOrderBadge" class="badge-n hide">0</span></button>
+    <button id="navHistory" onclick="M.tab('history')">📚 ประวัติ</button>
     <button id="navShop" onclick="M.tab('shop')">🏪 จัดการร้าน</button>
     <button id="navReport" onclick="M.tab('report')">📊 รายงาน</button>
     <button id="navSet" onclick="M.tab('settings')">⚙️ ตั้งค่า</button>
@@ -116,8 +117,9 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
 </header>
 <div class="wrap">
   <div id="panelOrders">
-    <div class="audio-bar" id="audioBar"><strong>🔔 เปิดเสียงแจ้งเตือน</strong>
-      <button class="btn btn-p btn-sm" style="margin-left:8px" onclick="M.enableAudio()">เปิด</button></div>
+    <div class="audio-bar" id="audioBar"><strong>🔔 เปิดเสียง + การแจ้งเตือน</strong>
+      <button class="btn btn-p btn-sm" style="margin-left:8px" onclick="M.enableAudio()">เปิด</button>
+      <div style="font-size:11px;color:#666;margin-top:4px">Android: อนุญาตการแจ้งเตือน + อย่าปิดใน Recent Apps</div></div>
     <div class="stats">
       <div class="st"><div class="n" style="color:var(--p)" id="sPending">0</div><div class="l">รอทำ</div></div>
       <div class="st"><div class="n" style="color:var(--i)" id="sCooking">0</div><div class="l">กำลังทำ</div></div>
@@ -125,14 +127,33 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
       <div class="st"><div class="n" style="color:var(--d)" id="sUnpaid">0</div><div class="l">ไม่ชำระ</div></div>
     </div>
     <div class="filters">
-      <button class="fc on" onclick="M.filter('active',this)">กำลังทำ</button>
+      <button class="fc on" onclick="M.filter('kitchen',this)">ครัว (กำลังทำ)</button>
       <button class="fc" onclick="M.filter('unpaid',this)">ยังไม่ชำระ</button>
-      <button class="fc" onclick="M.filter('slip',this)">รอตรวจสลิป</button>
       <button class="fc" onclick="M.filter('paid',this)">ชำระแล้ว</button>
-      <button class="fc" onclick="M.filter('completed',this)">เสร็จแล้ว</button>
+      <button class="fc" onclick="M.filter('slip',this)">รอตรวจสลิป</button>
+      <button class="fc" onclick="M.filter('ready',this)">พร้อมรับ</button>
       <button class="fc" onclick="M.filter('cancelled',this)">ยกเลิก</button>
     </div>
     <div class="og" id="orderGrid"></div>
+  </div>
+
+  <div id="panelHistory" class="hide">
+    <div class="form-card">
+      <h3 style="margin-bottom:8px">📚 ประวัติการสั่งซื้อ</h3>
+      <label class="lbl">ค้นหา (คิว / ชื่อเมนู)</label>
+      <input id="histQ" placeholder="เช่น A001 หรือ ตำไทย" oninput="M.loadHistory()">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+        <div><label class="lbl">จากวันที่</label><input type="date" id="histFrom" onchange="M.loadHistory()"></div>
+        <div><label class="lbl">ถึงวันที่</label><input type="date" id="histTo" onchange="M.loadHistory()"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn btn-o btn-sm" onclick="M.histPreset('today')">วันนี้</button>
+        <button class="btn btn-o btn-sm" onclick="M.histPreset('7d')">7 วัน</button>
+        <button class="btn btn-o btn-sm" onclick="M.histPreset('30d')">30 วัน</button>
+        <button class="btn btn-o btn-sm" onclick="M.histPreset('all')">ทั้งหมด</button>
+      </div>
+    </div>
+    <div id="historyList"></div>
   </div>
 
   <div id="panelShop" class="hide">
@@ -317,7 +338,7 @@ function fileToDataUrl(file,maxSide=800,quality=.7){
 let db,shopRef;
 
 const M={
-  filterKey:'active', orders:[], menus:[], cats:[], tops:[], spice:[],
+  filterKey:'kitchen', orders:[], menus:[], cats:[], tops:[], spice:[],
   audio:null, audioOn:false, lastActive:0, ready:false, unsub:null, catalogTab:'cat',
   pendingImageData:'',
 
@@ -386,7 +407,28 @@ const M={
   },
   enableAudio(){
     this.audio=new (window.AudioContext||window.webkitAudioContext)();
-    this.audio.resume().then(()=>{this.audioOn=true;document.getElementById('audioBar').classList.add('hide');toast('เปิดเสียงแล้ว');this.beep()});
+    this.audio.resume().then(()=>{this.audioOn=true;document.getElementById('audioBar').classList.add('hide');toast('เปิดเสียงแจ้งเตือนแล้ว');this.beep()});
+    this.requestNotifyPermission();
+  },
+  async requestNotifyPermission(){
+    try{
+      if(!('Notification' in window)) return;
+      let perm=Notification.permission;
+      if(perm==='default') perm=await Notification.requestPermission();
+      this.notifyOn = perm==='granted';
+      if(this.notifyOn) toast('เปิดการแจ้งเตือนระบบแล้ว');
+    }catch(e){ console.warn(e); }
+  },
+  async pushNotify(title, body){
+    try{
+      if(!('Notification' in window) || Notification.permission!=='granted') return;
+      const reg = navigator.serviceWorker && await navigator.serviceWorker.ready.catch(()=>null);
+      if(reg && reg.showNotification){
+        await reg.showNotification(title,{ body, icon:'./icon/icon-192.png', badge:'./icon/favicon-32.png', tag:'somtum-order', renotify:true, requireInteraction:true });
+      } else {
+        new Notification(title,{ body, icon:'./icon/icon-192.png', tag:'somtum-order' });
+      }
+    }catch(e){ console.warn('notify', e); }
   },
   beep(){
     if(!this.audioOn||!this.audio)return;
@@ -417,6 +459,7 @@ const M={
           if(this.unviewed.size>0){
             this.startAlarm();
             toast('🔔 มีออเดอร์ใหม่ / อัปเดต '+this.unviewed.size+' รายการ');
+            this.pushNotify('ออเดอร์ใหม่ — ส้มตำนายหนึ่ง', 'มี '+this.unviewed.size+' รายการรอจัดการ');
           }
         } else {
           this.seenIds=new Set(this.orders.map(o=>o.id));
@@ -488,12 +531,18 @@ const M={
   renderOrders(){
     const today=new Date(); today.setHours(0,0,0,0); const t0=today.getTime();
     let list=this.orders.slice();
-    if(this.filterKey==='active') list=list.filter(o=>o.status!=='Completed'&&o.status!=='Cancelled');
-    else if(this.filterKey==='unpaid') list=list.filter(o=>o.paymentStatus==='UNPAID'&&o.status!=='Completed');
-    else if(this.filterKey==='slip') list=list.filter(o=>o.slipStatus==='PENDING_REVIEW');
-    else if(this.filterKey==='paid') list=list.filter(o=>o.paymentStatus==='PAID');
-    else if(this.filterKey==='completed') list=list.filter(o=>o.status==='Completed'&&(o.createdAt||0)>=t0);
+    if(this.filterKey==='kitchen') list=list.filter(o=>['Pending','AwaitingPayment','Cooking','Ready'].includes(o.status));
+    else if(this.filterKey==='unpaid') list=list.filter(o=>o.paymentStatus==='UNPAID'&&o.status!=='Completed'&&o.status!=='Cancelled');
+    else if(this.filterKey==='slip') list=list.filter(o=>(o.slipStatus==='PENDING_REVIEW'||o.slipStatus==='AUTO_APPROVED')&&o.status!=='Cancelled');
+    else if(this.filterKey==='paid') list=list.filter(o=>o.paymentStatus==='PAID'&&o.status!=='Completed'&&o.status!=='Cancelled');
+    else if(this.filterKey==='ready') list=list.filter(o=>o.status==='Ready');
     else if(this.filterKey==='cancelled') list=list.filter(o=>o.status==='Cancelled');
+    // ครัว: เรียงเก่า→ใหม่ (ออเดอร์ใหม่อยู่ล่าง)
+    if(this.filterKey==='kitchen'||this.filterKey==='unpaid'||this.filterKey==='paid'||this.filterKey==='slip'||this.filterKey==='ready'){
+      list=list.slice().sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+    } else {
+      list=list.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    }
     const active=this.orders.filter(o=>o.status!=='Completed'&&o.status!=='Cancelled');
     document.getElementById('sPending').textContent=active.filter(o=>o.status==='Pending'||o.status==='AwaitingPayment').length;
     document.getElementById('sCooking').textContent=active.filter(o=>o.status==='Cooking').length;
@@ -521,6 +570,7 @@ const M={
   openDetail(id){
     this.markOrderViewed(id);
     const o=this.orders.find(x=>x.id===id); if(!o) return;
+    const locked = o.status==='Completed' || o.status==='Cancelled';
     const items=(o.items||[]).map(i=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty} (${money(t.total||t.price*t.qty)})`).join(', ');
       const spice=i.spiceName?esc(i.spiceName):'';
@@ -531,15 +581,26 @@ const M={
         <div><strong>${esc(i.name)} × ${i.qty}</strong>${meta?`<div style="font-size:12px;color:#777">${meta}</div>`:''}${plara||''}${note}</div>
         <div>${money(i.total)}</div></div>`;
     }).join('');
+    const needSlip = o.slipStatus==='PENDING_REVIEW' || (o.slipData && o.paymentStatus!=='PAID');
     const slipBlock=o.slipData?`<div style="margin:12px 0;text-align:center">
       <div style="font-weight:600;margin-bottom:6px">สลิป (${esc(o.slipStatus||'')})</div>
       <img src="${o.slipData}" style="max-width:100%;border-radius:8px;border:1px solid #eee">
-      ${o.slipStatus==='PENDING_REVIEW'?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-        <button class="btn btn-g" onclick="M.reviewSlip('${esc(o.id)}','APPROVED')">สลิปผ่าน + ชำระแล้ว</button>
-        <button class="btn btn-d" onclick="M.reviewSlip('${esc(o.id)}','REJECTED')">ไม่ผ่าน</button>
+      ${needSlip && !locked?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+        <button class="btn btn-g" onclick="M.reviewSlip('${esc(o.id)}','APPROVED')">✓ สลิปผ่าน + ชำระแล้ว</button>
+        <button class="btn btn-d" onclick="M.reviewSlip('${esc(o.id)}','REJECTED')">✗ ไม่ผ่าน</button>
       </div>`:''}
-    </div>`:'';
-    const receiptBtn=o.paymentStatus==='PAID'?`<button class="btn btn-o btn-block" style="margin-top:8px" onclick="M.showReceipt('${esc(o.id)}')">ดูใบเสร็จ</button>`:'';
+    </div>`:(o.paymentStatus!=='PAID'&&!locked?`<div style="margin:10px 0;padding:10px;background:#FFF8E1;border-radius:8px;font-size:13px;text-align:center">ยังไม่มีสลิปจากลูกค้า</div>`:'');
+    let statusBtns='';
+    if(!locked){
+      statusBtns=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+        <button class="btn btn-o ${o.status==='Pending'||o.status==='AwaitingPayment'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Pending')">⏳ รอรับ ${o.status==='Pending'||o.status==='AwaitingPayment'?'✓':''}</button>
+        <button class="btn btn-i ${o.status==='Cooking'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Cooking')">🔵 กำลังทำ ${o.status==='Cooking'?'✓':''}</button>
+        <button class="btn btn-g ${o.status==='Ready'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Ready')">🟢 พร้อมรับ ${o.status==='Ready'?'✓':''}</button>
+        <button class="btn btn-p" onclick="M.setStatus('${esc(o.id)}','Completed')">✅ เสร็จสิ้น</button>
+      </div>`;
+    } else {
+      statusBtns=`<div style="margin-top:12px;padding:12px;background:#E8F5E9;border-radius:10px;text-align:center;font-weight:600;color:#2E7D32">ออเดอร์${o.status==='Completed'?'เสร็จสิ้น':'ถูกยกเลิก'}แล้ว — ไม่สามารถย้อนขั้นตอนได้</div>`;
+    }
     document.getElementById('detailBody').innerHTML=`
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <button class="btn btn-o btn-sm" onclick="document.getElementById('detailModal').classList.remove('on')">← กลับ</button>
@@ -547,27 +608,34 @@ const M={
       </div>
       <div style="text-align:center;margin-bottom:12px"><div style="color:#777">ยอดรวม</div>
         <div style="font-size:2rem;font-weight:700;color:var(--p)">${money(o.total)}</div>
-        <div style="margin-top:6px">${o.paymentStatus==='PAID'?'<span style="color:var(--g)">ชำระแล้ว</span>':'<span style="color:var(--d)">ยังไม่ชำระ</span>'}</div>
+        <div style="margin-top:6px">${o.paymentStatus==='PAID'?'<span style="color:var(--g);font-weight:700">✓ ชำระแล้ว</span>':'<span style="color:var(--d);font-weight:700">ยังไม่ชำระ</span>'}</div>
       </div>
       ${items}${slipBlock}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
-        <button class="btn btn-o ${o.status==='Pending'||o.status==='AwaitingPayment'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Pending')">⏳ รอรับ ${o.status==='Pending'||o.status==='AwaitingPayment'?'✓':''}</button>
-        <button class="btn btn-i ${o.status==='Cooking'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Cooking')">🔵 กำลังทำ ${o.status==='Cooking'?'✓':''}</button>
-        <button class="btn btn-g ${o.status==='Ready'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Ready')">🟢 พร้อมรับ ${o.status==='Ready'?'✓':''}</button>
-        <button class="btn btn-p ${o.status==='Completed'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Completed')">✅ เสร็จสิ้น ${o.status==='Completed'?'✓':''}</button>
-      </div>
+      ${statusBtns}
       <div style="font-size:12px;color:#666;margin-top:6px;text-align:center">ขั้นตอนปัจจุบัน: <strong>${({AwaitingPayment:'รอชำระเงิน',Pending:'รอรับ',Cooking:'กำลังทำ',Ready:'พร้อมรับ',Completed:'เสร็จสิ้น',Cancelled:'ยกเลิก'})[o.status]||o.status}</strong></div>
-      <button class="btn btn-d btn-block" style="margin-top:10px" onclick="M.cancelOrder('${esc(o.id)}')">ยกเลิกออเดอร์</button>
-      <button class="btn btn-o btn-block" style="margin-top:6px;border-color:#999;color:#666" onclick="M.deleteOrder('${esc(o.id)}')">ลบประวัติออเดอร์นี้</button>
-      ${o.paymentStatus!=='PAID'?`<div style="margin-top:12px">
-        <label class="lbl">รับเงินสด</label><input type="number" id="cashIn" placeholder="จำนวนที่รับ">
-        <button class="btn btn-g btn-block" style="margin-top:8px" onclick="M.payCash('${esc(o.id)}')">ยืนยันรับเงินสด + ออกใบเสร็จ</button>
-        <button class="btn btn-i btn-block" style="margin-top:8px" onclick="M.payPP('${esc(o.id)}')">ยืนยันรับโอน + ออกใบเสร็จ</button>
-      </div>`:''}
-      ${receiptBtn}`;
+      ${!locked?`<button class="btn btn-d btn-block" style="margin-top:10px" onclick="M.cancelOrder('${esc(o.id)}')">ยกเลิกออเดอร์</button>`:''}
+      ${!locked && o.paymentStatus!=='PAID'?`<div style="margin-top:12px">
+        <label class="lbl">รับเงินสด</label><input type="number" id="cashIn" placeholder="จำนวนที่รับ" inputmode="decimal">
+        <button class="btn btn-g btn-block" style="margin-top:8px" onclick="M.payCash('${esc(o.id)}')">ยืนยันรับเงินสด</button>
+        <button class="btn btn-i btn-block" style="margin-top:8px" onclick="M.payPP('${esc(o.id)}')">ยืนยันรับโอนแล้ว</button>
+      </div>`:''}`;
     document.getElementById('detailModal').classList.add('on');
   },
-  async setStatus(id,status){ await shopRef.collection('orders').doc(id).update({status}); toast('อัปเดต '+status); },
+  async setStatus(id,status){
+    const patch={status};
+    if(status==='Completed'){
+      patch.completedAt=Date.now();
+      // ล็อกขั้นตอน — ไม่ให้ย้อนกลับ
+      patch.statusLocked=true;
+    }
+    await shopRef.collection('orders').doc(id).update(patch);
+    toast(status==='Completed'?'เสร็จสิ้น · ปิดการ์ดแล้ว':'อัปเดต '+status);
+    if(status==='Completed'){
+      document.getElementById('detailModal').classList.remove('on');
+    } else {
+      this.openDetail(id);
+    }
+  },
   async cancelOrder(id){
     if(!confirm('ยืนยันยกเลิกออเดอร์นี้?')) return;
     await shopRef.collection('orders').doc(id).update({
@@ -682,8 +750,9 @@ const M={
         ${r.changeAmount?`<div style="font-size:13px">ทอน: ${money(r.changeAmount)}</div>`:''}
       </div>`;
     this._lastReceiptHtml = receiptHtml;
+    document.getElementById('detailModal').classList.add('on');
     document.getElementById('detailBody').innerHTML=`
-      <button class="btn btn-o btn-sm" onclick="M.openDetail('${esc(id)}')">← กลับออเดอร์</button>
+      <button class="btn btn-o btn-sm" onclick="document.getElementById('detailModal').classList.remove('on')">← ปิด</button>
       <div style="border:1px dashed #ccc;border-radius:12px;margin-top:12px;overflow:hidden">${receiptHtml}</div>
       <button class="btn btn-g btn-block" style="margin-top:12px" onclick="M.printReceiptNow()">🖨️ พิมพ์ใบเสร็จ</button>`;
   },
@@ -704,16 +773,62 @@ const M={
   },
 
   tab(name){
-    ['orders','shop','report','settings'].forEach(n=>{
+    ['orders','history','shop','report','settings'].forEach(n=>{
       const el=document.getElementById('panel'+n.charAt(0).toUpperCase()+n.slice(1));
       if(el) el.classList.toggle('hide', n!==name);
     });
     document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('on'));
-    const map={orders:'navOrders',shop:'navShop',report:'navReport',settings:'navSet'};
+    const map={orders:'navOrders',history:'navHistory',shop:'navShop',report:'navReport',settings:'navSet'};
     if(map[name]) document.getElementById(map[name]).classList.add('on');
     if(name==='report') this.loadReport();
+    if(name==='history') this.loadHistory();
     if(name==='shop') this.shopTab(this.shopTabName||'menu');
     if(name==='settings') this.loadSettingsUI();
+  },
+  histPreset(p){
+    const from=document.getElementById('histFrom');
+    const to=document.getElementById('histTo');
+    const now=new Date();
+    const iso=d=>d.toISOString().slice(0,10);
+    if(p==='today'){ from.value=iso(now); to.value=iso(now); }
+    else if(p==='7d'){ const a=new Date(now.getTime()-6*864e5); from.value=iso(a); to.value=iso(now); }
+    else if(p==='30d'){ const a=new Date(now.getTime()-29*864e5); from.value=iso(a); to.value=iso(now); }
+    else { from.value=''; to.value=''; }
+    this.loadHistory();
+  },
+  loadHistory(){
+    const q=(document.getElementById('histQ')?.value||'').trim().toLowerCase();
+    const fromV=document.getElementById('histFrom')?.value||'';
+    const toV=document.getElementById('histTo')?.value||'';
+    let fromTs=0, toTs=Date.now()+864e5;
+    if(fromV){ const d=new Date(fromV+'T00:00:00'); fromTs=d.getTime(); }
+    if(toV){ const d=new Date(toV+'T23:59:59'); toTs=d.getTime(); }
+    let list=this.orders.filter(o=>{
+      const t=o.createdAt||0;
+      if(t<fromTs||t>toTs) return false;
+      if(!q) return true;
+      const queue=(o.queue||'').toLowerCase();
+      const names=(o.items||[]).map(i=>i.name||'').join(' ').toLowerCase();
+      return queue.includes(q)||names.includes(q)||String(o.id).includes(q);
+    }).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    const el=document.getElementById('historyList');
+    if(!el) return;
+    if(!list.length){ el.innerHTML='<div style="text-align:center;color:#888;padding:24px">ไม่พบประวัติ</div>'; return; }
+    el.innerHTML=list.map(o=>{
+      const pay=o.paymentStatus==='PAID'?'<span style="color:#2E7D32">ชำระแล้ว</span>':'<span style="color:#C62828">ไม่ชำระ</span>';
+      const st=({AwaitingPayment:'รอชำระ',Pending:'รอรับ',Cooking:'กำลังทำ',Ready:'พร้อมรับ',Completed:'เสร็จสิ้น',Cancelled:'ยกเลิก'})[o.status]||o.status;
+      const when=o.createdAt?new Date(o.createdAt).toLocaleString('th-TH'):'';
+      const prev=(o.items||[]).map(i=>i.name+'x'+i.qty).join(', ');
+      return `<div class="list-item" style="flex-direction:column;align-items:stretch">
+        <div style="display:flex;justify-content:space-between;width:100%"><strong>คิว ${esc(o.queue)}</strong><span>${money(o.total)}</span></div>
+        <div style="font-size:12px;color:#666;margin:4px 0">${esc(when)} · ${esc(st)} · ${pay}</div>
+        <div style="font-size:13px;color:#444">${esc(prev.slice(0,80))}${prev.length>80?'…':''}</div>
+        <div class="row-actions" style="margin-top:8px">
+          <button class="btn btn-o btn-sm" onclick="M.showReceipt('${esc(o.id)}')">ดูใบเสร็จ</button>
+          <button class="btn btn-d btn-sm" onclick="M.deleteOrder('${esc(o.id)}')">ลบ</button>
+        </div>
+      </div>`;
+    }).join('');
   },
   shopTabName:'menu',
   shopTab(name){

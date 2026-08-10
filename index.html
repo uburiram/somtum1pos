@@ -120,13 +120,18 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
 <div class="ov" id="mPay"><div class="md">
   <div class="mh"><span>ชำระเงิน</span><button class="x" onclick="C.hide('mPay')">×</button></div>
   <div style="text-align:center;margin-bottom:12px"><div style="color:#777">ยอดที่ต้องชำระ</div><div class="huge" id="payTotal">฿0</div></div>
+  <p style="text-align:center;font-size:13px;color:#666;margin-bottom:8px">เลือกวิธีชำระเงิน</p>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
     <label class="rl on" id="lbPP" style="flex-direction:column;gap:6px;cursor:pointer" onclick="C.payMethod('PROMPTPAY')">
       <i class="fa-solid fa-qrcode" style="font-size:2rem;color:var(--i)"></i><span>QR / พร้อมเพย์</span>
     </label>
     <label class="rl" id="lbCash" style="flex-direction:column;gap:6px;cursor:pointer" onclick="C.payMethod('CASH')">
-      <i class="fa-solid fa-money-bill-wave" style="font-size:2rem;color:var(--g)"></i><span>เงินสด</span>
+      <i class="fa-solid fa-money-bill-wave" style="font-size:2rem;color:var(--g)"></i><span>เงินสดที่ร้าน</span>
     </label>
+  </div>
+  <div id="cashZone" style="display:none;text-align:center;margin-bottom:12px;padding:12px;background:#E8F5E9;border-radius:10px">
+    <p style="font-size:14px;color:#2E7D32;font-weight:600">ชำระเงินสดเมื่อรับอาหารที่ร้าน</p>
+    <p style="font-size:12px;color:#555;margin-top:4px">กดยืนยันออเดอร์ด้านล่าง แล้วแจ้งเลขคิวกับพนักงาน</p>
   </div>
   <div id="ppZone" style="display:block;text-align:center;margin-bottom:12px">
     <p style="font-size:13px;margin-bottom:6px">สแกนด้วยแอปธนาคาร / ถุงเงิน / วอลเล็ต</p>
@@ -136,10 +141,11 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
     <div id="ppQRHint" style="font-size:12px;color:#E65100;margin:6px 0;display:none">ใน LINE: กดค้างที่รูป QR → บันทึกรูปภาพ</div>
     <div id="ppNum" style="font-weight:600"></div>
     <div id="ppName" style="font-size:13px;color:#555;margin-top:4px"></div>
-    <p style="color:#1565C0;font-size:13px;margin-top:8px">สแกน QR แล้วโอนตามยอดให้ตรงเป๊ะ · สถานะชำระอัปเดตอัตโนมัติเมื่อร้าน/ระบบยืนยันรับเงิน</p>
-    <input type="file" id="slipFile" accept="image/*" capture="environment" style="display:none">
-    <div id="slipPreview" style="display:none"></div>
-    <div id="slipAutoMsg" style="display:none"></div>
+    <p style="color:#1565C0;font-size:13px;margin-top:8px">โอนตามยอดให้ตรงเป๊ะ แล้วอัปโหลดสลิป (ถ้ามี) หรือรอร้านยืนยัน</p>
+    <input type="file" id="slipFile" accept="image/*" capture="environment" style="display:none" onchange="C.onSlipSelected(event)">
+    <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:8px auto 0;display:inline-flex" onclick="document.getElementById('slipFile').click()">📎 แนบสลิปโอนเงิน</button>
+    <div id="slipPreview" style="margin-top:8px"></div>
+    <div id="slipAutoMsg" style="font-size:13px;margin-top:6px"></div>
   </div>
   <button class="btn btn-p" id="btnOrder" onclick="C.confirmOrder()">ยืนยันออเดอร์</button>
 </div></div>
@@ -583,22 +589,19 @@ const C={
   rmCart(i){this.cart.splice(i,1);this.updFab();this.openCart()},
   checkout(){
     if(!this.cart.length)return;
-    // ออเดอร์ใหม่ — เคลียร์ id เก่า
     this.orderId=null;
     this.lastOrder=null;
     if(this._payWatchTimer){ clearInterval(this._payWatchTimer); this._payWatchTimer=null; }
     document.getElementById('payTotal').textContent=money(this.cart.reduce((s,i)=>s+i.total,0));
     this.slipData='';
     const sf=document.getElementById('slipFile'); if(sf) sf.value='';
-    const sp=document.getElementById('slipPreview'); if(sp) sp.innerHTML='';
+    const sp=document.getElementById('slipPreview'); if(sp){ sp.innerHTML=''; sp.style.display='none'; }
     const sm=document.getElementById('slipAutoMsg'); if(sm) sm.textContent='';
     const btn=document.getElementById('btnOrder');
     if(btn){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
     this.payM='PROMPTPAY';
     this.payMethod('PROMPTPAY');
     this.hide('mCart'); this.show('mPay');
-    // QR: สร้างออเดอร์อัตโนมัติ (รอชำระ) — ลูกค้าไม่ต้องกดยืนยันซ้ำ
-    this.autoSubmitQROrder();
   },
   payMethod(m){
     this.payM=m;
@@ -606,10 +609,12 @@ const C={
     document.getElementById('lbPP').classList.toggle('on',m==='PROMPTPAY');
     const btn=document.getElementById('btnOrder');
     if(btn){
-      if(m==='CASH'){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
+      if(m==='CASH'){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์ (เงินสด)'; }
       else if(this.orderId){ btn.disabled=true; btn.textContent='รอชำระเงิน — ออเดอร์จะเข้าครัวเมื่อเงินเข้า'; }
-      else { btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
+      else { btn.disabled=false; btn.textContent='ยืนยันออเดอร์ (QR)'; }
     }
+    const cz=document.getElementById('cashZone');
+    if(cz) cz.style.display = m==='CASH' ? 'block' : 'none';
     const z=document.getElementById('ppZone');
     if(m==='PROMPTPAY'){
       z.style.display='block';
@@ -704,7 +709,54 @@ const C={
       toast('ถ้าไม่เจอไฟล์: กดค้างที่รูป QR เพื่อบันทึก');
     }
   },
-  renderCart(){
+  async onSlipSelected(ev){
+    const file=ev && ev.target && ev.target.files && ev.target.files[0];
+    if(!file) return;
+    const sp=document.getElementById('slipPreview');
+    const sm=document.getElementById('slipAutoMsg');
+    try{
+      const dataUrl=await fileToDataUrl(file,1200,.75);
+      this.slipData=dataUrl;
+      if(sp){ sp.style.display='block'; sp.innerHTML='<img src="'+dataUrl+'" style="max-width:220px;border-radius:8px;border:1px solid #ddd">'; }
+      if(sm) sm.innerHTML='<span style="color:#1565C0">แนบสลิปแล้ว — กดยืนยันออเดอร์เพื่อส่งให้ร้านตรวจ</span>';
+      // ถ้ามีออเดอร์แล้ว ให้อัปโหลดทันที
+      if(this.orderId){
+        await this.uploadSlipToOrder(this.orderId, dataUrl);
+      }
+    }catch(e){
+      toast(e.message||'อ่านสลิปไม่สำเร็จ');
+    }
+  },
+  async uploadSlipToOrder(orderId, dataUrl){
+    const sm=document.getElementById('slipAutoMsg');
+    if(sm) sm.innerHTML='กำลังตรวจสลิป…';
+    let slipStatus='PENDING_REVIEW';
+    let autoMsg='ส่งสลิปให้ร้านตรวจสอบแล้ว';
+    const total=(this.lastOrder&&this.lastOrder.total)||0;
+    if(window.EASYSLIP_API_KEY){
+      const r=await this.verifySlipEasy(dataUrl, total);
+      if(r.ok){
+        slipStatus='AUTO_APPROVED';
+        autoMsg=r.msg||'ตรวจสลิปอัตโนมัติผ่าน';
+        await shopRef.collection('orders').doc(orderId).update({
+          slipData:dataUrl, slipStatus:'APPROVED',
+          paymentStatus:'PAID', paidAmount:total, paidAt:Date.now(),
+          status:'Pending', paymentMethod:'PROMPTPAY'
+        });
+        if(sm) sm.innerHTML='<span style="color:#2E7D32">✓ '+autoMsg+'</span>';
+        toast('ชำระเงินสำเร็จ');
+        return;
+      } else {
+        autoMsg=(r.msg||'รอร้านตรวจสลิป')+' — ส่งให้ร้านตรวจสอบแล้ว';
+      }
+    }
+    await shopRef.collection('orders').doc(orderId).update({
+      slipData:dataUrl, slipStatus:slipStatus
+    });
+    if(sm) sm.innerHTML='<span style="color:#E65100">'+autoMsg+'</span>';
+    toast('ส่งสลิปแล้ว');
+  },
+    renderCart(){
     this.updFab();
   },
   attachTicketQR(){
@@ -819,6 +871,10 @@ const C={
     await shopRef.collection('orders').doc(id).set(order);
     this.orderId=id;
     this.lastOrder={id,...order};
+    // แนบสลิปถ้ามีตอนยืนยัน
+    if(this.slipData && this.payM==='PROMPTPAY'){
+      try{ await this.uploadSlipToOrder(id, this.slipData); }catch(e){ console.warn(e); }
+    }
     this.cart=[]; this.renderCart();
     try{ localStorage.setItem('somtum_last_order', JSON.stringify(this.lastOrder)); }catch(e){}
     try{ this.ensurePayQRAsImage(); }catch(e){}
@@ -940,7 +996,9 @@ const C={
       qz.innerHTML= (dataUrl?('<img data-payqr="1" src="'+dataUrl+'" alt="QR" style="width:220px;max-width:100%;background:#fff;border-radius:12px;-webkit-touch-callout:default">'):'<div style="color:#999">QR อยู่หน้าชำระเงิน</div>') +
         '<div style="font-size:12px;color:#E65100;margin-top:6px">'+(this.isLineBrowser()?'ใน LINE: กดค้างที่รูป → บันทึกรูป':'กดค้างที่รูปเพื่อบันทึก')+'</div>'+
         '<button type="button" class="btn btn-o btn-sm" style="margin-top:8px;width:auto" onclick="C.openPayQRFull()">เปิดรูป QR เต็มจอ</button>'+
-        '<button type="button" class="btn btn-o btn-sm" style="margin-top:8px;width:auto" onclick="C.savePayQR()">บันทึก / แชร์ QR</button>';
+        '<button type="button" class="btn btn-o btn-sm" style="margin-top:8px;width:auto" onclick="C.savePayQR()">บันทึก / แชร์ QR</button>'+
+        '<div style="margin-top:10px"><button type="button" class="btn btn-p btn-sm" style="width:auto" onclick="document.getElementById(\'slipFile\').click()">📎 อัปโหลดสลิปโอนเงิน</button></div>'+
+        '<div id="ticketSlipMsg" style="font-size:12px;margin-top:6px;color:#666"></div>';
     } else {
       qz.style.display='none'; qz.innerHTML='';
     }

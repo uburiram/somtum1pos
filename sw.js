@@ -1,5 +1,5 @@
 /* Somtum POS PWA Service Worker */
-const CACHE = 'somtum-pwa-v10';
+const CACHE = 'somtum-pwa-v11';
 const ASSETS = [
   './',
   './index.html',
@@ -63,6 +63,18 @@ self.addEventListener('fetch', (event) => {
         return network.then((r) => r || cached).catch(() => cached || caches.match('./index.html'));
       }
       return cached || network;
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if (c.url && c.url.includes('pos.html') && 'focus' in c) return c.focus();
+      }
+      if (clients.openWindow) return clients.openWindow('./pos.html');
     })
   );
 });
