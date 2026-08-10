@@ -128,20 +128,19 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
       <div class="st"><div class="n" style="color:var(--d)" id="sUnpaid">0</div><div class="l">ไม่ชำระ</div></div>
     </div>
     <div class="filters">
-      <button class="fc on" onclick="M.filter('kitchen',this)">ครัว (กำลังทำ)</button>
-      <button class="fc" onclick="M.filter('unpaid',this)">ยังไม่ชำระ</button>
-      <button class="fc" onclick="M.filter('paid',this)">ชำระแล้ว</button>
-      <button class="fc" onclick="M.filter('slip',this)">รอตรวจสลิป</button>
+      <button class="fc on" onclick="M.filter('kitchen',this)">ครัว (รอคิว+กำลังทำ)</button>
       <button class="fc" onclick="M.filter('waitingPay',this)">รอชำระเงิน</button>
       <button class="fc" onclick="M.filter('ready',this)">พร้อมรับ</button>
+      <button class="fc" onclick="M.filter('slip',this)">มีสลิปรอตรวจ</button>
+      <button class="fc" onclick="M.filter('completed',this)">เสร็จสมบูรณ์</button>
       <button class="fc" onclick="M.filter('cancelled',this)">ยกเลิก</button>
     </div>
-    <div class="og" id="orderGrid"></div>
+    <div class="og"<div class="og" id="orderGrid"></div>
   </div>
 
   <div id="panelHistory" class="hide">
     <div class="form-card">
-      <h3 style="margin-bottom:8px">📚 ประวัติการสั่งซื้อ</h3>
+      <h3 style="margin-bottom:8px">📚 ประวัติการสั่งซื้อ</h3><p style="font-size:12px;color:#777;margin-bottom:8px">แสดงเฉพาะออเดอร์ที่เสร็จสมบูรณ์ (ทำเสร็จแล้วและชำระเงินแล้ว)</p>
       <label class="lbl">ค้นหา (คิว / ชื่อเมนู)</label>
       <input id="histQ" placeholder="เช่น A001 หรือ ตำไทย" oninput="M.loadHistory()">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
@@ -340,7 +339,7 @@ function fileToDataUrl(file,maxSide=800,quality=.7){
 let db,shopRef;
 
 const M={
-  filterKey:'queue', orders:[], menus:[], cats:[], tops:[], spice:[],
+  filterKey:'kitchen', orders:[], menus:[], cats:[], tops:[], spice:[],
   audio:null, audioOn:false, lastActive:0, ready:false, unsub:null, catalogTab:'cat',
   pendingImageData:'',
 
@@ -579,18 +578,21 @@ const M={
     // ข้อมูลเดิม: Pending/AwaitingPayment=รอคิว, Cooking=กำลังทำ, Ready=ทำเสร็จ, Completed=เสร็จสมบูรณ์
     const isQueue = o => ['Pending','AwaitingPayment'].includes(o.status);
     const isActive = o => o.status!=='Completed' && o.status!=='Cancelled';
-    if(this.filterKey==='queue') list=list.filter(o=>isQueue(o));
+    // ครัว = รอคิว + กำลังทำ เท่านั้น (ทำเสร็จแล้วออกจากครัว)
+    // รอชำระเงิน = Ready + ยังไม่จ่าย
+    // พร้อมรับ = Ready + จ่ายแล้ว
+    // เสร็จสมบูรณ์ = Completed
+    if(this.filterKey==='kitchen' || this.filterKey==='queue') list=list.filter(o=>['Pending','Cooking','AwaitingPayment'].includes(o.status));
     else if(this.filterKey==='cooking') list=list.filter(o=>o.status==='Cooking');
-    else if(this.filterKey==='doneKitchen') list=list.filter(o=>o.status==='Ready');
-    else if(this.filterKey==='waitingPay') list=list.filter(o=>isActive(o) && o.paymentStatus!=='PAID' && o.status==='Ready');
-    else if(this.filterKey==='slip') list=list.filter(o=>isActive(o) && (o.paymentMethod==='PROMPTPAY'||o.paymentMethod==='QR') && (o.slipStatus==='PENDING_REVIEW'||o.slipStatus==='AUTO_APPROVED'));
+    else if(this.filterKey==='waitingPay') list=list.filter(o=>o.status==='Ready' && o.paymentStatus!=='PAID');
+    else if(this.filterKey==='ready') list=list.filter(o=>o.status==='Ready' && o.paymentStatus==='PAID');
+    else if(this.filterKey==='slip') list=list.filter(o=>o.status!=='Completed' && o.status!=='Cancelled' && (o.paymentMethod==='PROMPTPAY'||o.paymentMethod==='QR') && (o.slipStatus==='PENDING_REVIEW'||o.slipStatus==='AUTO_APPROVED'));
     else if(this.filterKey==='completed') list=list.filter(o=>o.status==='Completed');
     else if(this.filterKey==='cancelled') list=list.filter(o=>o.status==='Cancelled');
-    else if(this.filterKey==='allActive') list=list.filter(o=>isActive(o));
-    else if(this.filterKey==='kitchen') list=list.filter(o=>['Pending','Cooking','AwaitingPayment','Ready'].includes(o.status)); // รองรับปุ่มเก่า
-    else if(this.filterKey==='unpaid') list=list.filter(o=>isActive(o) && o.paymentStatus!=='PAID');
-    else if(this.filterKey==='paid') list=list.filter(o=>isActive(o) && o.paymentStatus==='PAID');
-    else if(this.filterKey==='ready') list=list.filter(o=>o.status==='Ready' && o.paymentStatus==='PAID');
+    else if(this.filterKey==='doneKitchen') list=list.filter(o=>o.status==='Ready');
+    else if(this.filterKey==='allActive') list=list.filter(o=>o.status!=='Completed' && o.status!=='Cancelled');
+    else if(this.filterKey==='unpaid') list=list.filter(o=>o.status!=='Completed' && o.status!=='Cancelled' && o.paymentStatus!=='PAID');
+    else if(this.filterKey==='paid') list=list.filter(o=>o.status!=='Completed' && o.status!=='Cancelled' && o.paymentStatus==='PAID');
     // เรียง: คิวก่อน→หลัง (เก่าบน ใหม่ล่าง) ยกเว้นประวัติเสร็จสมบูรณ์/ยกเลิก
     if(this.filterKey==='completed'||this.filterKey==='cancelled'){
       list=list.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
@@ -643,10 +645,7 @@ const M={
     const slipBlock=o.slipData?`<div style="margin:12px 0;text-align:center">
       <div style="font-weight:600;margin-bottom:6px">สลิป (${esc(o.slipStatus||'')})</div>
       <img src="${o.slipData}" style="max-width:100%;border-radius:8px;border:1px solid #eee">
-      ${needSlip && !locked?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-        <button class="btn btn-g" onclick="M.reviewSlip('${esc(o.id)}','APPROVED')">✓ สลิปผ่าน + ชำระแล้ว</button>
-        <button class="btn btn-d" onclick="M.reviewSlip('${esc(o.id)}','REJECTED')">✗ ไม่ผ่าน</button>
-      </div>`:''}
+      ${needSlip && !locked?`<div style="margin-top:8px;padding:8px;background:#E3F2FD;border-radius:8px;font-size:13px;color:#1565C0;text-align:center">มีสลิปแนบแล้ว — กด「ยืนยันรับโอนแล้ว」ด้านล่างเมื่อตรวจยอดถูกต้อง</div>`:''}
     </div>`:(o.paymentStatus!=='PAID'&&!locked?`<div style="margin:10px 0;padding:10px;background:#FFF8E1;border-radius:8px;font-size:13px;text-align:center">ยังไม่มีสลิปจากลูกค้า</div>`:'');
     let statusBtns='';
     if(!locked){
@@ -717,14 +716,27 @@ const M={
       patch.statusLocked=true;
     }
     await shopRef.collection('orders').doc(id).update(patch);
-    const labels={Pending:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์'};
-    toast(status==='Completed'?'เสร็จสมบูรณ์ · ย้ายไปรายการเสร็จแล้ว':('อัปเดต: '+(labels[status]||status)));
+    // sync local
+    const idx=this.orders.findIndex(x=>x.id===id);
+    if(idx>=0) this.orders[idx]=Object.assign({}, this.orders[idx], patch);
+
+    if(status==='Ready'){
+      // ทำเสร็จแล้ว → ปิดการ์ดทันที ออกจากครัว
+      const paid = (cur && cur.paymentStatus==='PAID') || patch.paymentStatus==='PAID';
+      document.getElementById('detailModal').classList.remove('on');
+      this.renderOrders();
+      toast(paid ? 'ทำเสร็จแล้ว → เก็บที่「พร้อมรับ」' : 'ทำเสร็จแล้ว → เก็บที่「รอชำระเงิน」');
+      return;
+    }
     if(status==='Completed'){
       document.getElementById('detailModal').classList.remove('on');
       this.renderOrders();
-    } else {
-      this.openDetail(id);
+      toast('เสร็จสมบูรณ์ · บันทึกในประวัติ');
+      return;
     }
+    const labels={Pending:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์'};
+    toast('อัปเดต: '+(labels[status]||status));
+    this.openDetail(id);
   },
   async cancelOrder(id){
     if(!confirm('ยืนยันยกเลิกออเดอร์นี้?')) return;
@@ -784,7 +796,12 @@ const M={
     const idx=this.orders.findIndex(x=>x.id===id);
     if(idx>=0) this.orders[idx]=full;
     this.renderOrders();
-    toast('ชำระแล้ว · บันทึกใบเสร็จ');
+    const after=this.orders.find(x=>x.id===id);
+    if(after && after.status==='Ready'){
+      toast('ชำระแล้ว → อยู่ใน「พร้อมรับ」· กดเสร็จสมบูรณ์เมื่อลูกค้ารับของ');
+    } else {
+      toast('ชำระแล้ว · บันทึกใบเสร็จ');
+    }
   },
   async writeReceipt(order){
     const pub=(await shopRef.collection('settings').doc('public').get()).data()||{};
@@ -933,14 +950,16 @@ const M={
     let fromTs=0, toTs=Date.now()+864e5;
     if(fromV){ const d=new Date(fromV+'T00:00:00'); fromTs=d.getTime(); }
     if(toV){ const d=new Date(toV+'T23:59:59'); toTs=d.getTime(); }
+    // ประวัติเก็บเฉพาะออเดอร์เสร็จสมบูรณ์ (ทำเสร็จ + จ่ายเงินแล้ว)
     let list=this.orders.filter(o=>{
+      if(o.status!=='Completed') return false;
       const t=o.createdAt||0;
       if(t<fromTs||t>toTs) return false;
       if(!q) return true;
       const queue=(o.queue||'').toLowerCase();
       const names=(o.items||[]).map(i=>i.name||'').join(' ').toLowerCase();
       return queue.includes(q)||names.includes(q)||String(o.id).includes(q);
-    }).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    }).sort((a,b)=>(b.completedAt||b.createdAt||0)-(a.completedAt||a.createdAt||0));
     const el=document.getElementById('historyList');
     if(!el) return;
     if(!list.length){ el.innerHTML='<div style="text-align:center;color:#888;padding:24px">ไม่พบประวัติ</div>'; return; }
