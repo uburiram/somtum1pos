@@ -109,14 +109,14 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
   <div class="mh"><span>ชำระเงิน</span><button class="x" onclick="C.hide('mPay')">×</button></div>
   <div style="text-align:center;margin-bottom:12px"><div style="color:#777">ยอดที่ต้องชำระ</div><div class="huge" id="payTotal">฿0</div></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-    <label class="rl on" id="lbCash" style="flex-direction:column;gap:6px;cursor:pointer" onclick="C.payMethod('CASH')">
+    <label class="rl on" id="lbPP" style="flex-direction:column;gap:6px;cursor:pointer" onclick="C.payMethod('PROMPTPAY')">
+      <i class="fa-solid fa-qrcode" style="font-size:2rem;color:var(--i)"></i><span>QR / พร้อมเพย์</span>
+    </label>
+    <label class="rl" id="lbCash" style="flex-direction:column;gap:6px;cursor:pointer" onclick="C.payMethod('CASH')">
       <i class="fa-solid fa-money-bill-wave" style="font-size:2rem;color:var(--g)"></i><span>เงินสด</span>
     </label>
-    <label class="rl" id="lbPP" style="flex-direction:column;gap:6px;cursor:pointer" onclick="C.payMethod('PROMPTPAY')">
-      <i class="fa-solid fa-qrcode" style="font-size:2rem;color:var(--i)"></i><span>พร้อมเพย์</span>
-    </label>
   </div>
-  <div id="ppZone" style="display:none;text-align:center;margin-bottom:12px">
+  <div id="ppZone" style="display:block;text-align:center;margin-bottom:12px">
     <p style="font-size:13px;margin-bottom:6px">สแกนด้วยแอปธนาคาร / ถุงเงิน / วอลเล็ต</p>
     <div id="ppQR" style="display:flex;justify-content:center;margin-bottom:8px"></div>
     <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0 auto 8px;display:inline-flex" onclick="C.savePayQR()">💾 บันทึกรูป QR ไปจ่ายในแอปธนาคาร</button>
@@ -133,7 +133,7 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
 <div class="ov" id="mTicket"><div class="md" style="text-align:center">
   <div id="ticketBody"></div>
   <button class="btn btn-o" style="margin-top:12px" onclick="C.hide('mTicket')">ปิด</button>
-  <button class="btn btn-g" style="margin-top:8px" id="btnPrintReceipt" onclick="C.printReceipt()">พิมพ์ / บันทึกใบเสร็จ</button>
+  <button class="btn btn-g" style="margin-top:8px" id="btnPrintReceipt" onclick="C.saveReceipt()">💾 บันทึกใบเสร็จลงเครื่อง</button>
 </div></div>
 <div id="printReceipt" style="display:none"></div>
 <div class="toast" id="toast"></div>
@@ -302,7 +302,7 @@ async function migrateAndSeed(){
 
 const C={
   shopName:'ร้าน',promptpay:'',accountName:'',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:'',optionConfig:{spiceMode:'single',toppingMode:'multi',toppingAllowQty:true},cats:[],menus:[],spice:[],tops:[],
-  cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'CASH',slipData:'',lastOrder:null,
+  cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'PROMPTPAY',slipData:'',lastOrder:null,
 
   async init(){
     if(!checkConfig()){document.getElementById('conn').textContent='ยังไม่ตั้งค่า';return}
@@ -498,7 +498,9 @@ const C={
     document.getElementById('payTotal').textContent=money(this.cart.reduce((s,i)=>s+i.total,0));
     this.slipData='';document.getElementById('slipFile').value='';document.getElementById('slipPreview').innerHTML='';
     document.getElementById('slipAutoMsg').textContent='';
-    this.payMethod('CASH'); this.hide('mCart'); this.show('mPay');
+    this.payM='PROMPTPAY';
+    this.payMethod('PROMPTPAY');
+    this.hide('mCart'); this.show('mPay');
   },
   payMethod(m){
     this.payM=m;
@@ -676,13 +678,27 @@ const C={
       <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;
     document.getElementById('btnPrintReceipt').style.display = paid ? 'inline-flex' : 'none';
   },
-  printReceipt(){
-    const o=this.lastOrder; if(!o) return;
-    const html=document.getElementById('receiptBox')?.innerHTML||'';
-    document.getElementById('printReceipt').innerHTML='<div style="padding:20px;font-family:Prompt,sans-serif">'+html+'</div>';
-    document.getElementById('printReceipt').style.display='block';
-    window.print();
-    document.getElementById('printReceipt').style.display='none';
+  saveReceipt(){
+    const o=this.lastOrder; if(!o){ toast('ไม่มีใบเสร็จ'); return; }
+    const box=document.getElementById('receiptBox');
+    const inner=box?box.innerHTML:('');
+    const doc=`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ใบเสร็จ ${esc(o.queue||'')}</title>
+<style>body{font-family:sans-serif;padding:20px;max-width:400px;margin:0 auto} h3{color:#FF5722;text-align:center}</style>
+</head><body>${inner}
+<p style="text-align:center;color:#888;font-size:12px;margin-top:16px">บันทึกจาก ${esc(this.shopName||'')}</p>
+</body></html>`;
+    const blob=new Blob([doc],{type:'text/html;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download='receipt-'+(o.queue||'order')+'.html';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    // share if available
+    if(navigator.share){
+      try{ navigator.share({title:'ใบเสร็จ '+o.queue, text:'คิว '+o.queue+' ยอด '+(o.total||''), url:location.href.split('?')[0]+'?queue='+o.queue}); }catch(e){}
+    }
+    toast('บันทึกใบเสร็จแล้ว');
   },
   async trackQueue(){
     const q=document.getElementById('trackQ').value.trim().toUpperCase();

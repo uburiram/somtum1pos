@@ -56,8 +56,9 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
 .thumb{width:48px;height:48px;border-radius:8px;object-fit:cover;background:#f0f0f0}
 @media print{
   body *{visibility:hidden!important}
-  #printArea,#printArea *{visibility:visible!important}
-  #printArea{position:absolute;left:0;top:0;width:100%;padding:24px;text-align:center}
+  #printArea, #printArea *{visibility:visible!important}
+  #printArea{position:fixed;left:0;top:0;width:100%;padding:16px;background:#fff;z-index:99999;display:block!important}
+  .ov, header, .nav, .wrap, .toast, .banner { display:none!important; }
 }
 </style>
 </head>
@@ -77,7 +78,7 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
     <span id="orderBadge" class="badge-n hide">0</span>
   </div>
   <div class="nav">
-    <button class="on" id="navOrders" onclick="M.tab('orders')">🧾 ออเดอร์</button>
+    <button class="on" id="navOrders" onclick="M.tab('orders')">🧾 ออเดอร์ <span id="navOrderBadge" class="badge-n hide">0</span></button>
     <button id="navShop" onclick="M.tab('shop')">🏪 จัดการร้าน</button>
     <button id="navReport" onclick="M.tab('report')">📊 รายงาน</button>
     <button id="navSet" onclick="M.tab('settings')">⚙️ ตั้งค่า</button>
@@ -101,6 +102,7 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
       <button class="fc" onclick="M.filter('slip',this)">รอตรวจสลิป</button>
       <button class="fc" onclick="M.filter('paid',this)">ชำระแล้ว</button>
       <button class="fc" onclick="M.filter('completed',this)">เสร็จแล้ว</button>
+      <button class="fc" onclick="M.filter('cancelled',this)">ยกเลิก</button>
     </div>
     <div class="og" id="orderGrid"></div>
   </div>
@@ -400,18 +402,22 @@ const M={
   renderOrders(){
     const today=new Date(); today.setHours(0,0,0,0); const t0=today.getTime();
     let list=this.orders.slice();
-    if(this.filterKey==='active') list=list.filter(o=>o.status!=='Completed');
+    if(this.filterKey==='active') list=list.filter(o=>o.status!=='Completed'&&o.status!=='Cancelled');
     else if(this.filterKey==='unpaid') list=list.filter(o=>o.paymentStatus==='UNPAID'&&o.status!=='Completed');
     else if(this.filterKey==='slip') list=list.filter(o=>o.slipStatus==='PENDING_REVIEW');
     else if(this.filterKey==='paid') list=list.filter(o=>o.paymentStatus==='PAID');
     else if(this.filterKey==='completed') list=list.filter(o=>o.status==='Completed'&&(o.createdAt||0)>=t0);
-    const active=this.orders.filter(o=>o.status!=='Completed');
+    else if(this.filterKey==='cancelled') list=list.filter(o=>o.status==='Cancelled');
+    const active=this.orders.filter(o=>o.status!=='Completed'&&o.status!=='Cancelled');
     document.getElementById('sPending').textContent=active.filter(o=>o.status==='Pending').length;
     document.getElementById('sCooking').textContent=active.filter(o=>o.status==='Cooking').length;
     document.getElementById('sReady').textContent=active.filter(o=>o.status==='Ready').length;
     document.getElementById('sUnpaid').textContent=active.filter(o=>o.paymentStatus==='UNPAID').length;
-    const n=active.length; const badge=document.getElementById('orderBadge');
-    if(n>0){badge.textContent=n;badge.classList.remove('hide')} else badge.classList.add('hide');
+    const n=active.length;
+    const badge=document.getElementById('orderBadge');
+    if(badge){ if(n>0){badge.textContent=n;badge.classList.remove('hide')} else badge.classList.add('hide'); }
+    const navB=document.getElementById('navOrderBadge');
+    if(navB){ if(n>0){navB.textContent=n;navB.classList.remove('hide')} else navB.classList.add('hide'); }
     const g=document.getElementById('orderGrid');
     if(!list.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#888">ไม่มีออเดอร์</div>';return}
     g.innerHTML=list.map(o=>{
@@ -463,6 +469,8 @@ const M={
         <button class="btn btn-g" onclick="M.setStatus('${esc(o.id)}','Ready')">พร้อมรับ</button>
         <button class="btn btn-p" onclick="M.setStatus('${esc(o.id)}','Completed')">เสร็จสิ้น</button>
       </div>
+      <button class="btn btn-d btn-block" style="margin-top:10px" onclick="M.cancelOrder('${esc(o.id)}')">ยกเลิกออเดอร์</button>
+      <button class="btn btn-o btn-block" style="margin-top:6px;border-color:#999;color:#666" onclick="M.deleteOrder('${esc(o.id)}')">ลบประวัติออเดอร์นี้</button>
       ${o.paymentStatus!=='PAID'?`<div style="margin-top:12px">
         <label class="lbl">รับเงินสด</label><input type="number" id="cashIn" placeholder="จำนวนที่รับ">
         <button class="btn btn-g btn-block" style="margin-top:8px" onclick="M.payCash('${esc(o.id)}')">ยืนยันรับเงินสด + ออกใบเสร็จ</button>
@@ -472,6 +480,28 @@ const M={
     document.getElementById('detailModal').classList.add('on');
   },
   async setStatus(id,status){ await shopRef.collection('orders').doc(id).update({status}); toast('อัปเดต '+status); },
+  async cancelOrder(id){
+    if(!confirm('ยืนยันยกเลิกออเดอร์นี้?')) return;
+    await shopRef.collection('orders').doc(id).update({ status:'Cancelled', cancelledAt:Date.now() });
+    toast('ยกเลิกออเดอร์แล้ว');
+    document.getElementById('detailModal').classList.remove('on');
+  },
+  async deleteOrder(id){
+    if(!confirm('ลบประวัติออเดอร์นี้ถาวร?\n(ขั้นที่ 1/2)')) return;
+    if(!confirm('ยืนยันอีกครั้ง ข้อมูลจะหายและกู้คืนไม่ได้\n(ขั้นที่ 2/2)')) return;
+    const pin=prompt('ใส่ PIN ร้านเพื่อยืนยันการลบ');
+    if(pin==null) return;
+    const s=await shopRef.collection('settings').doc('secure').get();
+    const hash=s.exists?s.data().pinHash:'';
+    const inputHash=await sha256(String(pin).trim());
+    if(!hash || inputHash!==hash){ toast('PIN ไม่ถูกต้อง — ยกเลิกการลบ'); return; }
+    try{
+      await shopRef.collection('orders').doc(id).delete();
+      try{ await shopRef.collection('receipts').doc(id).delete(); }catch(e){}
+      toast('ลบประวัติแล้ว');
+      document.getElementById('detailModal').classList.remove('on');
+    }catch(err){ toast('ลบไม่ได้: '+(err.message||err)); }
+  },
   async markPaid(id, patch){
     const paidAt=Date.now();
     await shopRef.collection('orders').doc(id).update(Object.assign({paymentStatus:'PAID', paidAt}, patch));
@@ -519,26 +549,50 @@ const M={
   async showReceipt(id){
     let r=(await shopRef.collection('receipts').doc(id).get()).data();
     const o=this.orders.find(x=>x.id===id);
-    if(!r && o){ await this.writeReceipt(o); r=(await shopRef.collection('receipts').doc(id).get()).data(); }
+    if(!r && o){ await this.writeReceipt({id, ...o}); r=(await shopRef.collection('receipts').doc(id).get()).data(); }
+    if(!r && o){
+      r={ queue:o.queue, shopName:document.getElementById('shopTitle')?.textContent||'ร้าน', items:o.items||[], total:o.total,
+          paymentMethod:o.paymentMethod, paidAmount:o.paidAmount||o.total, changeAmount:o.changeAmount||0,
+          paidAt:o.paidAt||o.createdAt, createdAt:o.createdAt };
+    }
     if(!r){ toast('ยังไม่มีใบเสร็จ'); return; }
     const lines=(r.items||[]).map(i=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty}`).join(', ');
-      return `<div style="display:flex;justify-content:space-between"><span>${esc(i.name)} x${i.qty}${tops?`<br><small>${tops}</small>`:''}</span><span>${money(i.total)}</span></div>`;
+      const note=i.note?`<div style="font-size:12px;color:#E65100">📝 ${esc(i.note)}</div>`:'';
+      return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed #eee"><span>${esc(i.name)} x${i.qty}${tops?`<br><small>${tops}</small>`:''}${note}</span><span>${money(i.total)}</span></div>`;
     }).join('');
+    const receiptHtml=`<div id="receiptPrintContent" style="font-family:Prompt,sans-serif;padding:16px;color:#000;background:#fff;max-width:400px;margin:0 auto">
+        <h2 style="text-align:center;color:#FF5722;margin:0 0 6px">${esc(r.shopName||'ร้าน')}</h2>
+        <div style="text-align:center;font-size:13px">ใบเสร็จรับเงิน</div>
+        <div style="text-align:center;font-size:16px;font-weight:700;margin:4px 0">คิว ${esc(r.queue||'')}</div>
+        <div style="text-align:center;font-size:12px;color:#555;margin-bottom:10px">${new Date(r.paidAt||r.createdAt||Date.now()).toLocaleString('th-TH')}</div>
+        ${lines||'<div style="text-align:center;color:#999">ไม่มีรายการ</div>'}
+        <div style="border-top:2px solid #333;margin-top:10px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700;font-size:1.15rem">
+          <span>รวมทั้งสิ้น</span><span>${money(r.total)}</span>
+        </div>
+        <div style="margin-top:8px;font-size:13px">ชำระ: ${r.paymentMethod==='CASH'?'เงินสด':'QR / พร้อมเพย์'} (ชำระแล้ว)</div>
+        ${r.changeAmount?`<div style="font-size:13px">ทอน: ${money(r.changeAmount)}</div>`:''}
+      </div>`;
+    this._lastReceiptHtml = receiptHtml;
     document.getElementById('detailBody').innerHTML=`
       <button class="btn btn-o btn-sm" onclick="M.openDetail('${esc(id)}')">← กลับออเดอร์</button>
-      <div style="border:1px dashed #ccc;border-radius:12px;padding:16px;margin-top:12px">
-        <h2 style="text-align:center;color:var(--p)">${esc(r.shopName)}</h2>
-        <div style="text-align:center;font-size:13px;color:#666">ใบเสร็จ · คิว ${esc(r.queue)}</div>
-        <div style="text-align:center;font-size:12px;margin-bottom:10px">${new Date(r.paidAt||r.createdAt).toLocaleString('th-TH')}</div>
-        ${lines}
-        <div style="border-top:1px dashed #ccc;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700">
-          <span>รวม</span><span>${money(r.total)}</span>
-        </div>
-        <div style="margin-top:6px;font-size:13px">ชำระ: ${r.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์'} (ชำระแล้ว)</div>
-        ${r.changeAmount?`<div style="font-size:13px">ทอน: ${money(r.changeAmount)}</div>`:''}
-      </div>
-      <button class="btn btn-g btn-block" style="margin-top:12px" onclick="window.print()">พิมพ์ใบเสร็จ</button>`;
+      <div style="border:1px dashed #ccc;border-radius:12px;margin-top:12px;overflow:hidden">${receiptHtml}</div>
+      <button class="btn btn-g btn-block" style="margin-top:12px" onclick="M.printReceiptNow()">🖨️ พิมพ์ใบเสร็จ</button>`;
+  },
+  printReceiptNow(){
+    const html=this._lastReceiptHtml || document.getElementById('receiptPrintContent')?.outerHTML || '';
+    if(!html){ toast('ไม่มีข้อมูลใบเสร็จ'); return; }
+    let area=document.getElementById('printArea');
+    if(!area){
+      area=document.createElement('div'); area.id='printArea'; document.body.appendChild(area);
+    }
+    area.classList.remove('hide');
+    area.style.cssText='display:block;background:#fff;color:#000';
+    area.innerHTML=html;
+    setTimeout(()=>{
+      window.print();
+      setTimeout(()=>{ area.classList.add('hide'); area.style.display='none'; area.innerHTML=''; }, 400);
+    }, 200);
   },
 
   tab(name){
@@ -612,8 +666,8 @@ const M={
         <div style="flex:1"><strong>${esc(m.name)}</strong> ${m.isOut?'<span style="color:var(--d)">หมด</span>':''}
           <div style="font-size:12px;color:#777">${money(m.price)} · #${m.order||0}</div></div>
         <div style="display:flex;gap:4px;flex-wrap:wrap">
-          <button class="btn btn-o btn-sm" onclick="M.moveGeneric('menus','${esc(m.id)}',-1)">↑</button>
-          <button class="btn btn-o btn-sm" onclick="M.moveGeneric('menus','${esc(m.id)}',1)">↓</button>
+          <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('menus','${esc(m.id)}',-1)">↑</button>
+          <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('menus','${esc(m.id)}',1)">↓</button>
           <button class="btn btn-o btn-sm" onclick="M.editMenu('${esc(m.id)}')">แก้</button>
           <button class="btn btn-o btn-sm" onclick="M.toggleOut('${esc(m.id)}',${!m.isOut})">${m.isOut?'มีของ':'หมด'}</button>
           <button class="btn btn-d btn-sm" onclick="M.deleteMenu('${esc(m.id)}')">ปิด</button>
@@ -672,7 +726,7 @@ const M={
         <button class="btn btn-o" onclick="document.getElementById('catId').value='';document.getElementById('catName').value=''">ล้าง</button>
       </div>`;
     document.getElementById('catalogListCat').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กดค้างแล้วลากเพื่อจัดลำดับ หรือใช้ปุ่ม ↑ ↓</p>`+(this.cats.map((c,idx)=>`
-      <div class="list-item" draggable="true" data-id="${esc(c.id)}" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropCat(event)" ondragend="M.dragEnd(event)" style="touch-action:none;user-select:none">
+      <div class="list-item" draggable="true" data-id="${esc(c.id)}" data-col="categories" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropGeneric(event,'categories')" ondragend="M.dragEnd(event)" style="touch-action:none;user-select:none">
         <div style="display:flex;align-items:center;gap:8px;flex:1">
           <span style="cursor:grab;font-size:18px;color:#999">⋮⋮</span>
           <div><strong>${esc(c.name)}</strong> <span style="color:#888">#${c.order||0}</span> ${c.isActive===false?'<span style="color:var(--d)">ปิด</span>':''}</div>
@@ -685,33 +739,68 @@ const M={
         </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
   },
   dragId:null,
-  dragStart(e){ this.dragId=e.currentTarget.getAttribute('data-id'); e.currentTarget.style.opacity='0.5'; },
-  dragOver(e){ e.preventDefault(); },
-  dragEnd(e){ e.currentTarget.style.opacity='1'; },
-  async dropCat(e){
-    e.preventDefault();
+  dragCol:null,
+  dragStart(e){
+    const el=e.currentTarget;
+    this.dragId=el.getAttribute('data-id');
+    this.dragCol=el.getAttribute('data-col')||'categories';
+    el.classList.add('dragging');
+    el.style.opacity='0.45';
+    try{ e.dataTransfer.setData('text/plain', this.dragId); e.dataTransfer.effectAllowed='move'; }catch(err){}
+  },
+  dragOver(e){ e.preventDefault(); e.stopPropagation(); try{e.dataTransfer.dropEffect='move'}catch(err){} },
+  dragEnd(e){ e.currentTarget.style.opacity='1'; e.currentTarget.classList.remove('dragging'); },
+  getOrderedItems(collection){
+    if(collection==='menus') return (this.menus||[]).filter(m=>m.isActive!==false).slice().sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0) || String(a.name).localeCompare(String(b.name)));
+    if(collection==='toppings') return (this.tops||[]).filter(t=>t.isActive!==false).slice().sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0));
+    if(collection==='spiceLevels') return (this.spice||[]).filter(s=>s.isActive!==false).slice().sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0));
+    return (this.cats||[]).filter(c=>c.isActive!==false).slice().sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0));
+  },
+  async saveOrder(collection, ids){
+    try{
+      // write sequentially to avoid batch permission edge cases
+      for(let i=0;i<ids.length;i++){
+        await shopRef.collection(collection).doc(ids[i]).set({ order: i+1 }, { merge:true });
+      }
+      // update local
+      ids.forEach((id,i)=>{
+        let arr = collection==='menus'?this.menus: collection==='toppings'?this.tops: collection==='spiceLevels'?this.spice: this.cats;
+        const item=(arr||[]).find(x=>x.id===id); if(item) item.order=i+1;
+      });
+      toast('จัดลำดับแล้ว ('+ids.length+' รายการ)');
+      if(collection==='menus') this.loadCatalogMenus();
+      else if(collection==='toppings') this.renderTopAdmin();
+      else if(collection==='spiceLevels') this.renderSpiceAdmin();
+      else this.renderCatAdmin();
+    }catch(err){ console.error(err); toast('จัดลำดับไม่สำเร็จ: '+(err.message||err)); }
+  },
+  async dropCat(e){ e.preventDefault(); await this.dropGeneric(e,'categories'); },
+  async dropGeneric(e, collection){
+    e.preventDefault(); e.stopPropagation();
     const toId=e.currentTarget.getAttribute('data-id');
-    if(!this.dragId || this.dragId===toId) return;
-    const ids=this.cats.map(c=>c.id);
-    const from=ids.indexOf(this.dragId); const to=ids.indexOf(toId);
-    if(from<0||to<0) return;
-    ids.splice(to,0, ids.splice(from,1)[0]);
-    const batch=db.batch();
-    ids.forEach((id,i)=> batch.set(shopRef.collection('categories').doc(id),{ order:i+1 },{merge:true}));
-    await batch.commit();
-    toast('จัดลำดับหมวดแล้ว');
-    this.renderCatAdmin();
+    const col=collection || e.currentTarget.getAttribute('data-col') || this.dragCol || 'categories';
+    let fromId=this.dragId;
+    try{ fromId = fromId || e.dataTransfer.getData('text/plain'); }catch(err){}
+    if(!fromId || fromId===toId) return;
+    const items=this.getOrderedItems(col);
+    const ids=items.map(x=>x.id);
+    const from=ids.indexOf(fromId), to=ids.indexOf(toId);
+    if(from<0||to<0){ toast('ไม่พบรายการ'); return; }
+    const moved=ids.splice(from,1)[0]; ids.splice(to,0,moved);
+    await this.saveOrder(col, ids);
   },
-  async moveCat(id, dir){
-    const ids=this.cats.map(c=>c.id);
-    const i=ids.indexOf(id); const j=i+dir;
-    if(i<0||j<0||j>=ids.length) return;
-    [ids[i],ids[j]]=[ids[j],ids[i]];
-    const batch=db.batch();
-    ids.forEach((cid,idx)=> batch.set(shopRef.collection('categories').doc(cid),{ order:idx+1 },{merge:true}));
-    await batch.commit();
-    this.renderCatAdmin();
+  async moveGeneric(collection, id, dir){
+    try{
+      const items=this.getOrderedItems(collection);
+      const ids=items.map(x=>x.id);
+      const i=ids.indexOf(id); const j=i+dir;
+      if(i<0){ toast('ไม่พบรายการ'); return; }
+      if(j<0||j>=ids.length){ toast('สุดรายการแล้ว'); return; }
+      const t=ids[i]; ids[i]=ids[j]; ids[j]=t;
+      await this.saveOrder(collection, ids);
+    }catch(err){ console.error(err); toast('เลื่อนไม่สำเร็จ: '+(err.message||err)); }
   },
+  async moveCat(id, dir){ await this.moveGeneric('categories', id, dir); },
   editCat(id){ const c=this.cats.find(x=>x.id===id); if(!c)return; document.getElementById('catId').value=c.id; document.getElementById('catName').value=c.name; document.getElementById('catOrder').value=c.order||1; },
   async saveCat(){
     const id=document.getElementById('catId').value||('c_'+uid());
@@ -737,12 +826,12 @@ const M={
       </div>`;
     const tops=[...this.tops].sort((a,b)=>(a.order||0)-(b.order||0));
     document.getElementById('catalogListTop').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กดค้าง ⋮⋮ แล้วลากเพื่อจัดลำดับ</p>`+(tops.map(t=>`
-      <div class="list-item" draggable="true" data-id="${esc(t.id)}" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropGeneric(event,'toppings')" ondragend="M.dragEnd(event)">
+      <div class="list-item" draggable="true" data-id="${esc(t.id)}" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" data-col="toppings" ondrop="M.dropGeneric(event,'toppings')" ondragend="M.dragEnd(event)">
         <span style="cursor:grab;color:#999">⋮⋮</span>
         <div style="flex:1"><strong>${esc(t.name)}</strong> <span style="color:var(--p)">${money(t.price)}</span> ${t.isActive===false?'<span style="color:var(--d)">ปิด</span>':''}</div>
         <div style="display:flex;gap:4px">
-          <button class="btn btn-o btn-sm" onclick="M.moveGeneric('toppings','${esc(t.id)}',-1)">↑</button>
-          <button class="btn btn-o btn-sm" onclick="M.moveGeneric('toppings','${esc(t.id)}',1)">↓</button>
+          <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('toppings','${esc(t.id)}',-1)">↑</button>
+          <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('toppings','${esc(t.id)}',1)">↓</button>
           <button class="btn btn-o btn-sm" onclick="M.editTop('${esc(t.id)}')">แก้</button>
           <button class="btn btn-d btn-sm" onclick="M.deleteTop('${esc(t.id)}')">ปิด</button>
         </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
@@ -772,12 +861,12 @@ const M={
       </div>`;
     const spices=[...this.spice].sort((a,b)=>(a.order||0)-(b.order||0));
     document.getElementById('catalogListSpice').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กดค้าง ⋮⋮ แล้วลากเพื่อจัดลำดับ</p>`+(spices.map(s=>`
-      <div class="list-item" draggable="true" data-id="${esc(s.id)}" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropGeneric(event,'spiceLevels')" ondragend="M.dragEnd(event)">
+      <div class="list-item" draggable="true" data-id="${esc(s.id)}" data-col="spiceLevels" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropGeneric(event,'spiceLevels')" ondragend="M.dragEnd(event)">
         <span style="cursor:grab;color:#999">⋮⋮</span>
         <div style="flex:1"><strong>${esc(s.name)}</strong> ${s.isActive===false?'<span style="color:var(--d)">ปิด</span>':''}</div>
         <div style="display:flex;gap:4px">
-          <button class="btn btn-o btn-sm" onclick="M.moveGeneric('spiceLevels','${esc(s.id)}',-1)">↑</button>
-          <button class="btn btn-o btn-sm" onclick="M.moveGeneric('spiceLevels','${esc(s.id)}',1)">↓</button>
+          <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('spiceLevels','${esc(s.id)}',-1)">↑</button>
+          <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('spiceLevels','${esc(s.id)}',1)">↓</button>
           <button class="btn btn-o btn-sm" onclick="M.editSpice('${esc(s.id)}')">แก้</button>
           <button class="btn btn-d btn-sm" onclick="M.deleteSpice('${esc(s.id)}')">ปิด</button>
         </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
