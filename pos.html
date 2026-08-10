@@ -352,6 +352,24 @@ const M={
     else toast('PIN ไม่ถูกต้อง');
   },
   logout(){sessionStorage.removeItem('pinUntil');location.reload()},
+  
+  scrollToForm(focusId){
+    try{
+      const el=document.getElementById(focusId);
+      const panel=document.getElementById('panelShop')||document.body;
+      // เปิดแท็บจัดการร้านถ้ายังไม่เปิด
+      if(document.getElementById('panelShop') && !document.getElementById('panelShop').classList.contains('on')){
+        // leave as is — already on shop when editing
+      }
+      if(el){
+        setTimeout(()=>{
+          el.scrollIntoView({behavior:'smooth', block:'center'});
+          try{ el.focus({preventScroll:true}); }catch(e){ try{ el.focus(); }catch(e2){} }
+        }, 80);
+      }
+    }catch(e){}
+  },
+
   installApp(){
     var p=window.deferredPwaPrompt;
     if(!p){ toast('Chrome: เมนู ⋮ → ติดตั้งแอป'); return; }
@@ -743,9 +761,11 @@ const M={
     document.getElementById('menuPrice').value=m.price||0;
     document.getElementById('menuCat').value=m.catId||'';
     document.getElementById('menuImg').value=m.imageUrl||'';
-    const mp=document.getElementById('menuPlara'); if(mp) mp.checked=!!m.allowPlara;
+    const mp=document.getElementById('menuPlara'); if(mp) mp.checked=!!(m.allowPlara===true||m.allowPlara===1||m.allowPlara==='true'||m.allowPlara==='1');
     this.pendingImageData=m.imageData||'';
     document.getElementById('menuPreview').innerHTML=this.pendingImageData?`<img src="${this.pendingImageData}" style="max-width:160px;border-radius:8px">`:'';
+    this.shopTab('menu');
+    this.scrollToForm('menuName');
   },
   resetMenuForm(){
     document.getElementById('menuEditId').value='';
@@ -763,7 +783,8 @@ const M={
     const price=Number(document.getElementById('menuPrice').value);
     const catId=document.getElementById('menuCat').value;
     const imageUrl=document.getElementById('menuImg').value.trim();
-    const allowPlara=!!(document.getElementById('menuPlara')&&document.getElementById('menuPlara').checked);
+    const plEl=document.getElementById('menuPlara');
+    const allowPlara=plEl?!!plEl.checked:false;
     if(!name){toast('ใส่ชื่อเมนู');return}
     if(isNaN(price)||price<0){toast('ราคาไม่ถูกต้อง');return}
     if(!catId){toast('เลือกหมวด');return}
@@ -772,7 +793,7 @@ const M={
     const data={id,name,price,catId,imageUrl,allowPlara,isActive:true,isOut:prev?!!prev.isOut:false, order: prev&&prev.order!=null?prev.order:maxOrder+1};
     if(this.pendingImageData) data.imageData=this.pendingImageData;
     await shopRef.collection('menus').doc(id).set(data,{merge:true});
-    toast('บันทึกเมนูแล้ว'); this.resetMenuForm(); this.loadCatalogMenus();
+    toast(allowPlara?'บันทึกเมนูแล้ว (มีตัวเลือกปลาร้า)':'บันทึกเมนูแล้ว'); this.resetMenuForm(); this.loadCatalogMenus();
   },
   async toggleOut(id,isOut){ await shopRef.collection('menus').doc(id).update({isOut:!!isOut}); toast('อัปเดตแล้ว'); this.loadCatalogMenus(); },
   async closeMenu(id){ if(!confirm('ปิดการขายเมนูนี้? (เปิดใหม่ได้ภายหลัง)'))return; await shopRef.collection('menus').doc(id).update({isActive:false}); toast('ปิดเมนูแล้ว'); this.loadCatalogMenus(); },
@@ -875,7 +896,7 @@ const M={
     }catch(err){ console.error(err); toast('เลื่อนไม่สำเร็จ: '+(err.message||err)); }
   },
   async moveCat(id, dir){ await this.moveGeneric('categories', id, dir); },
-  editCat(id){ const c=this.cats.find(x=>x.id===id); if(!c)return; document.getElementById('catId').value=c.id; document.getElementById('catName').value=c.name; document.getElementById('catOrder').value=c.order||1; },
+  editCat(id){ const c=this.cats.find(x=>x.id===id); if(!c)return; document.getElementById('catId').value=c.id; document.getElementById('catName').value=c.name; document.getElementById('catOrder').value=c.order||1; this.shopTab('cat'); this.scrollToForm('catName'); },
   async saveCat(){
     const id=document.getElementById('catId').value||('c_'+uid());
     const name=document.getElementById('catName').value.trim();
@@ -967,7 +988,7 @@ const M={
         </div>
       </div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
   },
-  editSpice(id){ const s=this.spice.find(x=>x.id===id); if(!s)return; document.getElementById('spiceId').value=s.id; document.getElementById('spiceName').value=s.name; },
+  editSpice(id){ const s=this.spice.find(x=>x.id===id); if(!s)return; document.getElementById('spiceId').value=s.id; document.getElementById('spiceName').value=s.name; this.shopTab('spice'); this.scrollToForm('spiceName'); },
   async saveSpice(){
     const id=document.getElementById('spiceId').value||('s_'+uid());
     const name=document.getElementById('spiceName').value.trim();
