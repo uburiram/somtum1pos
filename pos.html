@@ -156,8 +156,27 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
       <label class="lbl">ชื่อร้าน</label><input id="setName">
       <label class="lbl">ชื่อบัญชี</label><input id="setAccount" placeholder="นายการันย์ ยามดี">
       <label class="lbl">พร้อมเพย์ (10 หรือ 13 หลัก)</label><input id="setPP" placeholder="1319900156353">
-      <p style="font-size:12px;color:#777;margin-top:6px">ใช้เลขเดียวกับ QR ถุงเงิน/กรุงไทยของร้าน เพื่อให้ลูกค้าสแกนจากแอปธนาคารได้</p>
+      <p style="font-size:12px;color:#777;margin-top:6px">เบอร์ 10 หลัก หรือ บัตรประชาชน 13 หลัก — ระบบเลือก tag EMV ให้ถูกต้องอัตโนมัติ</p>
       <button class="btn btn-p btn-block" style="margin-top:10px" onclick="M.saveSettings()">บันทึก</button>
+    </div>
+    <div class="form-card">
+      <h3>โหมดตัวเลือกในเมนูหลัก</h3>
+      <label class="lbl">ความเผ็ด</label>
+      <select id="setSpiceMode">
+        <option value="single">เลือกได้เพียง 1 อย่าง</option>
+        <option value="multi">เลือกได้หลายอย่าง</option>
+      </select>
+      <label class="lbl">ท็อปปิ้ง</label>
+      <select id="setTopMode">
+        <option value="multi">เลือกได้หลายอย่าง</option>
+        <option value="single">เลือกได้เพียง 1 อย่าง</option>
+      </select>
+      <label class="lbl">จำนวนท็อปปิ้ง (เมื่อเลือกหลายอย่าง)</label>
+      <select id="setTopQty">
+        <option value="yes">กำหนดจำนวนได้ (− / +)</option>
+        <option value="no">แค่ติ๊กเลือก ไม่มีจำนวน</option>
+      </select>
+      <button class="btn btn-p btn-block" style="margin-top:10px" onclick="M.saveOptionConfig()">บันทึกโหมดตัวเลือก</button>
     </div>
     <div class="form-card">
       <h3>เปลี่ยน PIN</h3>
@@ -528,12 +547,46 @@ const M={
         <button class="btn btn-p" onclick="M.saveCat()">บันทึก</button>
         <button class="btn btn-o" onclick="document.getElementById('catId').value='';document.getElementById('catName').value=''">ล้าง</button>
       </div>`;
-    document.getElementById('catalogList').innerHTML=this.cats.map(c=>`
-      <div class="list-item"><div><strong>${esc(c.name)}</strong> <span style="color:#888">#${c.order||0}</span> ${c.isActive===false?'<span style="color:var(--d)">ปิด</span>':''}</div>
-      <div style="display:flex;gap:4px">
-        <button class="btn btn-o btn-sm" onclick="M.editCat('${esc(c.id)}')">แก้</button>
-        <button class="btn btn-d btn-sm" onclick="M.deleteCat('${esc(c.id)}')">ปิด</button>
-      </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>';
+    document.getElementById('catalogList').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กดค้างแล้วลากเพื่อจัดลำดับ หรือใช้ปุ่ม ↑ ↓</p>`+(this.cats.map((c,idx)=>`
+      <div class="list-item" draggable="true" data-id="${esc(c.id)}" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropCat(event)" ondragend="M.dragEnd(event)" style="touch-action:none;user-select:none">
+        <div style="display:flex;align-items:center;gap:8px;flex:1">
+          <span style="cursor:grab;font-size:18px;color:#999">⋮⋮</span>
+          <div><strong>${esc(c.name)}</strong> <span style="color:#888">#${c.order||0}</span> ${c.isActive===false?'<span style="color:var(--d)">ปิด</span>':''}</div>
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="btn btn-o btn-sm" onclick="M.moveCat('${esc(c.id)}',-1)">↑</button>
+          <button class="btn btn-o btn-sm" onclick="M.moveCat('${esc(c.id)}',1)">↓</button>
+          <button class="btn btn-o btn-sm" onclick="M.editCat('${esc(c.id)}')">แก้</button>
+          <button class="btn btn-d btn-sm" onclick="M.deleteCat('${esc(c.id)}')">ปิด</button>
+        </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
+  },
+  dragId:null,
+  dragStart(e){ this.dragId=e.currentTarget.getAttribute('data-id'); e.currentTarget.style.opacity='0.5'; },
+  dragOver(e){ e.preventDefault(); },
+  dragEnd(e){ e.currentTarget.style.opacity='1'; },
+  async dropCat(e){
+    e.preventDefault();
+    const toId=e.currentTarget.getAttribute('data-id');
+    if(!this.dragId || this.dragId===toId) return;
+    const ids=this.cats.map(c=>c.id);
+    const from=ids.indexOf(this.dragId); const to=ids.indexOf(toId);
+    if(from<0||to<0) return;
+    ids.splice(to,0, ids.splice(from,1)[0]);
+    const batch=db.batch();
+    ids.forEach((id,i)=> batch.set(shopRef.collection('categories').doc(id),{ order:i+1 },{merge:true}));
+    await batch.commit();
+    toast('จัดลำดับหมวดแล้ว');
+    this.renderCatAdmin();
+  },
+  async moveCat(id, dir){
+    const ids=this.cats.map(c=>c.id);
+    const i=ids.indexOf(id); const j=i+dir;
+    if(i<0||j<0||j>=ids.length) return;
+    [ids[i],ids[j]]=[ids[j],ids[i]];
+    const batch=db.batch();
+    ids.forEach((cid,idx)=> batch.set(shopRef.collection('categories').doc(cid),{ order:idx+1 },{merge:true}));
+    await batch.commit();
+    this.renderCatAdmin();
   },
   editCat(id){ const c=this.cats.find(x=>x.id===id); if(!c)return; document.getElementById('catId').value=c.id; document.getElementById('catName').value=c.name; document.getElementById('catOrder').value=c.order||1; },
   async saveCat(){
@@ -610,10 +663,23 @@ const M={
     document.getElementById('setName').value=d.shopName||'';
     document.getElementById('setAccount').value=d.accountName||'';
     document.getElementById('setPP').value=d.promptpay||'1319900156353';
+    const oc=d.optionConfig||{};
+    const sm=document.getElementById('setSpiceMode'); if(sm) sm.value=oc.spiceMode||'single';
+    const tm=document.getElementById('setTopMode'); if(tm) tm.value=oc.toppingMode||'multi';
+    const tq=document.getElementById('setTopQty'); if(tq) tq.value=(oc.toppingAllowQty===false?'no':'yes');
     const cu=new URL('index.html', location.href).href;
     document.getElementById('qrUrl').textContent=cu;
     const box=document.getElementById('qrBox'); box.innerHTML='';
     new QRCode(box,{text:cu,width:200,height:200});
+  },
+  async saveOptionConfig(){
+    const optionConfig={
+      spiceMode: document.getElementById('setSpiceMode').value,
+      toppingMode: document.getElementById('setTopMode').value,
+      toppingAllowQty: document.getElementById('setTopQty').value==='yes'
+    };
+    await shopRef.collection('settings').doc('public').set({ optionConfig },{merge:true});
+    toast('บันทึกโหมดตัวเลือกแล้ว');
   },
   async saveSettings(){
     const name=document.getElementById('setName').value.trim();
