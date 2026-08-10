@@ -1,9 +1,22 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
+<!-- pwa -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>POS ร้านค้า</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#FF5722">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="POS ส้มตำนายหนึ่ง">
+<link rel="icon" href="./icon/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="./icon/icon-192.png" sizes="192x192" type="image/png">
+<link rel="icon" href="./icon/icon-512.png" sizes="512x512" type="image/png">
+<link rel="apple-touch-icon" href="./icon/apple-touch-icon-180.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./icon/apple-touch-icon-180.png">
+
 <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -41,7 +54,14 @@ header{background:#fff;padding:10px 14px;display:flex;justify-content:space-betw
 .ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:80;display:none;align-items:center;justify-content:center;padding:12px}
 .ov.on{display:flex}.md{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;border-radius:14px;padding:18px}
 .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(30,30,30,.95);color:#fff;padding:10px 18px;border-radius:20px;z-index:200;display:none;font-size:14px;max-width:90%}
-.list-item{display:flex;flex-direction:column;align-items:stretch;background:#fff;padding:12px;border-radius:10px;margin-bottom:8px;gap:10px}
+.list-item{display:flex;flex-direction:row;align-items:center;background:#fff;padding:10px 12px;border-radius:10px;margin-bottom:8px;gap:8px}
+.list-item .grip{cursor:grab;color:#999;flex:0 0 auto;font-size:16px;line-height:1;padding:4px 2px}
+.list-item .thumb{width:40px;height:40px;border-radius:8px;object-fit:cover;background:#f0f0f0;flex:0 0 auto}
+.list-item .meta{flex:1;min-width:0;overflow:hidden}
+.list-item .meta .name{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list-item .meta .sub{font-size:12px;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list-item .acts{display:flex;flex-wrap:nowrap;gap:4px;flex:0 0 auto;align-items:center}
+.list-item .acts .btn{padding:5px 8px;font-size:11px;white-space:nowrap}
 .list-item strong{word-break:break-word;line-height:1.35}
 .list-item .row-top{display:flex;align-items:flex-start;gap:8px;width:100%}
 .list-item .row-top .title{flex:1;min-width:0}
@@ -332,6 +352,12 @@ const M={
     else toast('PIN ไม่ถูกต้อง');
   },
   logout(){sessionStorage.removeItem('pinUntil');location.reload()},
+  installApp(){
+    var p=window.deferredPwaPrompt;
+    if(!p){ toast('Chrome: เมนู ⋮ → ติดตั้งแอป'); return; }
+    p.prompt();
+    p.userChoice.then(function(){ window.deferredPwaPrompt=null; var b=document.getElementById('btnInstallApp'); if(b) b.style.display='none'; });
+  },
   enter(){
     document.getElementById('loginView').classList.add('hide');
     document.getElementById('appView').classList.remove('hide');
@@ -673,7 +699,7 @@ const M={
       <div class="rc"><div class="v">${money(pp)}</div><div class="l">พร้อมเพย์</div></div>`;
     const mc={}; list.forEach(o=>(o.items||[]).forEach(i=>{mc[i.name]=(mc[i.name]||0)+Number(i.qty||0)}));
     const top=Object.entries(mc).sort((a,b)=>b[1]-a[1]).slice(0,8);
-    document.getElementById('topMenus').innerHTML=top.length?top.map(([n,q],i)=>`<div class="list-item"><span>${i+1}. ${esc(n)}</span><strong>${q}</strong></div>`).join(''):'<div style="color:#888">ยังไม่มี</div>';
+    document.getElementById('topMenus').innerHTML=top.length?top.map(([n,q],i)=>`<div class="list-item" style="justify-content:space-between"><div class="meta"><div class="name">${i+1}. ${esc(n)}</div></div><strong style="flex:0 0 auto;white-space:nowrap">${q} จาน</strong></div>`).join(''):'<div style="color:#888">ยังไม่มี</div>';
   },
 
   async loadCatalogMenus(){
@@ -690,23 +716,24 @@ const M={
       }catch(err){ toast(err.message); }
     };
     const menus=this.menus.slice().sort((a,b)=>((a.isActive===false)-(b.isActive===false))||((a.order||0)-(b.order||0)));
-    document.getElementById('menuAdmin').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กดค้าง ⋮⋮ แล้วลากเพื่อจัดลำดับ</p>`+(menus.map(m=>{
+    document.getElementById('menuAdmin').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กด ↑↓ หรือลาก ⋮⋮ เพื่อจัดลำดับ</p>`+(menus.map(m=>{
       const src=m.imageData||m.imageUrl||'';
+      const flags=[m.isOut?'หมด':'', m.isActive===false?'ปิดขาย':'', m.allowPlara?'ปลาร้า':''].filter(Boolean).join(' · ');
       return `<div class="list-item" draggable="true" data-id="${esc(m.id)}" data-col="menus" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropGeneric(event,'menus')" ondragend="M.dragEnd(event)">
-        <span style="cursor:grab;color:#999">⋮⋮</span>
-        ${src?`<img class="thumb" src="${esc(src)}">`:'<div class="thumb"></div>'}
-        <div style="flex:1"><strong>${esc(m.name)}</strong> ${m.isOut?'<span style="color:var(--d)">หมด</span>':''} ${m.isActive===false?'<span style="color:var(--d)">ปิดขาย</span>':''} ${m.allowPlara?'<span style="color:#1565C0;font-size:11px">· มีตัวเลือกปลาร้า</span>':''}
-          <div style="font-size:12px;color:#777">${money(m.price)} · #${m.order||0}</div></div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <span class="grip">⋮⋮</span>
+        ${src?`<img class="thumb" src="${esc(src)}" alt="">`:`<div class="thumb"></div>`}
+        <div class="meta"><div class="name">${esc(m.name)}</div><div class="sub">${money(m.price)}${flags?' · '+flags:''}</div></div>
+        <div class="acts">
           <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('menus','${esc(m.id)}',-1)">↑</button>
           <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('menus','${esc(m.id)}',1)">↓</button>
           <button class="btn btn-o btn-sm" onclick="M.editMenu('${esc(m.id)}')">แก้</button>
           ${m.isActive===false
-            ? `<button class="btn btn-g btn-sm" onclick="M.reopenMenu('${esc(m.id)}')">เปิดขาย</button>`
+            ? `<button class="btn btn-g btn-sm" onclick="M.reopenMenu('${esc(m.id)}')">เปิด</button>`
             : `<button class="btn btn-o btn-sm" onclick="M.toggleOut('${esc(m.id)}',${!m.isOut})">${m.isOut?'มีของ':'หมด'}</button>
-          <button class="btn btn-o btn-sm" onclick="M.closeMenu('${esc(m.id)}')">ปิดขาย</button>`}
+          <button class="btn btn-o btn-sm" onclick="M.closeMenu('${esc(m.id)}')">ปิด</button>`}
           <button class="btn btn-d btn-sm" onclick="M.deleteMenu('${esc(m.id)}')">ลบ</button>
-        </div></div>`;
+        </div>
+      </div>`;
     }).join('')||'<div style="color:#888">ยังไม่มีเมนู</div>');
   },
   editMenu(id){
@@ -770,21 +797,20 @@ const M={
         <button class="btn btn-p" onclick="M.saveCat()">บันทึก</button>
         <button class="btn btn-o" onclick="document.getElementById('catId').value='';document.getElementById('catName').value=''">ล้าง</button>
       </div>`;
-    document.getElementById('catalogListCat').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กดค้างแล้วลากเพื่อจัดลำดับ หรือใช้ปุ่ม ↑ ↓</p>`+(this.cats.map((c,idx)=>`
-      <div class="list-item" draggable="true" data-id="${esc(c.id)}" data-col="categories" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropGeneric(event,'categories')" ondragend="M.dragEnd(event)" style="touch-action:none;user-select:none">
-        <div style="display:flex;align-items:center;gap:8px;flex:1">
-          <span style="cursor:grab;font-size:18px;color:#999">⋮⋮</span>
-          <div><strong>${esc(c.name)}</strong> <span style="color:#888">#${c.order||0}</span> ${c.isActive===false?'<span style="color:var(--d)">ปิด</span>':''}</div>
-        </div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap">
-          <button class="btn btn-o btn-sm" onclick="M.moveCat('${esc(c.id)}',-1)">↑</button>
-          <button class="btn btn-o btn-sm" onclick="M.moveCat('${esc(c.id)}',1)">↓</button>
+    document.getElementById('catalogListCat').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">↑↓ หรือลาก ⋮⋮ จัดลำดับ</p>`+(this.cats.map((c,idx)=>`
+      <div class="list-item" draggable="true" data-id="${esc(c.id)}" data-col="categories" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropGeneric(event,'categories')" ondragend="M.dragEnd(event)">
+        <span class="grip">⋮⋮</span>
+        <div class="meta"><div class="name">${esc(c.name)}</div><div class="sub">ลำดับ #${c.order||0}${c.isActive===false?' · ปิด':''}</div></div>
+        <div class="acts">
+          <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveCat('${esc(c.id)}',-1)">↑</button>
+          <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveCat('${esc(c.id)}',1)">↓</button>
           <button class="btn btn-o btn-sm" onclick="M.editCat('${esc(c.id)}')">แก้</button>
           ${c.isActive===false
             ? `<button class="btn btn-g btn-sm" onclick="M.reopenCat('${esc(c.id)}')">เปิด</button>`
             : `<button class="btn btn-o btn-sm" onclick="M.closeCat('${esc(c.id)}')">ปิด</button>`}
           <button class="btn btn-d btn-sm" onclick="M.deleteCat('${esc(c.id)}')">ลบ</button>
-        </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
+        </div>
+      </div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
   },
   dragId:null,
   dragCol:null,
@@ -880,11 +906,11 @@ const M={
         <button class="btn btn-o" onclick="document.getElementById('topId').value='';document.getElementById('topName').value=''">ล้าง</button>
       </div>`;
     const tops=[...this.tops].sort((a,b)=>(a.order||0)-(b.order||0));
-    document.getElementById('catalogListTop').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กดค้าง ⋮⋮ แล้วลากเพื่อจัดลำดับ</p>`+(tops.map(t=>`
-      <div class="list-item" draggable="true" data-id="${esc(t.id)}" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" data-col="toppings" ondrop="M.dropGeneric(event,'toppings')" ondragend="M.dragEnd(event)">
-        <span style="cursor:grab;color:#999">⋮⋮</span>
-        <div style="flex:1"><strong>${esc(t.name)}</strong> <span style="color:var(--p)">${money(t.price)}</span> ${t.isActive===false?'<span style="color:var(--d)">ปิด</span>':''}</div>
-        <div style="display:flex;gap:4px">
+    document.getElementById('catalogListTop').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">↑↓ หรือลาก ⋮⋮ จัดลำดับ</p>`+(tops.map(t=>`
+      <div class="list-item" draggable="true" data-id="${esc(t.id)}" data-col="toppings" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropGeneric(event,'toppings')" ondragend="M.dragEnd(event)">
+        <span class="grip">⋮⋮</span>
+        <div class="meta"><div class="name">${esc(t.name)}</div><div class="sub">${money(t.price)}${t.isActive===false?' · ปิด':''}</div></div>
+        <div class="acts">
           <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('toppings','${esc(t.id)}',-1)">↑</button>
           <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('toppings','${esc(t.id)}',1)">↓</button>
           <button class="btn btn-o btn-sm" onclick="M.editTop('${esc(t.id)}')">แก้</button>
@@ -892,7 +918,8 @@ const M={
             ? `<button class="btn btn-g btn-sm" onclick="M.reopenTop('${esc(t.id)}')">เปิด</button>`
             : `<button class="btn btn-o btn-sm" onclick="M.closeTop('${esc(t.id)}')">ปิด</button>`}
           <button class="btn btn-d btn-sm" onclick="M.deleteTop('${esc(t.id)}')">ลบ</button>
-        </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
+        </div>
+      </div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
   },
   editTop(id){ const t=this.tops.find(x=>x.id===id); if(!t)return; document.getElementById('topId').value=t.id; document.getElementById('topName').value=t.name; document.getElementById('topPrice').value=t.price; },
   async saveTop(){
@@ -925,11 +952,11 @@ const M={
         <button class="btn btn-o" onclick="document.getElementById('spiceId').value='';document.getElementById('spiceName').value=''">ล้าง</button>
       </div>`;
     const spices=[...this.spice].sort((a,b)=>(a.order||0)-(b.order||0));
-    document.getElementById('catalogListSpice').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">กดค้าง ⋮⋮ แล้วลากเพื่อจัดลำดับ</p>`+(spices.map(s=>`
+    document.getElementById('catalogListSpice').innerHTML=`<p style="font-size:12px;color:#777;margin-bottom:8px">↑↓ หรือลาก ⋮⋮ จัดลำดับ</p>`+(spices.map(s=>`
       <div class="list-item" draggable="true" data-id="${esc(s.id)}" data-col="spiceLevels" ondragstart="M.dragStart(event)" ondragover="M.dragOver(event)" ondrop="M.dropGeneric(event,'spiceLevels')" ondragend="M.dragEnd(event)">
-        <span style="cursor:grab;color:#999">⋮⋮</span>
-        <div style="flex:1"><strong>${esc(s.name)}</strong> ${s.isActive===false?'<span style="color:var(--d)">ปิด</span>':''}</div>
-        <div style="display:flex;gap:4px">
+        <span class="grip">⋮⋮</span>
+        <div class="meta"><div class="name">${esc(s.name)}</div><div class="sub">${s.isActive===false?'ปิด':'ใช้งาน'}</div></div>
+        <div class="acts">
           <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('spiceLevels','${esc(s.id)}',-1)">↑</button>
           <button class="btn btn-o btn-sm" onclick="event.stopPropagation();M.moveGeneric('spiceLevels','${esc(s.id)}',1)">↓</button>
           <button class="btn btn-o btn-sm" onclick="M.editSpice('${esc(s.id)}')">แก้</button>
@@ -937,7 +964,8 @@ const M={
             ? `<button class="btn btn-g btn-sm" onclick="M.reopenSpice('${esc(s.id)}')">เปิด</button>`
             : `<button class="btn btn-o btn-sm" onclick="M.closeSpice('${esc(s.id)}')">ปิด</button>`}
           <button class="btn btn-d btn-sm" onclick="M.deleteSpice('${esc(s.id)}')">ลบ</button>
-        </div></div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
+        </div>
+      </div>`).join('')||'<div style="color:#888">ยังไม่มี</div>');
   },
   editSpice(id){ const s=this.spice.find(x=>x.id===id); if(!s)return; document.getElementById('spiceId').value=s.id; document.getElementById('spiceName').value=s.name; },
   async saveSpice(){
@@ -1045,7 +1073,28 @@ const M={
 
 document.getElementById('pinIn').addEventListener('keydown',e=>{if(e.key==='Enter')M.login()});
 M.boot().catch(e=>{console.error(e);toast('เริ่มไม่สำเร็จ')});
-if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}
+</script>
+
+<script>
+(function(){
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(function(){});
+    });
+  }
+  window.deferredPwaPrompt = null;
+  window.addEventListener('beforeinstallprompt', function(e){
+    e.preventDefault();
+    window.deferredPwaPrompt = e;
+    var b = document.getElementById('btnInstallApp');
+    if(b) b.style.display = 'inline-flex';
+  });
+  window.addEventListener('appinstalled', function(){
+    window.deferredPwaPrompt = null;
+    var b = document.getElementById('btnInstallApp');
+    if(b) b.style.display = 'none';
+  });
+})();
 </script>
 </body>
 </html>

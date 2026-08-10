@@ -346,6 +346,12 @@ const C={
       if(q){document.getElementById('trackQ').value=q;this.trackQueue()}
     }catch(e){console.error(e);showErr('เริ่มระบบไม่สำเร็จ: '+(e.message||e));document.getElementById('conn').textContent='ผิดพลาด'}
   },
+  installApp(){
+    var p=window.deferredPwaPrompt;
+    if(!p){ toast('Chrome: เมนู ⋮ → ติดตั้งแอป (เปิดผ่านลิงก์ GitHub Pages)'); return; }
+    p.prompt();
+    p.userChoice.then(function(){ window.deferredPwaPrompt=null; var b=document.getElementById('btnInstallApp'); if(b) b.style.display='none'; });
+  },
   show(id){document.getElementById(id).classList.add('on')},
   hide(id){document.getElementById(id).classList.remove('on')},
   search(v){this.q=(v||'').trim().toLowerCase();this.renderMenus()},
@@ -842,11 +848,30 @@ const C={
   }
 };
 C.init();
-if('serviceWorker' in navigator){
-  window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('./sw.js').catch(e=>console.warn('SW',e));
-  });
-}
+
 </script>
+
+<script>
+(function(){
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(function(){});
+    });
+  }
+  window.deferredPwaPrompt = null;
+  window.addEventListener('beforeinstallprompt', function(e){
+    e.preventDefault();
+    window.deferredPwaPrompt = e;
+    var b = document.getElementById('btnInstallApp');
+    if(b) b.style.display = 'inline-flex';
+  });
+  window.addEventListener('appinstalled', function(){
+    window.deferredPwaPrompt = null;
+    var b = document.getElementById('btnInstallApp');
+    if(b) b.style.display = 'none';
+  });
+})();
+</script>
+
 </body>
 </html>
