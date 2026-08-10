@@ -87,7 +87,7 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
 </div>
 <div class="search"><input type="search" id="q" placeholder="🔍 ค้นหาเมนู..." oninput="C.search(this.value)"></div>
 <div class="cats" id="cats"></div>
-<div class="grid" id="menus"></div>
+<div class="grid" id="menus"><div style="grid-column:1/-1;text-align:center;padding:40px;color:#999">กำลังโหลดเมนู…</div></div>
 <div class="fab" id="fab" onclick="C.openCart()"><span id="fabCount">0 รายการ</span><span id="fabTotal">฿0</span></div>
 
 <div class="ov" id="mProduct"><div class="md">
@@ -280,18 +280,32 @@ function fileToDataUrl(file,maxSide=900,quality=.72){
 }
 
 async function migrateAndSeed(){
-  // ลูกค้าไม่ login — เขียนได้เฉพาะ queue; เมนู/หมวด seed ต้องทำจากหน้า POS หลัง login ครั้งแรก
   try{
     const q=await shopRef.collection('settings').doc('queue').get();
     if(!q.exists){
       await shopRef.collection('settings').doc('queue').set({queueCounter:1,queueDate:''},{merge:true});
     }
   }catch(e){ console.warn('queue seed', e); }
-
-  const catSnap=await shopRef.collection('categories').limit(1).get();
-  if(!catSnap.empty) return;
-  // ถ้ายังไม่มีหมวด แสดงข้อความ — ร้านต้อง login POS เพื่อ seed
-  console.warn('ยังไม่มีเมนู/หมวด — ให้ร้านเข้า POS แล้วระบบจะ seed หรือเพิ่มเมนูเอง');
+  try{
+    const catSnap=await shopRef.collection('categories').limit(1).get();
+    if(!catSnap.empty) return;
+    const batch=db.batch();
+    [['c1','เมนูส้มตำ',1],['c2','เมนูยำ',2],['c3','เมนูของทอด',3],['c4','เมนูกินคู่ส้มตำ',4],['c5','เครื่องดื่ม',5]]
+      .forEach(([id,name,order])=>batch.set(shopRef.collection('categories').doc(id),{id,name,isActive:true,order}));
+    const menus=[
+      ['m1','c1','ตำปูปลาร้า',40],['m2','c1','ตำไทย',40],['m3','c1','ตำป่า',45],['m4','c1','ตำแตง',40],
+      ['m5','c2','ยำวุ้นเส้น',50],['m6','c3','ไก่ทอด',50],['m7','c3','ปีกไก่ทอด',40],
+      ['m8','c4','ไข่ต้ม',10],['m9','c4','ไข่ดาว',15],['m10','c5','น้ำเปล่า',10],['m11','c5','น้ำอัดลม',15]
+    ];
+    menus.forEach(([id,catId,name,price])=>batch.set(shopRef.collection('menus').doc(id),{id,catId,name,price,isActive:true,isOut:false,imageUrl:'',imageData:'',order:0}));
+    [['s1','ไม่เผ็ด',1],['s2','เผ็ดน้อย',2],['s3','เผ็ดกลาง',3],['s4','เผ็ดมาก',4]].forEach(([id,name,order])=>batch.set(shopRef.collection('spiceLevels').doc(id),{id,name,isActive:true,order}));
+    [['t1','ไข่ดาว',10],['t2','ไข่ต้ม',10],['t3','เพิ่มปู',20],['t4','หมูกรอบ',15]].forEach(([id,name,price],i)=>batch.set(shopRef.collection('toppings').doc(id),{id,name,price,isActive:true,order:i+1}));
+    batch.set(shopRef.collection('settings').doc('public'),{
+      shopName:'ส้มตำนายหนึ่ง', promptpay:'1319900156353', accountName:'นาย นราทร วงค์แก่นท้าว',
+      payType:'kshop', merchantId:'EMPKB000002198793001', kshopPayload:window.KSHOP_QR_PAYLOAD||''
+    },{merge:true});
+    await batch.commit();
+  }catch(e){ console.warn('seed menus', e); }
 }
 
 const C={
@@ -299,14 +313,26 @@ const C={
   cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'PROMPTPAY',slipData:'',lastOrder:null,bestSellerIds:[],bestSellerRank:{},
 
   async init(){
-    if(!checkConfig()){document.getElementById('conn').textContent='ยังไม่ตั้งค่า';return}
+    const setConn=(t)=>{ try{ document.getElementById('conn').textContent=t; }catch(e){} };
+    if(!checkConfig()){ setConn('ยังไม่ตั้งค่า'); return; }
+    setConn('กำลังเชื่อมต่อ…');
     try{
-      firebase.initializeApp(window.FIREBASE_CONFIG);
+      // กัน initialize ซ้ำ (PWA / เปิดซ้ำ)
+      if(!firebase.apps || !firebase.apps.length){
+        firebase.initializeApp(window.FIREBASE_CONFIG);
+      }
       db=firebase.firestore();
-      try{await db.enablePersistence({synchronizeTabs:true})}catch(e){}
+      // enablePersistence บางเครื่องค้างไม่จบ → ใช้ timeout 2 วินาที แล้วไปต่อ
+      try{
+        await Promise.race([
+          db.enablePersistence({synchronizeTabs:true}).catch(function(){}),
+          new Promise(function(resolve){ setTimeout(resolve, 2000); })
+        ]);
+      }catch(e){}
       shopRef=db.collection('shops').doc(window.SHOP_ID||'main');
-      document.getElementById('conn').textContent='เชื่อมต่อแล้ว';
-      await migrateAndSeed();
+      setConn('เชื่อมต่อแล้ว');
+      // seed ไม่ควรบล็อกการแสดงผลนาน
+      try{ await Promise.race([migrateAndSeed(), new Promise(function(r){setTimeout(r,5000);})]); }catch(e){ console.warn('seed',e); }
       shopRef.collection('settings').doc('public').onSnapshot(s=>{
         const d=s.data()||{};
         this.shopName=d.shopName||'ส้มตำนายหนึ่ง';
@@ -326,7 +352,7 @@ const C={
       shopRef.collection('toppings').onSnapshot(s=>{this.tops=s.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.order||0)-(b.order||0))});
       const u=new URL(location.href); const q=u.searchParams.get('queue');
       if(q){document.getElementById('trackQ').value=q;this.trackQueue()}
-    }catch(e){console.error(e);showErr('เริ่มระบบไม่สำเร็จ: '+(e.message||e));document.getElementById('conn').textContent='ผิดพลาด'}
+    }catch(e){console.error(e);try{showErr('เริ่มระบบไม่สำเร็จ: '+(e.message||e));}catch(x){} try{document.getElementById('conn').textContent='ผิดพลาด';}catch(x){}}
   },
   installApp(){
     var p=window.deferredPwaPrompt;
@@ -379,7 +405,7 @@ const C={
       return (Number(a.order)||0)-(Number(b.order)||0);
     });
     const el=document.getElementById('menus');
-    if(!list.length){el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#999">ไม่พบเมนู</div>';return}
+    if(!list.length){el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#999"><div style="font-size:2rem;margin-bottom:8px">📋</div><div>ยังไม่มีเมนู</div><div style="font-size:13px;margin-top:8px">รีเฟรชหน้า หรือให้ร้านเข้า POS แล้วเพิ่มเมนู</div></div>';return}
     el.innerHTML=list.map(m=>{
       const src=this.menuImg(m);
       const img=src?`<img src="${esc(src)}" alt="">`:`<i class="fa-solid fa-utensils"></i>`;

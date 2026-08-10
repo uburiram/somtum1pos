@@ -350,7 +350,12 @@ const M={
     try{
       if(!firebase.apps || !firebase.apps.length) firebase.initializeApp(c);
       db=firebase.firestore();
-      try{await db.enablePersistence({synchronizeTabs:true})}catch(e){}
+      try{
+        await Promise.race([
+          db.enablePersistence({synchronizeTabs:true}).catch(function(){}),
+          new Promise(function(resolve){ setTimeout(resolve, 2000); })
+        ]);
+      }catch(e){}
       shopRef=db.collection('shops').doc(window.SHOP_ID||'main');
       // queue doc
       try{
