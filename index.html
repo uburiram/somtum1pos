@@ -78,9 +78,18 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
 <div class="banner" id="cfgBanner">⚠️ ยังไม่ได้ตั้งค่า Firebase</div>
 <div class="banner err" id="errBanner"></div>
 <header>
-  <div class="logo"><i class="fa-solid fa-mortar-pestle"></i> <span id="shopName">ร้าน</span></div>
+  <div class="logo" style="flex-wrap:wrap;gap:8px">
+    <span><i class="fa-solid fa-mortar-pestle"></i> <span id="shopName">ร้าน</span></span>
+    <span id="kitchenQueueBadge" style="display:none;align-items:center;gap:4px;background:#FFF3E0;color:#E65100;font-size:12px;font-weight:700;padding:4px 10px;border-radius:14px;border:1px solid #FFE0B2">
+      <i class="fa-solid fa-fire-burner"></i> ครัว <span id="kitchenQueueCount">0</span> คิว
+    </span>
+  </div>
   <span id="conn" style="font-size:12px;color:#999">กำลังเชื่อมต่อ…</span>
 </header>
+<div id="readyBanner" style="display:none;background:#2E7D32;color:#fff;text-align:center;padding:12px 14px;font-weight:700;font-size:15px;position:sticky;top:0;z-index:40">
+  🔔 คิวของคุณพร้อมแล้ว · มารับอาหารได้เลย
+  <button type="button" onclick="document.getElementById('readyBanner').style.display='none'" style="margin-left:10px;background:rgba(255,255,255,.25);color:#fff;border:none;border-radius:8px;padding:4px 10px;font-weight:600">ปิด</button>
+</div>
 <div class="track-bar">
   <input id="trackQ" placeholder="ใส่เลขคิว เช่น A001" maxlength="8">
   <button class="btn btn-o btn-sm" onclick="C.trackQueue()">เช็กคิว/ใบเสร็จ</button>
@@ -373,6 +382,7 @@ const C={
           }
         }catch(e){ console.warn('fallback get', e); }
       }, 4000);
+      this.startKitchenWatch();
       const u=new URL(location.href); const q=u.searchParams.get('queue');
       if(q){document.getElementById('trackQ').value=q;this.trackQueue()}
     }catch(e){console.error(e);try{showErr('เริ่มระบบไม่สำเร็จ: '+(e.message||e));}catch(x){} try{document.getElementById('conn').textContent='ผิดพลาด';}catch(x){}}
@@ -953,14 +963,20 @@ const C={
       if(this.orderId && this.orderId!==snap.id) return;
       const o=snap.data(); if(!o) return;
       const prevPay=this.lastOrder && this.lastOrder.paymentStatus;
+      const prevSt=this.lastOrder && this.lastOrder.status;
       this.lastOrder={id:snap.id,...o};
+      this._lastKnownStatus=o.status;
       this.renderTicket(this.lastOrder);
       if(prevPay!=='PAID' && o.paymentStatus==='PAID'){
         toast('ชำระเงินสำเร็จ');
         try{ C.writeReceipt({id:snap.id,...o}); }catch(e){}
       }
+      if(prevSt && prevSt!=='Ready' && prevSt!=='Completed' && o.status==='Ready'){
+        this.notifyOrderReady({id:snap.id,...o});
+      }
     });
     this.startPayWatch(id);
+    try{ this.ensureNotifyPermission(); }catch(e){}
     return order;
   },
 
@@ -1056,12 +1072,101 @@ const C={
   startKitchenWatch(){
     if(this._kitchenUnsub){ try{this._kitchenUnsub()}catch(e){} this._kitchenUnsub=null; }
     if(!shopRef) return;
-    // ดึงออเดอร์ล่าสุดในครัว (ไม่ใช้ orderBy ถ้าไม่มี index — จัดเรียงฝั่ง client)
-    this._kitchenUnsub=shopRef.collection('orders').limit(80).onSnapshot(snap=>{
-      this.kitchenOrders=snap.docs.map(d=>({id:d.id,...d.data()}))
-        .filter(o=>this.isKitchenStatus(o.status));
-      if(this.lastOrder) this.renderTicket(this.lastOrder);
+    // ดึงออเดอร์ล่าสุด — กรองครัวฝั่ง client + อัปเดตหัวข้อ + แจ้งเมื่อคิวพร้อม
+    this._kitchenUnsub=shopRef.collection('orders').limit(120).onSnapshot(snap=>{
+      const all=snap.docs.map(d=>({id:d.id,...d.data()}));
+      this.kitchenOrders=all.filter(o=>this.isKitchenStatus(o.status));
+      this.updateKitchenHeaderBadge();
+      // ติดตามออเดอร์ของลูกค้า (ถ้ามี) เมื่อสถานะเปลี่ยนเป็น Ready
+      if(this.orderId){
+        const mine=all.find(o=>o.id===this.orderId);
+        if(mine){
+          const prevStatus=(this.lastOrder&&this.lastOrder.status)||this._lastKnownStatus||'';
+          this.lastOrder={id:mine.id,...mine};
+          this._lastKnownStatus=mine.status;
+          if(prevStatus && prevStatus!=='Ready' && prevStatus!=='Completed' && mine.status==='Ready'){
+            this.notifyOrderReady(mine);
+          }
+          if(document.getElementById('mTicket') && document.getElementById('mTicket').classList.contains('on')){
+            this.renderTicket(this.lastOrder);
+          }
+        }
+      } else if(this.lastOrder){
+        this.renderTicket(this.lastOrder);
+      }
     }, err=>console.warn('kitchen watch', err));
+  },
+  updateKitchenHeaderBadge(){
+    const n=(this.kitchenOrders||[]).length;
+    const badge=document.getElementById('kitchenQueueBadge');
+    const num=document.getElementById('kitchenQueueCount');
+    if(num) num.textContent=String(n);
+    if(badge){
+      if(n>0){ badge.style.display='inline-flex'; }
+      else { badge.style.display='none'; }
+    }
+  },
+  async ensureNotifyPermission(){
+    try{
+      if(!('Notification' in window)) return false;
+      if(Notification.permission==='granted') return true;
+      if(Notification.permission==='denied') return false;
+      const p=await Notification.requestPermission();
+      return p==='granted';
+    }catch(e){ return false; }
+  },
+  async notifyOrderReady(order){
+    const q=order&&order.queue?order.queue:'';
+    // กันแจ้งซ้ำคิวเดียวกัน
+    const tag='ready:'+q+':'+(order&&order.id||'');
+    if(this._notifiedReady===tag) return;
+    this._notifiedReady=tag;
+    // แบนเนอร์ในแอป
+    try{
+      const b=document.getElementById('readyBanner');
+      if(b){
+        b.style.display='block';
+        b.innerHTML='';
+        const wrap=document.createElement('span');
+        wrap.innerHTML='🔔 คิว <strong style="font-size:1.2rem">'+esc(q)+'</strong> พร้อมแล้ว · มารับอาหารได้เลย ';
+        const btn=document.createElement('button');
+        btn.type='button';
+        btn.textContent='ปิด';
+        btn.style.cssText='margin-left:10px;background:rgba(255,255,255,.25);color:#fff;border:none;border-radius:8px;padding:4px 10px;font-weight:600';
+        btn.onclick=function(){ b.style.display='none'; };
+        b.appendChild(wrap);
+        b.appendChild(btn);
+      }
+    }catch(e){}
+    toast('🔔 คิว '+q+' พร้อมแล้ว · มารับได้เลย');
+    try{ if(navigator.vibrate) navigator.vibrate([200,80,200,80,400]); }catch(e){}
+    try{
+      const Ctx=window.AudioContext||window.webkitAudioContext;
+      if(Ctx){
+        const ctx=this._readyAudio||(this._readyAudio=new Ctx());
+        await ctx.resume();
+        const beep=(freq, when, dur)=>{
+          const o=ctx.createOscillator(), g=ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.frequency.value=freq; g.gain.value=0.12;
+          o.start(ctx.currentTime+when); o.stop(ctx.currentTime+when+dur);
+        };
+        beep(880,0,0.22); beep(1175,0.28,0.28);
+      }
+    }catch(e){}
+    try{
+      const ok=await this.ensureNotifyPermission();
+      if(ok){
+        const title='คิว '+q+' พร้อมแล้ว';
+        const body=(this.shopName||'ร้าน')+' · มารับอาหารได้เลย';
+        const reg=navigator.serviceWorker && await navigator.serviceWorker.ready.catch(function(){return null});
+        if(reg && reg.showNotification){
+          await reg.showNotification(title,{ body:body, icon:'./icon/icon-192.png', badge:'./icon/favicon-32.png', tag:'order-ready-'+q, renotify:true, requireInteraction:true });
+        } else {
+          new Notification(title,{ body:body, icon:'./icon/icon-192.png', tag:'order-ready-'+q });
+        }
+      }
+    }catch(e){ console.warn('notify', e); }
   },
   stopKitchenWatch(){
     if(this._kitchenUnsub){ try{this._kitchenUnsub()}catch(e){} this._kitchenUnsub=null; }
