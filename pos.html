@@ -136,7 +136,7 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
       <button class="fc" onclick="M.filter('completed',this)">เสร็จสมบูรณ์</button>
       <button class="fc" onclick="M.filter('cancelled',this)">ยกเลิก</button>
     </div>
-    <div class="og"<div class="og" id="orderGrid"></div>
+    <div class="og" id="orderGrid"></div>
   </div>
 
   <div id="panelHistory" class="hide">
@@ -824,6 +824,14 @@ const M={
     const inputHash=await sha256(String(pin).trim());
     if(!hash || inputHash!==hash){ toast('PIN ไม่ถูกต้อง — ยกเลิกการลบ'); return; }
     try{
+      // ลบได้เฉพาะสถานะจบ — ถ้ายังไม่จบให้ยกเลิกก่อน
+      const cur=this.orders.find(x=>x.id===id);
+      if(cur && cur.status!=='Completed' && cur.status!=='Cancelled'){
+        await shopRef.collection('orders').doc(id).update({
+          status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
+          cancelReason:'ลบประวัติโดยร้าน'
+        });
+      }
       await shopRef.collection('orders').doc(id).delete();
       try{ await shopRef.collection('receipts').doc(id).delete(); }catch(e){}
       // อัปเดต UI ทันที ไม่ต้องรอ refresh / snapshot
@@ -866,6 +874,39 @@ const M={
     if(!(await this.verifyAdminPin('ใส่ PIN ร้านเพื่อยืนยันการรีเซ็ต'))) return;
     try{
       toast('กำลังรีเซ็ต…');
+      // กฎ Firestore: ลบได้เฉพาะ Completed/Cancelled → ยกเลิกออเดอร์ที่ยังไม่จบก่อน
+      try{
+        const active=await shopRef.collection('orders').limit(400).get();
+        const batchSize=400;
+        let pending=active.docs.filter(d=>{
+          const st=(d.data()||{}).status;
+          return st!=='Completed' && st!=='Cancelled';
+        });
+        while(pending.length){
+          const chunk=pending.slice(0,200);
+          pending=pending.slice(200);
+          const batch=db.batch();
+          chunk.forEach(d=>batch.update(d.ref,{
+            status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
+            cancelReason:'รีเซ็ตประวัติโดยร้าน'
+          }));
+          await batch.commit();
+        }
+        // ดึงอีกรอบถ้ายังมี
+        const more=await shopRef.collection('orders').limit(400).get();
+        const still=more.docs.filter(d=>{
+          const st=(d.data()||{}).status;
+          return st!=='Completed' && st!=='Cancelled';
+        });
+        if(still.length){
+          const batch=db.batch();
+          still.forEach(d=>batch.update(d.ref,{
+            status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
+            cancelReason:'รีเซ็ตประวัติโดยร้าน'
+          }));
+          await batch.commit();
+        }
+      }catch(e){ console.warn('pre-cancel', e); }
       const nOrders = await this.deleteCollectionInBatches(shopRef.collection('orders'), 400);
       const nReceipts = await this.deleteCollectionInBatches(shopRef.collection('receipts'), 400);
       const today=new Date();

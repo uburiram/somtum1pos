@@ -11,6 +11,7 @@ service cloud.firestore {
         && d.total >= 0
         && d.total < 200000
         && d.items is list
+        && d.items.size() > 0
         && d.queue is string
         && d.createdAt is number;
     }
@@ -23,34 +24,46 @@ service cloud.firestore {
         && request.resource.data.total == resource.data.total;
     }
 
+    // ลบได้เฉพาะออเดอร์ที่จบแล้ว (เสร็จสมบูรณ์/ยกเลิก) — กันลบคิวครัวโดยไม่ตั้งใจ
+    function isTerminalOrder() {
+      return resource.data.status == 'Completed' || resource.data.status == 'Cancelled';
+    }
+
     match /shops/{shopId} {
       allow read: if true;
       allow create, update, delete: if false;
 
       match /settings/{docId} {
         allow read: if true;
-        // public / secure / queue / config — ร้านใช้ PIN ฝั่ง client
+        // secure: อนุญาตเขียน (ร้านเปลี่ยน PIN ผ่าน POS) — ยังไม่มี Auth
+        // public/queue/config/fcm: เขียนได้ตามเดิม
         allow write: if docId in ['public', 'secure', 'queue', 'config', 'fcm'];
       }
 
       match /categories/{id} {
-        allow read, write: if true;
+        allow read: if true;
+        allow write: if true; // ร้านจัดการเมนูจาก POS
       }
       match /menus/{id} {
-        allow read, write: if true;
+        allow read: if true;
+        allow write: if true;
       }
       match /spiceLevels/{id} {
-        allow read, write: if true;
+        allow read: if true;
+        allow write: if true;
       }
       match /toppings/{id} {
-        allow read, write: if true;
+        allow read: if true;
+        allow write: if true;
       }
 
       match /orders/{id} {
         allow read: if true;
         allow create: if isValidNewOrder();
+        // อัปเดตได้ถ้าไม่แตะ core (สถานะ/ชำระ/สลิป)
         allow update: if coreFieldsIntact();
-        allow delete: if true;
+        // ลบได้เฉพาะจบแล้ว — รีเซ็ตต้องยกเลิกก่อนแล้วค่อยลบ
+        allow delete: if isTerminalOrder();
       }
 
       match /receipts/{id} {
