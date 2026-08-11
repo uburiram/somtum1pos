@@ -300,10 +300,18 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
     </div>
     <div class="form-card" style="text-align:center">
       <h3>QR ลูกค้าสั่งอาหาร</h3>
-      <p style="font-size:13px;color:#777;margin:8px 0">พิมพ์ติดโต๊ะ / หน้าร้าน</p>
-      <div id="qrBox" style="display:flex;justify-content:center;margin:12px 0"></div>
-      <p style="font-size:12px;word-break:break-all" id="qrUrl"></p>
-      <button class="btn btn-g" onclick="M.printCustomerQR()">🖨️ พิมพ์ QR</button>
+      <p style="font-size:13px;color:#777;margin:8px 0">พิมพ์ติดโต๊ะ / หน้าร้าน · หรือบันทึกเป็นรูปลงเครื่อง</p>
+      <div id="qrPoster" style="display:inline-block;margin:12px auto;padding:20px 18px;background:linear-gradient(180deg,#fff 0%,#FFF8F5 100%);border:3px solid #FF5722;border-radius:20px;box-shadow:0 8px 24px rgba(255,87,34,.18);max-width:320px;width:100%;box-sizing:border-box">
+        <div style="font-size:13px;font-weight:800;letter-spacing:.02em;color:#FF5722;margin-bottom:4px">QR สำหรับแสกนสั่งอาหาร</div>
+        <div id="qrShopLabel" style="font-size:18px;font-weight:800;color:#333;margin-bottom:12px">ร้าน</div>
+        <div id="qrBox" style="display:flex;justify-content:center;margin:0 auto 12px;padding:12px;background:#fff;border:1px solid #FFE0D6;border-radius:14px"></div>
+        <div style="font-size:12px;line-height:1.55;color:#555;padding:0 4px">หลังจากยืนยันส่งอาหารแล้ว<br>โปรดจำหรือจดหมายเลขคิวของท่านไว้</div>
+      </div>
+      <p style="font-size:12px;word-break:break-all;color:#888;margin:8px 0" id="qrUrl"></p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <button class="btn btn-g" onclick="M.downloadCustomerQR()">💾 บันทึกเป็นรูป</button>
+        <button class="btn btn-o" onclick="M.printCustomerQR()">🖨️ พิมพ์ QR</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1331,8 +1339,10 @@ const M={
     this.togglePayTypeUI();
     const cu=new URL('index.html', location.href).href;
     document.getElementById('qrUrl').textContent=cu;
-    const box=document.getElementById('qrBox'); box.innerHTML='';
-    new QRCode(box,{text:cu,width:200,height:200});
+    const shopEl=document.getElementById('qrShopLabel');
+    if(shopEl) shopEl.textContent=document.getElementById('shopTitle')?.textContent||this.shopName||'ร้าน';
+    const box=document.getElementById('qrBox');
+    if(box){ box.innerHTML=''; new QRCode(box,{text:cu,width:200,height:200}); }
   },
   async saveOptionConfig(){
     const optionConfig={
@@ -1383,18 +1393,152 @@ const M={
     p.userChoice.then(function(){ window.deferredPwaPrompt=null; var b=document.getElementById('btnInstallApp'); if(b) b.style.display='none'; });
   },
 
-  printCustomerQR(){
-    const cu=document.getElementById('qrUrl').textContent;
-    const name=document.getElementById('shopTitle').textContent;
-    document.getElementById('printArea').classList.remove('hide');
-    document.getElementById('printArea').innerHTML=`
-      <h1 style="color:#FF5722;margin-bottom:8px">${esc(name)}</h1>
-      <p style="margin-bottom:16px">สแกนเพื่อสั่งอาหาร</p>
-      <div id="printQrInner" style="display:flex;justify-content:center"></div>
-      <p style="margin-top:12px;font-size:12px;word-break:break-all">${esc(cu)}</p>`;
-    document.getElementById('printQrInner').innerHTML='';
-    new QRCode(document.getElementById('printQrInner'),{text:cu,width:280,height:280});
-    setTimeout(()=>{ window.print(); document.getElementById('printArea').classList.add('hide'); }, 300);
+  /** ดึง dataURL ของ QR จาก #qrBox (canvas หรือ img) */
+  getCustomerQRDataUrl(){
+    const box=document.getElementById('qrBox');
+    if(!box) return '';
+    const canvas=box.querySelector('canvas');
+    if(canvas) try{ return canvas.toDataURL('image/png'); }catch(e){}
+    const img=box.querySelector('img');
+    if(img && img.src) return img.src;
+    return '';
+  },
+  /** วาดโปสเตอร์ QR สวย ๆ ลง canvas แล้วคืน dataURL */
+  async buildCustomerQRPoster(){
+    const cu=document.getElementById('qrUrl')?.textContent||new URL('index.html', location.href).href;
+    const name=(document.getElementById('shopTitle')?.textContent||this.shopName||'ร้าน').trim();
+    const title='QR สำหรับแสกนสั่งอาหาร';
+    const footer1='หลังจากยืนยันส่งอาหารแล้ว';
+    const footer2='โปรดจำหรือจดหมายเลขคิวของท่านไว้';
+
+    // รอ QR พร้อม
+    let qrUrl=this.getCustomerQRDataUrl();
+    if(!qrUrl){
+      const box=document.getElementById('qrBox');
+      if(box){ box.innerHTML=''; new QRCode(box,{text:cu,width:200,height:200}); }
+      await new Promise(r=>setTimeout(r,200));
+      qrUrl=this.getCustomerQRDataUrl();
+    }
+    const qrImg=await new Promise((resolve,reject)=>{
+      if(!qrUrl) return reject(new Error('no qr'));
+      const im=new Image();
+      im.onload=()=>resolve(im);
+      im.onerror=()=>reject(new Error('qr load'));
+      im.src=qrUrl;
+    });
+
+    const W=720, H=960;
+    const canvas=document.createElement('canvas');
+    canvas.width=W; canvas.height=H;
+    const ctx=canvas.getContext('2d');
+
+    // พื้นหลัง
+    const bg=ctx.createLinearGradient(0,0,0,H);
+    bg.addColorStop(0,'#ffffff');
+    bg.addColorStop(1,'#FFF5F0');
+    ctx.fillStyle=bg;
+    ctx.fillRect(0,0,W,H);
+
+    // กรอบนอก
+    ctx.strokeStyle='#FF5722';
+    ctx.lineWidth=14;
+    roundRect(ctx, 24, 24, W-48, H-48, 36);
+    ctx.stroke();
+    // กรอบในบาง
+    ctx.strokeStyle='#FFCCBC';
+    ctx.lineWidth=3;
+    roundRect(ctx, 48, 48, W-96, H-96, 28);
+    ctx.stroke();
+
+    // หัวข้อ
+    ctx.fillStyle='#FF5722';
+    ctx.font='800 36px "Segoe UI", Tahoma, sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText(title, W/2, 130);
+
+    // ชื่อร้าน
+    ctx.fillStyle='#222';
+    ctx.font='800 44px "Segoe UI", Tahoma, sans-serif';
+    fitText(ctx, name, W/2, 200, W-120, 44);
+
+    // กล่อง QR
+    const qSize=420;
+    const qx=(W-qSize)/2, qy=250;
+    ctx.fillStyle='#fff';
+    roundRect(ctx, qx-16, qy-16, qSize+32, qSize+32, 20);
+    ctx.fill();
+    ctx.strokeStyle='#FFE0D6';
+    ctx.lineWidth=4;
+    roundRect(ctx, qx-16, qy-16, qSize+32, qSize+32, 20);
+    ctx.stroke();
+    ctx.drawImage(qrImg, qx, qy, qSize, qSize);
+
+    // ข้อความท้าย
+    ctx.fillStyle='#444';
+    ctx.font='600 28px "Segoe UI", Tahoma, sans-serif';
+    ctx.fillText(footer1, W/2, 740);
+    ctx.fillText(footer2, W/2, 780);
+
+    // เส้นคั่นเล็ก
+    ctx.strokeStyle='#FFCCBC';
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(W/2-80, 800);
+    ctx.lineTo(W/2+80, 800);
+    ctx.stroke();
+
+    ctx.fillStyle='#999';
+    ctx.font='400 18px "Segoe UI", Tahoma, sans-serif';
+    const short=cu.length>48?cu.slice(0,48)+'…':cu;
+    ctx.fillText(short, W/2, 840);
+
+    return canvas.toDataURL('image/png');
+
+    function roundRect(ctx,x,y,w,h,r){
+      ctx.beginPath();
+      ctx.moveTo(x+r,y);
+      ctx.arcTo(x+w,y,x+w,y+h,r);
+      ctx.arcTo(x+w,y+h,x,y+h,r);
+      ctx.arcTo(x,y+h,x,y,r);
+      ctx.arcTo(x,y,x+w,y,r);
+      ctx.closePath();
+    }
+    function fitText(ctx,text,x,y,maxW,size){
+      let s=size;
+      ctx.font='800 '+s+'px "Segoe UI", Tahoma, sans-serif';
+      while(s>22 && ctx.measureText(text).width>maxW){
+        s-=2;
+        ctx.font='800 '+s+'px "Segoe UI", Tahoma, sans-serif';
+      }
+      ctx.fillText(text,x,y);
+    }
+  },
+  async downloadCustomerQR(){
+    try{
+      toast('กำลังสร้างรูป…');
+      const dataUrl=await this.buildCustomerQRPoster();
+      const a=document.createElement('a');
+      a.href=dataUrl;
+      a.download='QR-สั่งอาหาร-'+(document.getElementById('shopTitle')?.textContent||'ร้าน').replace(/\s+/g,'')+'.png';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast('บันทึกรูป QR แล้ว');
+    }catch(e){
+      console.error(e);
+      toast('บันทึกรูปไม่สำเร็จ: '+(e.message||e));
+    }
+  },
+  async printCustomerQR(){
+    try{
+      const dataUrl=await this.buildCustomerQRPoster();
+      document.getElementById('printArea').classList.remove('hide');
+      document.getElementById('printArea').innerHTML='<img src="'+dataUrl+'" style="width:100%;max-width:480px;margin:0 auto;display:block">';
+      setTimeout(()=>{ window.print(); document.getElementById('printArea').classList.add('hide'); }, 350);
+    }catch(e){
+      console.error(e);
+      toast('พิมพ์ไม่สำเร็จ');
+    }
   }
 };
 
