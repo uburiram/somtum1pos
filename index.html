@@ -157,7 +157,8 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
 
 <div class="ov" id="mTicket"><div class="md" style="text-align:center">
   <div id="ticketBody"></div>
-  <button class="btn btn-o" style="margin-top:12px" onclick="C.hide('mTicket')">ปิด</button>
+  <button class="btn btn-p" style="margin-top:12px" onclick="C.startNewOrder()">สั่งอาหารใหม่</button>
+  <button class="btn btn-o" style="margin-top:8px" onclick="C.hide('mTicket')">ปิด</button>
   <button class="btn btn-g" style="margin-top:8px" id="btnPrintReceipt" onclick="C.saveReceipt()">💾 บันทึกใบเสร็จเป็นรูปภาพ</button>
 </div></div>
 <div id="printReceipt" style="display:none"></div>
@@ -390,8 +391,8 @@ const C={
     p.prompt();
     p.userChoice.then(function(){ window.deferredPwaPrompt=null; var b=document.getElementById('btnInstallApp'); if(b) b.style.display='none'; });
   },
-  show(id){document.getElementById(id).classList.add('on')},
-  hide(id){document.getElementById(id).classList.remove('on')},
+  show(id){const el=document.getElementById(id); if(el) el.classList.add('on');},
+  hide(id){const el=document.getElementById(id); if(el) el.classList.remove('on');},
   search(v){this.q=(v||'').trim().toLowerCase();this.renderMenus()},
   renderCats(){
     let h=`<button class="chip ${this.cat==='all'?'on':''}" onclick="C.setCat('all')">ทั้งหมด</button>`;
@@ -650,10 +651,16 @@ const C={
   rmCart(i){this.cart.splice(i,1);this.updFab();this.openCart()},
   checkout(){
     if(!this.cart.length)return;
-    this.orderId=null;
-    this.lastOrder=null;
-    if(this._payWatchTimer){ clearInterval(this._payWatchTimer); this._payWatchTimer=null; }
-    document.getElementById('payTotal').textContent=money(this.cart.reduce((s,i)=>s+i.total,0));
+    // ถ้ามีคิวยังไม่จบ อย่าเคลียร์ — เปิดตั๋วเดิม
+    if(this.orderId && this.lastOrder && this.lastOrder.status!=='Cancelled' && this.lastOrder.status!=='Completed'){
+      this.renderTicket(this.lastOrder);
+      this.hide('mCart'); this.show('mTicket');
+      toast('มีคิวค้างอยู่: '+(this.lastOrder.queue||''));
+      return;
+    }
+    this.clearOrderState();
+    const pt=document.getElementById('payTotal');
+    if(pt) pt.textContent=money(this.cart.reduce((s,i)=>s+i.total,0));
     this.slipData='';
     const sf=document.getElementById('slipFile'); if(sf) sf.value='';
     const sp=document.getElementById('slipPreview'); if(sp){ sp.innerHTML=''; sp.style.display='none'; }
@@ -1128,6 +1135,33 @@ const C={
     }
     return true;
   },
+  clearOrderState(){
+    try{ this.stopOrderWatchers && this.stopOrderWatchers(); }catch(e){}
+    try{
+      if(this.unsub){ this.unsub(); this.unsub=null; }
+    }catch(e){}
+    this.orderId=null;
+    this.lastOrder=null;
+    this.slipData='';
+    this._creatingOrder=false;
+    this._lastKnownStatus=null;
+    try{ localStorage.removeItem('somtum_last_order'); }catch(e){}
+    try{
+      const sp=document.getElementById('slipPreview');
+      if(sp){ sp.style.display='none'; sp.innerHTML=''; }
+      const sm=document.getElementById('slipAutoMsg');
+      if(sm) sm.innerHTML='';
+      const sf=document.getElementById('slipFile');
+      if(sf) sf.value='';
+    }catch(e){}
+  },
+  startNewOrder(){
+    this.clearOrderState();
+    this.hide('mTicket');
+    this.hide('mPay');
+    try{ this.renderCart(); }catch(e){ try{ this.updFab(); }catch(e2){} }
+    toast('พร้อมสั่งออเดอร์ใหม่');
+  },
   async cancelMyOrder(){
     const o=this.lastOrder;
     if(!o || !o.id){ toast('ไม่พบออเดอร์'); return; }
@@ -1147,9 +1181,17 @@ const C={
         cancelledBy:'customer',
         cancelReason:'ลูกค้ายกเลิกตอนรอคิวทำ'
       });
-      this.lastOrder=Object.assign({}, o, {status:'Cancelled'});
+      this.lastOrder=Object.assign({}, o, {status:'Cancelled', cancelledBy:'customer'});
       this.renderTicket(this.lastOrder);
       toast('ยกเลิกโดยลูกค้าแล้ว');
+      // เคลียร์ state หลังโชว์ตั๋วยกเลิกสั้น ๆ — ให้สั่งคิวใหม่ได้ทันที
+      setTimeout(()=>{
+        try{
+          this.clearOrderState();
+          this.hide('mTicket');
+          toast('สามารถสั่งออเดอร์ใหม่ได้แล้ว');
+        }catch(e){}
+      }, 1800);
     }catch(e){
       toast('ยกเลิกไม่สำเร็จ: '+(e.message||e));
     }
@@ -1159,10 +1201,15 @@ const C={
     if(!this.assertShopOpen()) return;
     // มีออเดอร์แล้ว → เปิดตั๋วคิวทันที
     if(this.orderId && this.lastOrder){
-      this.renderTicket(this.lastOrder);
-      this.hide('mPay'); this.hide('mCart'); this.show('mTicket');
-      toast('คิวของคุณ: '+(this.lastOrder.queue||''));
-      return;
+      const st=this.lastOrder.status;
+      if(st==='Cancelled' || st==='Completed'){
+        this.clearOrderState();
+      } else {
+        this.renderTicket(this.lastOrder);
+        this.hide('mPay'); this.hide('mCart'); this.show('mTicket');
+        toast('คิวของคุณ: '+(this.lastOrder.queue||''));
+        return;
+      }
     }
     if(!this.cart || !this.cart.length){
       toast('ตะกร้าว่าง · เลือกเมนูก่อนยืนยัน');
@@ -1188,8 +1235,12 @@ const C={
       throw new Error('กำลังสร้างออเดอร์ กรุณารอสักครู่');
     }
     if(this.orderId && this.lastOrder){
-      // มีออเดอร์รอบนี้แล้ว — ไม่สร้างซ้ำ
-      return this.lastOrder;
+      const st=this.lastOrder.status;
+      // บล็อกเฉพาะคิวยังไม่จบ — ถ้ายกเลิก/เสร็จสมบูรณ์แล้วให้สร้างใหม่ได้
+      if(st!=='Cancelled' && st!=='Completed'){
+        return this.lastOrder;
+      }
+      this.clearOrderState();
     }
     const items=(this.cart||[]).map(i=>({
       name:i.name,qty:i.qty,spiceName:i.spiceName,
