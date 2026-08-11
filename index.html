@@ -310,7 +310,7 @@ async function migrateAndSeed(){
 
 const C={
   shopName:'ร้าน',promptpay:'',accountName:'',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:'',optionConfig:{spiceMode:'single',toppingMode:'multi',toppingAllowQty:true},cats:[],menus:[],spice:[],tops:[],
-  cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'PROMPTPAY',slipData:'',lastOrder:null,bestSellerIds:[],bestSellerRank:{},
+  cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'PROMPTPAY',slipData:'',lastOrder:null,kitchenOrders:[],bestSellerIds:[],bestSellerRank:{},
 
   async init(){
     const setConn=(t)=>{ try{ document.getElementById('conn').textContent=t; }catch(e){} };
@@ -593,9 +593,11 @@ const C={
     const needPlara=!p.isSimple && (p.menu.allowPlara===true||p.menu.allowPlara===1||p.menu.allowPlara==='true'||p.menu.allowPlara==='1');
     if(needPlara && !p.plara){ toast('เลือกใส่หรือไม่ใส่ปลาร้า'); return; }
     const plaraLabel=(!p.isSimple && p.menu.allowPlara)?(p.plara==='with'?'ใส่ปลาร้า':'ไม่ใส่ปลาร้า'):'';
+    const cat=(this.cats||[]).find(c=>c.id===p.menu.catId);
     this.cart.push({
       name:p.menu.name, qty:p.qty, spiceName,
-      toppings, note, plara:plaraLabel, unitPrice:unit, total:unit*p.qty
+      toppings, note, plara:plaraLabel, unitPrice:unit, total:unit*p.qty,
+      catId:p.menu.catId||'', catName:(cat&&cat.name)||''
     });
     this.hide('mProduct'); this.updFab(); toast('เพิ่มลงตะกร้าแล้ว');
   },
@@ -863,6 +865,7 @@ const C={
     this._payWatchId=null;
     if(this.unsub){ try{ this.unsub(); }catch(e){} this.unsub=null; }
     if(this.trackUnsub){ try{ this.trackUnsub(); }catch(e){} this.trackUnsub=null; }
+    this.stopKitchenWatch();
   },
   async confirmOrder(){
     // QR สร้างออเดอร์รอชำระแล้ว → แค่รอเงิน
@@ -902,7 +905,8 @@ const C={
     const items=this.cart.map(i=>({
       name:i.name,qty:i.qty,spiceName:i.spiceName,
       toppings:(i.toppings||[]).map(t=>({name:t.name,price:t.price,qty:t.qty,total:t.total})),
-      note:i.note||'', plara:i.plara||'', unitPrice:i.unitPrice,total:i.total
+      note:i.note||'', plara:i.plara||'', unitPrice:i.unitPrice,total:i.total,
+      catId:i.catId||'', catName:i.catName||''
     }));
     const total=items.reduce((s,i)=>s+i.total,0);
     const queueRef=shopRef.collection('settings').doc('queue');
@@ -1011,6 +1015,58 @@ const C={
       localStorage.setItem(key, JSON.stringify(next));
     }catch(e){}
   },
+
+  isKitchenStatus(st){
+    return ['Pending','Cooking','AwaitingPayment'].includes(st);
+  },
+  isSomtumItem(item){
+    const cat=String(item.catName||item.categoryName||'').trim();
+    if(/ส้มตำ|เมนูส้มตำ|somtum/i.test(cat)) return true;
+    const n=String(item.name||'');
+    // fallback ออเดอร์เก่าที่ไม่มี catName
+    return /(ตำ|ส้มตำ)/.test(n) && !/ยำ|ทอด|น้ำ|ไข่|เครื่องดื่ม|ของทาน|กินคู่/.test(n);
+  },
+  countSomtumQty(order){
+    return (order.items||[]).reduce((s,it)=>{
+      if(!this.isSomtumItem(it)) return s;
+      return s+Number(it.qty||0);
+    },0);
+  },
+  calcQueueEta(myOrder, kitchenOrders){
+    if(!myOrder || !this.isKitchenStatus(myOrder.status)){
+      return {ahead:0, minutes:0, inKitchen:false};
+    }
+    const myT=Number(myOrder.createdAt||0);
+    const myId=myOrder.id;
+    const kitchen=(kitchenOrders||[]).filter(o=>this.isKitchenStatus(o.status));
+    // คิวก่อนหน้า: สร้างก่อน และยังอยู่ในครัว
+    const ahead=kitchen.filter(o=>{
+      if(o.id===myId) return false;
+      const t=Number(o.createdAt||0);
+      if(t<myT) return true;
+      if(t===myT && String(o.id)<String(myId)) return true;
+      return false;
+    });
+    // เวลารอ: รายการส้มตำในคิวก่อนหน้า + ของตัวเอง (ยังไม่เสร็จ)
+    const somtumAhead=ahead.reduce((s,o)=>s+this.countSomtumQty(o),0);
+    const somtumMine=this.countSomtumQty(myOrder);
+    const minutes=(somtumAhead+somtumMine)*2;
+    return {ahead:ahead.length, minutes, inKitchen:true, somtumAhead, somtumMine};
+  },
+  startKitchenWatch(){
+    if(this._kitchenUnsub){ try{this._kitchenUnsub()}catch(e){} this._kitchenUnsub=null; }
+    if(!shopRef) return;
+    // ดึงออเดอร์ล่าสุดในครัว (ไม่ใช้ orderBy ถ้าไม่มี index — จัดเรียงฝั่ง client)
+    this._kitchenUnsub=shopRef.collection('orders').limit(80).onSnapshot(snap=>{
+      this.kitchenOrders=snap.docs.map(d=>({id:d.id,...d.data()}))
+        .filter(o=>this.isKitchenStatus(o.status));
+      if(this.lastOrder) this.renderTicket(this.lastOrder);
+    }, err=>console.warn('kitchen watch', err));
+  },
+  stopKitchenWatch(){
+    if(this._kitchenUnsub){ try{this._kitchenUnsub()}catch(e){} this._kitchenUnsub=null; }
+  },
+
   renderTicket(o){
     const paid=(o.paymentStatus==='PAID');
     const cancelled=(o.status==='Cancelled');
@@ -1035,6 +1091,7 @@ const C={
       <div>คิวของคุณ</div>
       <div class="huge">${esc(o.queue)}</div>
       <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
+      <div id="queueEtaBox" style="display:none;margin:10px 0;padding:12px;background:#FFF3E0;border-radius:12px;border:1px solid #FFE0B2;text-align:center"></div>
       <div class="receipt" id="receiptBox">
         <h3>${esc(this.shopName)}</h3><div style="text-align:center;font-size:13px;font-weight:600;color:${paid?'var(--g)':'var(--p)'}">${paid?'ใบเสร็จรับเงิน':'ใบสั่งอาหาร (ยังไม่ชำระ)'}</div>
         <div style="text-align:center;font-size:13px;color:#666;margin-bottom:8px">${new Date(o.createdAt||Date.now()).toLocaleString('th-TH')}</div>
@@ -1047,6 +1104,41 @@ const C={
       </div>
       <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;
     document.getElementById('btnPrintReceipt').style.display = paid ? 'inline-flex' : 'none';
+    // แจ้งคิวที่เหลือ + เวลารอโดยประมาณ (นับเฉพาะคิวในครัว)
+    try{
+      const etaBox=document.getElementById('queueEtaBox');
+      if(etaBox){
+        if(cancelled || o.status==='Completed' || o.status==='Ready'){
+          etaBox.style.display='none';
+          if(o.status==='Ready'){
+            etaBox.style.display='block';
+            etaBox.style.background='#E8F5E9';
+            etaBox.style.borderColor='#A5D6A7';
+            etaBox.innerHTML='<div style="font-weight:700;color:#2E7D32;font-size:15px">อาหารพร้อมแล้ว · มารับได้เลย</div>';
+          }
+        } else if(this.isKitchenStatus(o.status)){
+          if(!this._kitchenUnsub) this.startKitchenWatch();
+          const eta=this.calcQueueEta(o, this.kitchenOrders||[]);
+          etaBox.style.display='block';
+          etaBox.style.background='#FFF3E0';
+          etaBox.style.borderColor='#FFE0B2';
+          let queueText='';
+          if(eta.ahead<=0){
+            queueText='<div style="font-weight:700;color:#E65100;font-size:15px">ถึงคิวคุณแล้ว · ครัวกำลังจัดทำ</div>';
+          } else {
+            queueText='<div style="font-weight:700;color:#E65100;font-size:15px">เหลืออีก <span style="font-size:1.35rem">'+eta.ahead+'</span> คิว จะถึงคิวคุณ</div>';
+          }
+          const minText=eta.minutes>0
+            ? ('<div style="margin-top:6px;font-size:14px;color:#555">รอประมาณ <strong style="color:var(--p)">'+eta.minutes+' นาที</strong></div>')
+            : ('<div style="margin-top:6px;font-size:13px;color:#777">ยังไม่มีรายการส้มตำในคิวก่อนหน้า · รอไม่นาน</div>');
+          const hint='<div style="margin-top:6px;font-size:11px;color:#999">คำนวณจากเมนูส้มตำในคิวที่ยังอยู่ในครัว · รายการละ ~2 นาที</div>';
+          etaBox.innerHTML=queueText+minText+hint;
+        } else {
+          etaBox.style.display='none';
+        }
+      }
+    }catch(e){ console.warn('eta', e); }
+
     // แสดง QR บนตั๋วถ้ายังไม่ชำระ (รวม LINE)
     let qz=document.getElementById('ticketQRZone');
     if(!qz){
