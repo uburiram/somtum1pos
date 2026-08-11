@@ -770,7 +770,8 @@ const C={
     const sm=document.getElementById('slipAutoMsg');
     const tsm=document.getElementById('ticketSlipMsg');
     const setMsg=(html)=>{ if(sm) sm.innerHTML=html; if(tsm) tsm.innerHTML=html; };
-    setMsg('กำลังส่ง/ตรวจสลิป…');
+    // ข้อความสั้น — ไม่โชว์ขั้นตอนตรวจเบื้องหลังให้ลูกค้า
+    setMsg('กำลังบันทึกสลิป…');
     const orderSnap=await shopRef.collection('orders').doc(orderId).get();
     const order=orderSnap.exists?{id:orderId,...orderSnap.data()}: (this.lastOrder||{});
     const amount=Number(order.total||0);
@@ -786,8 +787,7 @@ const C={
         });
         const j=await r.json().catch(()=>({}));
         if(j.ok && (j.autoPaid||j.alreadyPaid)){
-          setMsg('<span style="color:#2E7D32">✓ '+(j.msg||'ตรวจสลิปผ่าน · ชำระแล้วอัตโนมัติ')+'</span>');
-          toast('ชำระเงินสำเร็จ (ตรวจอัตโนมัติ)');
+          setMsg('<span style="color:#2E7D32">✓ บันทึกสลิปแล้ว</span>');
           return;
         }
         if(j.ok===false && j.needManual){
@@ -808,8 +808,7 @@ const C={
       const easy=await this.verifySlipEasy(dataUrl, amount);
       if(easy.ok){
         await this.autoMarkPaidFromSlip(orderId, dataUrl, easy);
-        setMsg('<span style="color:#2E7D32">✓ ตรวจสลิปผ่าน · ยืนยันรับโอนอัตโนมัติ</span>');
-        toast('ชำระเงินสำเร็จ (ตรวจอัตโนมัติ)');
+        setMsg('<span style="color:#2E7D32">✓ บันทึกสลิปแล้ว</span>');
         return;
       }
       // ไม่ผ่าน → รอร้าน
@@ -825,14 +824,14 @@ const C={
 
     // 3) ถอด QR จากรูปสลิป (Thai QR มียอดใน payload) — multi-pass
     try{
-      setMsg('กำลังอ่าน QR จากสลิป…');
+      /* bg verify */
       const qrInfo=await this.readAmountFromSlipImage(dataUrl);
       if(qrInfo && qrInfo.amount!=null){
         const paid=Number(qrInfo.amount);
         if(Math.abs(paid-amount)<=1){
           await this.autoMarkPaidFromSlip(orderId, dataUrl, {msg:'QR ในสลิปยอดตรง', amount:paid});
-          setMsg('<span style="color:#2E7D32">✓ ยอดในสลิปตรงออเดอร์ · ยืนยันรับโอนอัตโนมัติ</span>');
-          toast('ชำระเงินสำเร็จ (ตรวจอัตโนมัติ)');
+          setMsg('<span style="color:#2E7D32">✓ บันทึกสลิปแล้ว</span>');
+          /* auto-paid เงียบ ๆ */
           return;
         }
         await shopRef.collection('orders').doc(orderId).update({
@@ -840,7 +839,7 @@ const C={
           slipVerifyNote:'ยอดในสลิป ฿'+paid+' ไม่ตรงออเดอร์ ฿'+amount
         });
         setMsg('<span style="color:#E65100">ยอดในสลิปไม่ตรง (฿'+paid+' / ออเดอร์ ฿'+amount+') · รอร้านตรวจ</span>');
-        toast('ยอดไม่ตรง · รอร้านตรวจสอบ');
+        /* silent pending */
         this._applyLocalSlip(orderId, dataUrl, 'PENDING_REVIEW');
         return;
       }
@@ -848,7 +847,7 @@ const C={
 
     // 3b) OCR หาตัวเลขยอดในรูป — ถ้าตรงออเดอร์ 100% อนุมัติ
     try{
-      setMsg('กำลังอ่านยอดจากสลิป (OCR)…');
+      /* bg ocr */
       const ocr=await this.readAmountByOCR(dataUrl, amount);
       if(ocr && ocr.amount!=null && Math.abs(Number(ocr.amount)-amount)<=1){
         await this.autoMarkPaidFromSlip(orderId, dataUrl, {msg:'OCR ยอดตรงออเดอร์', amount:Number(ocr.amount)});
@@ -862,8 +861,7 @@ const C={
     await shopRef.collection('orders').doc(orderId).update({
       slipData:dataUrl, slipStatus:'PENDING_REVIEW'
     });
-    setMsg('<span style="color:#E65100">ส่งสลิปให้ร้านตรวจสอบแล้ว</span>');
-    toast('ส่งสลิปแล้ว');
+    setMsg('<span style="color:#2E7D32">✓ บันทึกสลิปแล้ว</span>');
     this._applyLocalSlip(orderId, dataUrl, 'PENDING_REVIEW');
   },
   _applyLocalSlip(orderId, dataUrl, status){
@@ -1124,7 +1122,7 @@ const C={
       });
       this.lastOrder=Object.assign({}, o, {status:'Cancelled'});
       this.renderTicket(this.lastOrder);
-      toast('ยกเลิกออเดอร์แล้ว');
+      toast('ยกเลิกโดยลูกค้าแล้ว');
     }catch(e){
       toast('ยกเลิกไม่สำเร็จ: '+(e.message||e));
     }
@@ -1132,22 +1130,25 @@ const C={
   async confirmOrder(){
     this.payM='PROMPTPAY';
     if(!this.assertShopOpen()) return;
-    // มีออเดอร์แล้ว → โอนตาม QR / แนบสลิป หรือจ่ายเงินสดที่ร้านให้พนักงานกดรับเงิน
-    if(this.orderId){
-      toast('โอนตาม QR หรือจ่ายเงินสดที่ร้าน · ออเดอร์เข้าครัวแล้ว');
+    // มีออเดอร์แล้ว → เปิดตั๋วคิวทันที
+    if(this.orderId && this.lastOrder){
+      this.renderTicket(this.lastOrder);
+      this.hide('mPay'); this.hide('mCart'); this.show('mTicket');
+      toast('คิวของคุณ: '+(this.lastOrder.queue||''));
       return;
     }
     const btn=document.getElementById('btnOrder');
-    btn.disabled=true; btn.textContent='กำลังส่ง…';
+    if(btn){ btn.disabled=true; btn.textContent='กำลังส่ง…'; }
     try{
       await this.createOrderInternal({
         status: 'Pending',
         paymentStatus: 'UNPAID'
       });
-      toast('สั่งสำเร็จ · โอนตาม QR หรือจ่ายเงินสดที่ร้าน');
-    }catch(e){ console.error(e); toast('ส่งไม่สำเร็จ: '+(e.message||e)); }
-    finally{
-      btn.disabled=true; btn.textContent='ยืนยันแล้ว · รอโอนเงิน / แนบสลิป';
+      // createOrderInternal เปิดตั๋วคิว + toast เลขคิวแล้ว
+    }catch(e){
+      console.error(e);
+      toast('ส่งไม่สำเร็จ: '+(e.message||e));
+      if(btn){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
     }
   },
   async createOrderInternal(opts){
@@ -1186,16 +1187,20 @@ const C={
     await shopRef.collection('orders').doc(id).set(order);
     this.orderId=id;
     this.lastOrder={id,...order};
-    // แนบสลิปถ้ามีตอนยืนยัน
-    if(this.slipData && this.payM==='PROMPTPAY'){
-      try{ await this.uploadSlipToOrder(id, this.slipData); }catch(e){ console.warn(e); }
-    }
+    // แสดงคิวก่อนทันที — อย่ารอตรวจสลิป
     this.cart=[]; this.renderCart();
     try{ localStorage.setItem('somtum_last_order', JSON.stringify(this.lastOrder)); }catch(e){}
     try{ this.ensurePayQRAsImage(); }catch(e){}
     this.renderTicket(this.lastOrder);
-    this.hide('mPay'); this.show('mTicket');
+    this.hide('mPay'); this.hide('mCart'); this.show('mTicket');
     this.attachTicketQR();
+    toast('คิวของคุณ: '+queue);
+    // แนบสลิป/ตรวจเงิน — เบื้องหลัง ไม่บล็อกหน้าคิว
+    if(this.slipData){
+      const slip=this.slipData;
+      this.slipData='';
+      setTimeout(()=>{ this.uploadSlipToOrder(id, slip).catch(e=>console.warn('bg slip',e)); }, 100);
+    }
     if(this.unsub) this.unsub();
     this.unsub=shopRef.collection('orders').doc(id).onSnapshot(snap=>{
       if(!snap.exists) return;
@@ -1422,7 +1427,7 @@ const C={
       Cooking:['bi','🔵 กำลังทำ'],
       Ready:['bg','🟢 พร้อมรับ'],
       Completed:['bg','⚫ เสร็จสิ้น'],
-      Cancelled:['bd','❌ ยกเลิก']
+      Cancelled:['bd', o.cancelledBy==='customer'?'❌ ยกเลิกโดยลูกค้า':(o.cancelledBy==='shop'?'❌ ยกเลิกโดยร้าน':'❌ ยกเลิก')]
     };
     const st=cancelled?map.Cancelled:(map[o.status]||map.Pending);
     const lines=(o.items||[]).map(i=>{
@@ -1456,9 +1461,12 @@ const C={
       const cbox=document.getElementById('custCancelBox');
       if(cbox){
         const canCancel = !cancelled && !paid && (o.status==='Pending' || o.status==='AwaitingPayment');
-        if(canCancel){
+        if(cancelled){
+          const by=o.cancelledBy==='customer'?'ลูกค้า':(o.cancelledBy==='shop'?'ร้าน':'—');
+          cbox.innerHTML='<div style="font-size:13px;color:#C62828;text-align:center;padding:8px;background:#FFEBEE;border-radius:8px;font-weight:600">ยกเลิกโดย'+by+'</div>';
+        } else if(canCancel){
           cbox.innerHTML='<button type="button" class="btn btn-d btn-block" style="margin-top:4px" onclick="C.cancelMyOrder()">ยกเลิกออเดอร์</button><div style="font-size:11px;color:#888;margin-top:4px;text-align:center">ยกเลิกได้เฉพาะตอนรอคิวทำ</div>';
-        } else if(!cancelled && o.status!=='Completed'){
+        } else if(o.status!=='Completed'){
           cbox.innerHTML='<div style="font-size:12px;color:#888;text-align:center;padding:6px;background:#f5f5f5;border-radius:8px">ไม่สามารถยกเลิกได้แล้ว (ครัวรับออเดอร์แล้ว)<br>หากต้องการยกเลิก กรุณาติดต่อร้านโดยตรง</div>';
         } else {
           cbox.innerHTML='';
