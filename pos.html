@@ -588,7 +588,8 @@ const M={
   },
   renderOrders(){
     const today=new Date(); today.setHours(0,0,0,0); const t0=today.getTime();
-    let list=this.orders.slice();
+    // กรองออเดอร์ผีที่ไม่มีรายการเมนู (กันการ์ดค้างว่าง)
+    let list=(this.orders||[]).filter(o=>o && (o.items||[]).length>0).slice();
     // กฎตามที่ร้านต้องการ:
     // kitchen = กำลังทำ (Pending/Cooking) — ส่งเข้าครัวทันทีทุกช่องทาง
     // unpaid = ยังไม่ชำระ (ทุกสถานะยกเว้น Completed/Cancelled)
@@ -605,7 +606,7 @@ const M={
     // รอชำระเงิน = Ready + ยังไม่จ่าย
     // พร้อมรับ = Ready + จ่ายแล้ว
     // เสร็จสมบูรณ์ = Completed
-    if(this.filterKey==='kitchen' || this.filterKey==='queue') list=list.filter(o=>['Pending','Cooking','AwaitingPayment'].includes(o.status));
+    if(this.filterKey==='kitchen' || this.filterKey==='queue') list=list.filter(o=>['Pending','Cooking','AwaitingPayment'].includes(o.status) && (o.items||[]).length>0);
     else if(this.filterKey==='cooking') list=list.filter(o=>o.status==='Cooking');
     else if(this.filterKey==='waitingPay') list=list.filter(o=>o.status==='Ready' && o.paymentStatus!=='PAID');
     else if(this.filterKey==='ready') list=list.filter(o=>o.status==='Ready' && o.paymentStatus==='PAID');

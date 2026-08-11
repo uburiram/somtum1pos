@@ -609,10 +609,28 @@ const C={
     this.hide('mProduct'); this.updFab(); toast('เพิ่มลงตะกร้าแล้ว');
   },
   updFab(){
-    const c=this.cart.reduce((s,i)=>s+i.qty,0), t=this.cart.reduce((s,i)=>s+i.total,0);
+    const c=(this.cart||[]).reduce((s,i)=>s+Number(i.qty||0),0);
+    const t=(this.cart||[]).reduce((s,i)=>s+Number(i.total||0),0);
     const fab=document.getElementById('fab');
-    if(c){fab.style.display='flex';document.getElementById('fabCount').textContent=c+' รายการ';document.getElementById('fabTotal').textContent=money(t)}
-    else fab.style.display='none';
+    if(!fab) return;
+    if(c){
+      fab.style.display='flex';
+      const fc=document.getElementById('fabCount'); if(fc) fc.textContent=c+' รายการ';
+      const ft=document.getElementById('fabTotal'); if(ft) ft.textContent=money(t);
+    } else {
+      fab.style.display='none';
+    }
+  },
+  renderCart(){
+    // ใช้หลังยืนยันออเดอร์ / เคลียร์ตะกร้า — ต้องมี method นี้เสมอ
+    try{
+      this.cart = this.cart || [];
+      this.updFab();
+      const el=document.getElementById('cartList');
+      if(el && !this.cart.length){
+        el.innerHTML='<div style="text-align:center;color:#999;padding:20px">ตะกร้าว่าง</div>';
+      }
+    }catch(e){ console.warn('renderCart', e); }
   },
   openCart(){
     const el=document.getElementById('cartList');
@@ -1137,6 +1155,10 @@ const C={
       toast('คิวของคุณ: '+(this.lastOrder.queue||''));
       return;
     }
+    if(!this.cart || !this.cart.length){
+      toast('ตะกร้าว่าง · เลือกเมนูก่อนยืนยัน');
+      return;
+    }
     const btn=document.getElementById('btnOrder');
     if(btn){ btn.disabled=true; btn.textContent='กำลังส่ง…'; }
     try{
@@ -1184,24 +1206,31 @@ const C={
       payRef: id,
       createdAt: Date.now()
     };
+    // กันออเดอร์ว่างไม่มีเมนู
+    if(!items.length){
+      throw new Error('ตะกร้าว่าง ไม่สามารถสร้างออเดอร์ได้');
+    }
     await shopRef.collection('orders').doc(id).set(order);
     this.orderId=id;
     this.lastOrder={id,...order};
-    // แสดงคิวก่อนทันที — อย่ารอตรวจสลิป
-    this.cart=[]; this.renderCart();
+    // แสดงคิวก่อนทันที — ทุกขั้นตอน UI หุ้ม try กันพังกลางทาง
+    try{ this.cart=[]; }catch(e){}
+    try{ this.renderCart(); }catch(e){ try{ this.updFab(); }catch(e2){} }
     try{ localStorage.setItem('somtum_last_order', JSON.stringify(this.lastOrder)); }catch(e){}
     try{ this.ensurePayQRAsImage(); }catch(e){}
-    this.renderTicket(this.lastOrder);
-    this.hide('mPay'); this.hide('mCart'); this.show('mTicket');
-    this.attachTicketQR();
-    toast('คิวของคุณ: '+queue);
+    try{ this.renderTicket(this.lastOrder); }catch(e){ console.warn('renderTicket', e); }
+    try{ this.hide('mPay'); }catch(e){}
+    try{ this.hide('mCart'); }catch(e){}
+    try{ this.show('mTicket'); }catch(e){}
+    try{ this.attachTicketQR(); }catch(e){}
+    try{ toast('คิวของคุณ: '+queue); }catch(e){}
     // แนบสลิป/ตรวจเงิน — เบื้องหลัง ไม่บล็อกหน้าคิว
     if(this.slipData){
       const slip=this.slipData;
       this.slipData='';
-      setTimeout(()=>{ this.uploadSlipToOrder(id, slip).catch(e=>console.warn('bg slip',e)); }, 100);
+      setTimeout(()=>{ try{ this.uploadSlipToOrder(id, slip).catch(e=>console.warn('bg slip',e)); }catch(e){} }, 150);
     }
-    if(this.unsub) this.unsub();
+    try{ if(this.unsub) this.unsub(); }catch(e){}
     this.unsub=shopRef.collection('orders').doc(id).onSnapshot(snap=>{
       if(!snap.exists) return;
       if(this.orderId && this.orderId!==snap.id) return;
