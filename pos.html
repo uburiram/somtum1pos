@@ -262,6 +262,15 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
       <h3>ร้านค้า</h3>
       <label class="lbl">ชื่อร้าน</label><input id="setName">
       <label class="lbl">ชื่อบัญชีผู้รับเงิน</label><input id="setAccount" placeholder="นาย นราทร วงค์แก่นท้าว">
+      <div style="margin-top:14px;padding:12px;border-radius:12px;background:#FFF8F5;border:1px solid #FFE0D6">
+        <div style="font-weight:700;margin-bottom:8px">สถานะร้าน</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <button type="button" class="btn btn-g" id="btnShopOpen" onclick="M.setShopOpen(true)">🟢 เปิดร้าน</button>
+          <button type="button" class="btn btn-d" id="btnShopClose" onclick="M.setShopOpen(false)">🔴 ปิดร้าน</button>
+        </div>
+        <div id="shopOpenStatus" style="margin-top:8px;font-size:13px;font-weight:600;color:#2E7D32">สถานะปัจจุบัน: เปิดร้าน</div>
+        <p style="font-size:12px;color:#777;margin-top:6px">ปิดร้านแล้วลูกค้ายังเข้าหน้าเมนูได้ แต่สั่งอาหารไม่ได้</p>
+      </div>
       <button class="btn btn-p btn-block" style="margin-top:10px" onclick="M.saveSettings()">บันทึกชื่อร้าน</button>
     </div>
     <div class="form-card">
@@ -303,7 +312,7 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
       <h3>QR ลูกค้าสั่งอาหาร</h3>
       <p style="font-size:13px;color:#777;margin:8px 0">พิมพ์ติดโต๊ะ / หน้าร้าน · หรือบันทึกเป็นรูปลงเครื่อง</p>
       <div id="qrPoster" style="display:inline-block;margin:12px auto;padding:20px 18px;background:linear-gradient(180deg,#fff 0%,#FFF8F5 100%);border:3px solid #FF5722;border-radius:20px;box-shadow:0 8px 24px rgba(255,87,34,.18);max-width:320px;width:100%;box-sizing:border-box">
-        <div style="font-size:13px;font-weight:800;letter-spacing:.02em;color:#FF5722;margin-bottom:4px">QR สำหรับแสกนสั่งอาหาร</div>
+        <div style="font-size:13px;font-weight:800;letter-spacing:.02em;color:#FF5722;margin-bottom:4px">QR สำหรับสแกนสั่งอาหาร</div>
         <div id="qrShopLabel" style="font-size:18px;font-weight:800;color:#333;margin-bottom:12px">ร้าน</div>
         <div id="qrBox" style="display:flex;justify-content:center;margin:0 auto 12px;padding:12px;background:#fff;border:1px solid #FFE0D6;border-radius:14px"></div>
         <div style="font-size:12px;line-height:1.55;color:#555;padding:0 4px">หลังจากยืนยันสั่งอาหารแล้ว<br>โปรดจำหรือจดหมายเลขคิวของท่านไว้</div>
@@ -750,11 +759,54 @@ const M={
   async cancelOrder(id){
     if(!confirm('ยืนยันยกเลิกออเดอร์นี้?')) return;
     await shopRef.collection('orders').doc(id).update({
-      status:'Cancelled', cancelledAt:Date.now(),
+      status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
       paymentStatus:'UNPAID', paidAmount:0, changeAmount:0
     });
     toast('ยกเลิกออเดอร์แล้ว');
     document.getElementById('detailModal').classList.remove('on');
+  },
+  applyShopOpenUI(isOpen){
+    this.isOpen = isOpen!==false;
+    const st=document.getElementById('shopOpenStatus');
+    if(st){
+      st.textContent = this.isOpen ? 'สถานะปัจจุบัน: เปิดร้าน' : 'สถานะปัจจุบัน: ปิดร้าน';
+      st.style.color = this.isOpen ? '#2E7D32' : '#C62828';
+    }
+    const bo=document.getElementById('btnShopOpen');
+    const bc=document.getElementById('btnShopClose');
+    if(bo) bo.style.outline = this.isOpen ? '3px solid #2E7D32' : 'none';
+    if(bc) bc.style.outline = !this.isOpen ? '3px solid #C62828' : 'none';
+    // หัว POS
+    let badge=document.getElementById('posShopOpenBadge');
+    if(!badge){
+      const title=document.getElementById('shopTitle');
+      if(title && title.parentElement){
+        badge=document.createElement('span');
+        badge.id='posShopOpenBadge';
+        badge.style.cssText='margin-left:8px;font-size:12px;font-weight:700;padding:3px 8px;border-radius:10px';
+        title.parentElement.appendChild(badge);
+      }
+    }
+    if(badge){
+      if(this.isOpen){
+        badge.textContent='เปิดร้าน';
+        badge.style.background='#E8F5E9';
+        badge.style.color='#2E7D32';
+      } else {
+        badge.textContent='ปิดร้าน';
+        badge.style.background='#FFEBEE';
+        badge.style.color='#C62828';
+      }
+    }
+  },
+  async setShopOpen(isOpen){
+    try{
+      await shopRef.collection('settings').doc('public').set({ isOpen: !!isOpen, shopOpenUpdatedAt: Date.now() }, {merge:true});
+      this.applyShopOpenUI(!!isOpen);
+      toast(isOpen ? 'เปิดร้านแล้ว · ลูกค้าสั่งอาหารได้' : 'ปิดร้านแล้ว · ลูกค้าสั่งอาหารไม่ได้');
+    }catch(e){
+      toast('อัปเดตสถานะร้านไม่สำเร็จ: '+(e.message||e));
+    }
   },
   async deleteOrder(id){
     if(!confirm('ลบประวัติออเดอร์นี้ถาวร?\n(ขั้นที่ 1/2)')) return;
@@ -1359,6 +1411,7 @@ const M={
     const snap=await shopRef.collection('settings').doc('public').get();
     const d=snap.exists?snap.data():{};
     document.getElementById('setName').value=d.shopName||'';
+    this.applyShopOpenUI(d.isOpen!==false);
     document.getElementById('setAccount').value=d.accountName||'';
     document.getElementById('setPP').value=d.promptpay||'1319900156353';
     const payType=d.payType||'kshop';

@@ -90,6 +90,10 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
   🔔 คิวของคุณพร้อมแล้ว · มารับอาหารได้เลย
   <button type="button" onclick="document.getElementById('readyBanner').style.display='none'" style="margin-left:10px;background:rgba(255,255,255,.25);color:#fff;border:none;border-radius:8px;padding:4px 10px;font-weight:600">ปิด</button>
 </div>
+<div id="shopClosedBanner" style="display:none;background:#C62828;color:#fff;text-align:center;padding:12px 14px;font-weight:600;font-size:14px;line-height:1.45">
+  🔴 ร้านปิดอยู่ · อยู่นอกเวลาทำการ<br>
+  <span style="font-weight:500;font-size:13px">ขออภัยในความไม่สะดวก · ดูเมนูได้แต่ยังสั่งอาหารไม่ได้</span>
+</div>
 <div class="track-bar">
   <input id="trackQ" placeholder="ใส่เลขคิว เช่น A001" maxlength="8">
   <button class="btn btn-o btn-sm" onclick="C.trackQueue()">เช็กคิว/ใบเสร็จ</button>
@@ -302,7 +306,7 @@ async function migrateAndSeed(){
     [['s1','ไม่เผ็ด',1],['s2','เผ็ดน้อย',2],['s3','เผ็ดกลาง',3],['s4','เผ็ดมาก',4]].forEach(([id,name,order])=>batch.set(shopRef.collection('spiceLevels').doc(id),{id,name,isActive:true,order}));
     [['t1','ไข่ดาว',10],['t2','ไข่ต้ม',10],['t3','เพิ่มปู',20],['t4','หมูกรอบ',15]].forEach(([id,name,price],i)=>batch.set(shopRef.collection('toppings').doc(id),{id,name,price,isActive:true,order:i+1}));
     batch.set(shopRef.collection('settings').doc('public'),{
-      shopName:'ส้มตำนายหนึ่ง', promptpay:'1319900156353', accountName:'นาย นราทร วงค์แก่นท้าว',
+      shopName:'ส้มตำนายหนึ่ง', isOpen:true, promptpay:'1319900156353', accountName:'นาย นราทร วงค์แก่นท้าว',
       payType:'kshop', merchantId:'EMPKB000002198793001', kshopPayload:window.KSHOP_QR_PAYLOAD||''
     },{merge:true});
     await batch.commit();
@@ -345,6 +349,7 @@ const C={
         if(d.optionConfig) this.optionConfig=Object.assign({spiceMode:'single',toppingMode:'multi',toppingAllowQty:true}, d.optionConfig);
         document.getElementById('shopName').textContent=this.shopName;
         document.title=this.shopName+' | สั่งอาหาร';
+        this.setShopOpenState(d.isOpen!==false);
       });
       const bindCol=(name, assign)=>{
         shopRef.collection(name).onSnapshot(s=>{
@@ -636,6 +641,7 @@ const C={
     const sm=document.getElementById('slipAutoMsg'); if(sm) sm.textContent='';
     const btn=document.getElementById('btnOrder');
     if(btn){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
+    if(!this.assertShopOpen()) return;
     this.payM='PROMPTPAY';
     this.payMethod('PROMPTPAY');
     this.hide('mCart'); this.show('mPay');
@@ -765,6 +771,11 @@ const C={
     const tsm=document.getElementById('ticketSlipMsg');
     const setMsg=(html)=>{ if(sm) sm.innerHTML=html; if(tsm) tsm.innerHTML=html; };
     setMsg('กำลังส่ง/ตรวจสลิป…');
+    const orderSnap=await shopRef.collection('orders').doc(orderId).get();
+    const order=orderSnap.exists?{id:orderId,...orderSnap.data()}: (this.lastOrder||{});
+    const amount=Number(order.total||0);
+
+    // 1) Cloud Function (ถ้าตั้ง FUNCTIONS_BASE)
     const base=(window.FUNCTIONS_BASE||'').replace(/\/$/,'');
     if(base){
       try{
@@ -775,42 +786,153 @@ const C={
         });
         const j=await r.json().catch(()=>({}));
         if(j.ok && (j.autoPaid||j.alreadyPaid)){
-          setMsg('<span style="color:#2E7D32">✓ '+(j.msg||'ตรวจสลิปผ่าน · ชำระแล้ว')+'</span>');
-          toast('ชำระเงินสำเร็จ');
+          setMsg('<span style="color:#2E7D32">✓ '+(j.msg||'ตรวจสลิปผ่าน · ชำระแล้วอัตโนมัติ')+'</span>');
+          toast('ชำระเงินสำเร็จ (ตรวจอัตโนมัติ)');
           return;
         }
-        setMsg('<span style="color:#E65100">'+(j.msg||'ส่งสลิปแล้ว รอร้านตรวจสอบ')+'</span>');
-        toast(j.msg||'ส่งสลิปแล้ว');
-        try{
-          if(this.lastOrder && this.lastOrder.id===orderId){
-            this.lastOrder.slipData=dataUrl;
-            this.lastOrder.slipStatus='PENDING_REVIEW';
-            this.renderTicket(this.lastOrder);
-          }
-        }catch(e){}
-        return;
-      }catch(e){
-        console.warn('verifySlip CF', e);
-      }
+        if(j.ok===false && j.needManual){
+          await shopRef.collection('orders').doc(orderId).update({
+            slipData:dataUrl, slipStatus:'PENDING_REVIEW',
+            slipVerifyNote:j.msg||'ยอดไม่ตรงหรือสลิปไม่ผ่าน · รอร้านตรวจ'
+          });
+          setMsg('<span style="color:#E65100">'+(j.msg||'สลิปต้องให้ร้านตรวจสอบ')+'</span>');
+          toast(j.msg||'ส่งสลิปแล้ว รอร้านตรวจ');
+          this._applyLocalSlip(orderId, dataUrl, 'PENDING_REVIEW');
+          return;
+        }
+      }catch(e){ console.warn('verifySlip CF', e); }
     }
-    // fallback: แนบสลิปอย่างเดียว (rules อนุญาตเฉพาะ slip fields)
+
+    // 2) EasySlip API (ถ้ามี key)
+    if(window.EASYSLIP_API_KEY){
+      const easy=await this.verifySlipEasy(dataUrl, amount);
+      if(easy.ok){
+        await this.autoMarkPaidFromSlip(orderId, dataUrl, easy);
+        setMsg('<span style="color:#2E7D32">✓ ตรวจสลิปผ่าน · ยืนยันรับโอนอัตโนมัติ</span>');
+        toast('ชำระเงินสำเร็จ (ตรวจอัตโนมัติ)');
+        return;
+      }
+      // ไม่ผ่าน → รอร้าน
+      await shopRef.collection('orders').doc(orderId).update({
+        slipData:dataUrl, slipStatus:'PENDING_REVIEW',
+        slipVerifyNote:easy.msg||'ตรวจอัตโนมัติไม่ผ่าน'
+      });
+      setMsg('<span style="color:#E65100">'+(easy.msg||'รอร้านตรวจสอบสลิป')+'</span>');
+      toast(easy.msg||'ส่งสลิปแล้ว รอร้านตรวจ');
+      this._applyLocalSlip(orderId, dataUrl, 'PENDING_REVIEW');
+      return;
+    }
+
+    // 3) ถอด QR จากรูปสลิป (Thai QR มียอดใน payload)
+    try{
+      const qrInfo=await this.readAmountFromSlipImage(dataUrl);
+      if(qrInfo && qrInfo.amount!=null){
+        const paid=Number(qrInfo.amount);
+        if(Math.abs(paid-amount)<=1){
+          await this.autoMarkPaidFromSlip(orderId, dataUrl, {msg:'QR ในสลิปยอดตรง', amount:paid});
+          setMsg('<span style="color:#2E7D32">✓ ยอดในสลิปตรงออเดอร์ · ยืนยันรับโอนอัตโนมัติ</span>');
+          toast('ชำระเงินสำเร็จ (ยอดตรง)');
+          return;
+        }
+        await shopRef.collection('orders').doc(orderId).update({
+          slipData:dataUrl, slipStatus:'PENDING_REVIEW',
+          slipVerifyNote:'ยอดในสลิป ฿'+paid+' ไม่ตรงออเดอร์ ฿'+amount
+        });
+        setMsg('<span style="color:#E65100">ยอดในสลิปไม่ตรง (฿'+paid+' / ออเดอร์ ฿'+amount+') · รอร้านตรวจ</span>');
+        toast('ยอดไม่ตรง · รอร้านตรวจสอบ');
+        this._applyLocalSlip(orderId, dataUrl, 'PENDING_REVIEW');
+        return;
+      }
+    }catch(e){ console.warn('slip QR', e); }
+
+    // 4) fallback: รอร้านตรวจมือ
     await shopRef.collection('orders').doc(orderId).update({
       slipData:dataUrl, slipStatus:'PENDING_REVIEW'
     });
     setMsg('<span style="color:#E65100">ส่งสลิปให้ร้านตรวจสอบแล้ว</span>');
     toast('ส่งสลิปแล้ว');
-    // อัปเดตตั๋ว → ซ่อน QR หลังแนบสลิปแล้ว
+    this._applyLocalSlip(orderId, dataUrl, 'PENDING_REVIEW');
+  },
+  _applyLocalSlip(orderId, dataUrl, status){
     try{
       if(this.lastOrder && this.lastOrder.id===orderId){
         this.lastOrder.slipData=dataUrl;
-        this.lastOrder.slipStatus='PENDING_REVIEW';
+        this.lastOrder.slipStatus=status;
         this.renderTicket(this.lastOrder);
       }
     }catch(e){}
   },
-    renderCart(){
-    this.updFab();
+  async autoMarkPaidFromSlip(orderId, dataUrl, meta){
+    const patch={
+      slipData:dataUrl,
+      slipStatus:'AUTO_APPROVED',
+      paymentStatus:'PAID',
+      paymentMethod:'PROMPTPAY',
+      paidAt:Date.now(),
+      paidAmount: meta&&meta.amount!=null?Number(meta.amount):undefined,
+      slipVerifyNote: (meta&&meta.msg)||'ตรวจอัตโนมัติผ่าน',
+      autoPaid:true
+    };
+    if(patch.paidAmount==null){
+      const snap=await shopRef.collection('orders').doc(orderId).get();
+      patch.paidAmount=Number((snap.data()||{}).total||0);
+    }
+    await shopRef.collection('orders').doc(orderId).update(patch);
+    try{
+      const snap=await shopRef.collection('orders').doc(orderId).get();
+      const full={id:orderId, ...(snap.data()||{})};
+      this.lastOrder=full;
+      this.writeReceipt(full);
+      this.renderTicket(full);
+    }catch(e){}
   },
+  async readAmountFromSlipImage(dataUrl){
+    // ใช้ jsQR ถ้ามีในหน้า — โหลดแบบ dynamic
+    if(typeof jsQR!=='function'){
+      await new Promise((resolve,reject)=>{
+        const s=document.createElement('script');
+        s.src='https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+        s.onload=resolve; s.onerror=reject;
+        document.head.appendChild(s);
+      }).catch(()=>null);
+    }
+    if(typeof jsQR!=='function') return null;
+    const img=await new Promise((resolve,reject)=>{
+      const im=new Image();
+      im.onload=()=>resolve(im);
+      im.onerror=reject;
+      im.src=dataUrl;
+    });
+    const canvas=document.createElement('canvas');
+    const maxSide=1200;
+    let w=img.width, h=img.height;
+    if(Math.max(w,h)>maxSide){
+      const s=maxSide/Math.max(w,h);
+      w=Math.round(w*s); h=Math.round(h*s);
+    }
+    canvas.width=w; canvas.height=h;
+    const ctx=canvas.getContext('2d');
+    ctx.drawImage(img,0,0,w,h);
+    const imageData=ctx.getImageData(0,0,w,h);
+    const code=jsQR(imageData.data, imageData.width, imageData.height, {inversionAttempts:'attemptBoth'});
+    if(!code || !code.data) return null;
+    const raw=String(code.data);
+    // EMVCo tag 54 = amount (e.g. 540410.00 or 54035.00)
+    let amount=null;
+    const m=raw.match(/54(\d{2})([0-9.]+)/);
+    if(m){
+      const len=parseInt(m[1],10);
+      const val=m[2].slice(0,len);
+      amount=parseFloat(val);
+    }
+    if(amount==null){
+      // บางสลิปเป็นข้อความยอด
+      const m2=raw.match(/(?:amount|AMT|ยอด)[=:]?\s*([0-9]+(?:\.[0-9]+)?)/i);
+      if(m2) amount=parseFloat(m2[1]);
+    }
+    return { amount, raw: raw.slice(0,120) };
+  },
+
   attachTicketQR(){
     try{ this.ensurePayQRAsImage(); }catch(e){}
   },
@@ -865,8 +987,54 @@ const C={
     if(this.trackUnsub){ try{ this.trackUnsub(); }catch(e){} this.trackUnsub=null; }
     this.stopKitchenWatch();
   },
+  setShopOpenState(isOpen){
+    this.isOpen = isOpen!==false;
+    const b=document.getElementById('shopClosedBanner');
+    if(b) b.style.display = this.isOpen ? 'none' : 'block';
+    // ปุ่ม FAB / สั่ง
+    const fab=document.getElementById('fab');
+    if(fab && !this.isOpen){
+      fab.style.opacity='0.55';
+    } else if(fab){
+      fab.style.opacity='1';
+    }
+  },
+  assertShopOpen(){
+    if(this.isOpen===false){
+      toast('อยู่นอกเวลาทำการ · ขออภัยในความไม่สะดวก');
+      return false;
+    }
+    return true;
+  },
+  async cancelMyOrder(){
+    const o=this.lastOrder;
+    if(!o || !o.id){ toast('ไม่พบออเดอร์'); return; }
+    if(o.paymentStatus==='PAID'){
+      toast('ชำระเงินแล้ว ยกเลิกไม่ได้ · ติดต่อร้านโดยตรง');
+      return;
+    }
+    if(o.status!=='Pending' && o.status!=='AwaitingPayment'){
+      toast('คิวนี้ไม่ได้อยู่ขั้นรอคิวทำแล้ว · ยกเลิกไม่ได้ กรุณาติดต่อร้านโดยตรง');
+      return;
+    }
+    if(!confirm('ยืนยันยกเลิกออเดอร์คิว '+(o.queue||'')+' ?')) return;
+    try{
+      await shopRef.collection('orders').doc(o.id).update({
+        status:'Cancelled',
+        cancelledAt:Date.now(),
+        cancelledBy:'customer',
+        cancelReason:'ลูกค้ายกเลิกตอนรอคิวทำ'
+      });
+      this.lastOrder=Object.assign({}, o, {status:'Cancelled'});
+      this.renderTicket(this.lastOrder);
+      toast('ยกเลิกออเดอร์แล้ว');
+    }catch(e){
+      toast('ยกเลิกไม่สำเร็จ: '+(e.message||e));
+    }
+  },
   async confirmOrder(){
     this.payM='PROMPTPAY';
+    if(!this.assertShopOpen()) return;
     // มีออเดอร์แล้ว → โอนตาม QR / แนบสลิป หรือจ่ายเงินสดที่ร้านให้พนักงานกดรับเงิน
     if(this.orderId){
       toast('โอนตาม QR หรือจ่ายเงินสดที่ร้าน · ออเดอร์เข้าครัวแล้ว');
@@ -1172,6 +1340,7 @@ const C={
       <div>คิวของคุณ</div>
       <div class="huge">${esc(o.queue)}</div>
       <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
+      <div id="custCancelBox" style="margin:8px 0"></div>
       <div id="queueEtaBox" style="display:none;margin:10px 0;padding:12px;background:#FFF3E0;border-radius:12px;border:1px solid #FFE0B2;text-align:center"></div>
       <div class="receipt" id="receiptBox">
         <h3>${esc(this.shopName)}</h3><div style="text-align:center;font-size:13px;font-weight:600;color:${paid?'var(--g)':'var(--p)'}">${paid?'ใบเสร็จรับเงิน':'ใบสั่งอาหาร (ยังไม่ชำระ)'}</div>
@@ -1185,6 +1354,21 @@ const C={
       </div>
       <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;
     document.getElementById('btnPrintReceipt').style.display = paid ? 'inline-flex' : 'none';
+    // ปุ่มยกเลิกฝั่งลูกค้า — ได้เฉพาะรอคิวทำ
+    try{
+      const cbox=document.getElementById('custCancelBox');
+      if(cbox){
+        const canCancel = !cancelled && !paid && (o.status==='Pending' || o.status==='AwaitingPayment');
+        if(canCancel){
+          cbox.innerHTML='<button type="button" class="btn btn-d btn-block" style="margin-top:4px" onclick="C.cancelMyOrder()">ยกเลิกออเดอร์</button><div style="font-size:11px;color:#888;margin-top:4px;text-align:center">ยกเลิกได้เฉพาะตอนรอคิวทำ</div>';
+        } else if(!cancelled && o.status!=='Completed'){
+          cbox.innerHTML='<div style="font-size:12px;color:#888;text-align:center;padding:6px;background:#f5f5f5;border-radius:8px">ไม่สามารถยกเลิกได้แล้ว (ครัวรับออเดอร์แล้ว)<br>หากต้องการยกเลิก กรุณาติดต่อร้านโดยตรง</div>';
+        } else {
+          cbox.innerHTML='';
+        }
+      }
+    }catch(e){}
+
     // แจ้งคิวที่เหลือ + เวลารอโดยประมาณ (นับเฉพาะคิวในครัว)
     try{
       const etaBox=document.getElementById('queueEtaBox');
