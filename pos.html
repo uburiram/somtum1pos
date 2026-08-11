@@ -83,8 +83,9 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
 @media print{
   body *{visibility:hidden!important}
   #printArea, #printArea *{visibility:visible!important}
-  #printArea{position:fixed;left:0;top:0;width:100%;padding:16px;background:#fff;z-index:99999;display:block!important}
-  .ov, header, .nav, .wrap, .toast, .banner { display:none!important; }
+  #printArea{position:fixed;left:0;top:0;width:100%;padding:16px;background:#fff!important;color:#000!important;z-index:99999;display:block!important;visibility:visible!important}
+  .hide#printArea, #printArea.hide{display:block!important;visibility:visible!important}
+  .ov, header, .nav, .wrap, .toast, .banner, #loginView { display:none!important; }
 }
 .status-hl{outline:3px solid #FF5722!important;box-shadow:0 0 0 3px rgba(255,87,34,.25);font-weight:700;transform:scale(1.02)}
 .order-card .st-hl{font-weight:700}
@@ -305,7 +306,7 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
         <div style="font-size:13px;font-weight:800;letter-spacing:.02em;color:#FF5722;margin-bottom:4px">QR สำหรับแสกนสั่งอาหาร</div>
         <div id="qrShopLabel" style="font-size:18px;font-weight:800;color:#333;margin-bottom:12px">ร้าน</div>
         <div id="qrBox" style="display:flex;justify-content:center;margin:0 auto 12px;padding:12px;background:#fff;border:1px solid #FFE0D6;border-radius:14px"></div>
-        <div style="font-size:12px;line-height:1.55;color:#555;padding:0 4px">หลังจากยืนยันส่งอาหารแล้ว<br>โปรดจำหรือจดหมายเลขคิวของท่านไว้</div>
+        <div style="font-size:12px;line-height:1.55;color:#555;padding:0 4px">หลังจากยืนยันสั่งอาหารแล้ว<br>โปรดจำหรือจดหมายเลขคิวของท่านไว้</div>
       </div>
       <p style="font-size:12px;word-break:break-all;color:#888;margin:8px 0" id="qrUrl"></p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
@@ -859,8 +860,10 @@ const M={
     if(!r){ toast('ยังไม่มีใบเสร็จ'); return; }
     const lines=(r.items||[]).map(i=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty}`).join(', ');
+      const spice=i.spiceName?`<div style="font-size:12px;color:#BF360C">🌶️ เผ็ด: ${esc(i.spiceName)}</div>`:'';
+      const plara=i.plara?`<div style="font-size:12px;color:#555">🐟 ${esc(i.plara)}</div>`:'';
       const note=i.note?`<div style="font-size:12px;color:#E65100">📝 ${esc(i.note)}</div>`:'';
-      return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed #eee"><span>${esc(i.name)} x${i.qty}${tops?`<br><small>${tops}</small>`:''}${note}</span><span>${money(i.total)}</span></div>`;
+      return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed #eee"><span>${esc(i.name)} x${i.qty}${spice}${plara}${tops?`<div style="font-size:12px;color:#777">+ ${tops}</div>`:''}${note}</span><span>${money(i.total)}</span></div>`;
     }).join('');
     const receiptHtml=`<div id="receiptPrintContent" style="font-family:Prompt,sans-serif;padding:16px;color:#000;background:#fff;max-width:400px;margin:0 auto">
         <h2 style="text-align:center;color:#FF5722;margin:0 0 6px">${esc(r.shopName||'ร้าน')}</h2>
@@ -884,17 +887,43 @@ const M={
   printReceiptNow(){
     const html=this._lastReceiptHtml || document.getElementById('receiptPrintContent')?.outerHTML || '';
     if(!html){ toast('ไม่มีข้อมูลใบเสร็จ'); return; }
-    let area=document.getElementById('printArea');
-    if(!area){
-      area=document.createElement('div'); area.id='printArea'; document.body.appendChild(area);
+    this.printHtmlDocument(html, 'ใบเสร็จรับเงิน');
+  },
+  /** พิมพ์ผ่าน iframe — กันหน้าว่างบน Android Chrome */
+  printHtmlDocument(html, title){
+    try{
+      let iframe=document.getElementById('_printFrame');
+      if(iframe) iframe.remove();
+      iframe=document.createElement('iframe');
+      iframe.id='_printFrame';
+      iframe.setAttribute('style','position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none');
+      document.body.appendChild(iframe);
+      const doc=iframe.contentWindow.document;
+      doc.open();
+      doc.write('<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">');
+      doc.write('<title>'+String(title||'พิมพ์')+'</title>');
+      doc.write('<style>html,body{margin:0;padding:12px;background:#fff;color:#000;font-family:Prompt,Tahoma,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact} img{max-width:100%}</style>');
+      doc.write('</head><body>');
+      doc.write(html);
+      doc.write('</body></html>');
+      doc.close();
+      const win=iframe.contentWindow;
+      const doPrint=()=>{
+        try{ win.focus(); win.print(); }catch(e){ console.warn(e); toast('พิมพ์ไม่สำเร็จ'); }
+      };
+      // รอโหลดรูป/layout
+      setTimeout(doPrint, 400);
+      setTimeout(()=>{ try{ iframe.remove(); }catch(e){} }, 60000);
+    }catch(e){
+      console.error(e);
+      // fallback printArea
+      let area=document.getElementById('printArea');
+      if(!area){ area=document.createElement('div'); area.id='printArea'; document.body.appendChild(area); }
+      area.classList.remove('hide');
+      area.style.cssText='display:block!important;visibility:visible!important;position:fixed;left:0;top:0;width:100%;background:#fff;color:#000;z-index:99999;padding:16px';
+      area.innerHTML=html;
+      setTimeout(()=>{ window.print(); setTimeout(()=>{ area.classList.add('hide'); area.style.display='none'; area.innerHTML=''; }, 500); }, 250);
     }
-    area.classList.remove('hide');
-    area.style.cssText='display:block;background:#fff;color:#000';
-    area.innerHTML=html;
-    setTimeout(()=>{
-      window.print();
-      setTimeout(()=>{ area.classList.add('hide'); area.style.display='none'; area.innerHTML=''; }, 400);
-    }, 200);
   },
 
 
@@ -1408,7 +1437,7 @@ const M={
     const cu=document.getElementById('qrUrl')?.textContent||new URL('index.html', location.href).href;
     const name=(document.getElementById('shopTitle')?.textContent||this.shopName||'ร้าน').trim();
     const title='QR สำหรับแสกนสั่งอาหาร';
-    const footer1='หลังจากยืนยันส่งอาหารแล้ว';
+    const footer1='หลังจากยืนยันสั่งอาหารแล้ว';
     const footer2='โปรดจำหรือจดหมายเลขคิวของท่านไว้';
 
     // รอ QR พร้อม
@@ -1531,10 +1560,10 @@ const M={
   },
   async printCustomerQR(){
     try{
+      toast('กำลังเตรียมพิมพ์…');
       const dataUrl=await this.buildCustomerQRPoster();
-      document.getElementById('printArea').classList.remove('hide');
-      document.getElementById('printArea').innerHTML='<img src="'+dataUrl+'" style="width:100%;max-width:480px;margin:0 auto;display:block">';
-      setTimeout(()=>{ window.print(); document.getElementById('printArea').classList.add('hide'); }, 350);
+      const html='<div style="text-align:center"><img src="'+dataUrl+'" style="width:100%;max-width:480px;margin:0 auto;display:block"></div>';
+      this.printHtmlDocument(html, 'QR สั่งอาหาร');
     }catch(e){
       console.error(e);
       toast('พิมพ์ไม่สำเร็จ');
