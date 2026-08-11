@@ -823,15 +823,16 @@ const C={
       return;
     }
 
-    // 3) ถอด QR จากรูปสลิป (Thai QR มียอดใน payload)
+    // 3) ถอด QR จากรูปสลิป (Thai QR มียอดใน payload) — multi-pass
     try{
+      setMsg('กำลังอ่าน QR จากสลิป…');
       const qrInfo=await this.readAmountFromSlipImage(dataUrl);
       if(qrInfo && qrInfo.amount!=null){
         const paid=Number(qrInfo.amount);
         if(Math.abs(paid-amount)<=1){
           await this.autoMarkPaidFromSlip(orderId, dataUrl, {msg:'QR ในสลิปยอดตรง', amount:paid});
           setMsg('<span style="color:#2E7D32">✓ ยอดในสลิปตรงออเดอร์ · ยืนยันรับโอนอัตโนมัติ</span>');
-          toast('ชำระเงินสำเร็จ (ยอดตรง)');
+          toast('ชำระเงินสำเร็จ (ตรวจอัตโนมัติ)');
           return;
         }
         await shopRef.collection('orders').doc(orderId).update({
@@ -844,6 +845,18 @@ const C={
         return;
       }
     }catch(e){ console.warn('slip QR', e); }
+
+    // 3b) OCR หาตัวเลขยอดในรูป — ถ้าตรงออเดอร์ 100% อนุมัติ
+    try{
+      setMsg('กำลังอ่านยอดจากสลิป (OCR)…');
+      const ocr=await this.readAmountByOCR(dataUrl, amount);
+      if(ocr && ocr.amount!=null && Math.abs(Number(ocr.amount)-amount)<=1){
+        await this.autoMarkPaidFromSlip(orderId, dataUrl, {msg:'OCR ยอดตรงออเดอร์', amount:Number(ocr.amount)});
+        setMsg('<span style="color:#2E7D32">✓ ยอดในสลิปตรงออเดอร์ · ยืนยันรับโอนอัตโนมัติ</span>');
+        toast('ชำระเงินสำเร็จ (ตรวจอัตโนมัติ)');
+        return;
+      }
+    }catch(e){ console.warn('slip OCR', e); }
 
     // 4) fallback: รอร้านตรวจมือ
     await shopRef.collection('orders').doc(orderId).update({
@@ -887,7 +900,7 @@ const C={
     }catch(e){}
   },
   async readAmountFromSlipImage(dataUrl){
-    // ใช้ jsQR ถ้ามีในหน้า — โหลดแบบ dynamic
+    // โหลด jsQR
     if(typeof jsQR!=='function'){
       await new Promise((resolve,reject)=>{
         const s=document.createElement('script');
@@ -897,41 +910,125 @@ const C={
       }).catch(()=>null);
     }
     if(typeof jsQR!=='function') return null;
+
     const img=await new Promise((resolve,reject)=>{
       const im=new Image();
       im.onload=()=>resolve(im);
       im.onerror=reject;
+      im.crossOrigin='anonymous';
       im.src=dataUrl;
     });
-    const canvas=document.createElement('canvas');
-    const maxSide=1200;
-    let w=img.width, h=img.height;
-    if(Math.max(w,h)>maxSide){
-      const s=maxSide/Math.max(w,h);
-      w=Math.round(w*s); h=Math.round(h*s);
+
+    const parseEmvAmount=(raw)=>{
+      if(!raw) return null;
+      const s=String(raw);
+      // EMVCo tag 54 amount
+      const m=s.match(/54(\d{2})([0-9.]+)/);
+      if(m){
+        const len=parseInt(m[1],10);
+        const val=m[2].slice(0,len);
+        const n=parseFloat(val);
+        if(!isNaN(n) && n>0) return n;
+      }
+      // tag 54 with other formats
+      const m3=s.match(/54\d{2}(\d+\.\d{2})/);
+      if(m3){ const n=parseFloat(m3[1]); if(!isNaN(n)&&n>0) return n; }
+      const m2=s.match(/(?:amount|AMT|ยอด)[=:]?\s*([0-9]+(?:\.[0-9]+)?)/i);
+      if(m2){ const n=parseFloat(m2[1]); if(!isNaN(n)&&n>0) return n; }
+      // number with 2 decimals in payload
+      const m4=s.match(/\b(\d{1,7}\.\d{2})\b/);
+      if(m4){ const n=parseFloat(m4[1]); if(!isNaN(n)&&n>0&&n<1000000) return n; }
+      return null;
+    };
+
+    const tryScan=(canvas)=>{
+      try{
+        const ctx=canvas.getContext('2d');
+        const imageData=ctx.getImageData(0,0,canvas.width,canvas.height);
+        const code=jsQR(imageData.data, imageData.width, imageData.height, {inversionAttempts:'attemptBoth'});
+        if(code && code.data) return String(code.data);
+      }catch(e){}
+      return null;
+    };
+
+    const scales=[1, 0.75, 0.5, 1.25];
+    const crops=[
+      [0,0,1,1],
+      [0.05,0.05,0.9,0.9],
+      [0.15,0.15,0.7,0.7],
+      [0,0.3,1,0.7], // ครึ่งล่างมักมี QR
+      [0.2,0.4,0.6,0.55]
+    ];
+
+    for(const scale of scales){
+      for(const [cx,cy,cw,ch] of crops){
+        const sw=Math.max(50, Math.floor(img.width*cw*scale));
+        const sh=Math.max(50, Math.floor(img.height*ch*scale));
+        const canvas=document.createElement('canvas');
+        canvas.width=sw; canvas.height=sh;
+        const ctx=canvas.getContext('2d');
+        ctx.imageSmoothingEnabled=true;
+        ctx.drawImage(
+          img,
+          img.width*cx, img.height*cy, img.width*cw, img.height*ch,
+          0,0,sw,sh
+        );
+        let raw=tryScan(canvas);
+        if(!raw){
+          // grayscale boost
+          const id=ctx.getImageData(0,0,sw,sh);
+          const d=id.data;
+          for(let p=0;p<d.length;p+=4){
+            const g=d[p]*0.3+d[p+1]*0.59+d[p+2]*0.11;
+            const v=g>140?255:g<90?0:g;
+            d[p]=d[p+1]=d[p+2]=v;
+          }
+          ctx.putImageData(id,0,0);
+          raw=tryScan(canvas);
+        }
+        if(raw){
+          const amount=parseEmvAmount(raw);
+          return { amount, raw: raw.slice(0,160) };
+        }
+      }
     }
-    canvas.width=w; canvas.height=h;
-    const ctx=canvas.getContext('2d');
-    ctx.drawImage(img,0,0,w,h);
-    const imageData=ctx.getImageData(0,0,w,h);
-    const code=jsQR(imageData.data, imageData.width, imageData.height, {inversionAttempts:'attemptBoth'});
-    if(!code || !code.data) return null;
-    const raw=String(code.data);
-    // EMVCo tag 54 = amount (e.g. 540410.00 or 54035.00)
-    let amount=null;
-    const m=raw.match(/54(\d{2})([0-9.]+)/);
-    if(m){
-      const len=parseInt(m[1],10);
-      const val=m[2].slice(0,len);
-      amount=parseFloat(val);
-    }
-    if(amount==null){
-      // บางสลิปเป็นข้อความยอด
-      const m2=raw.match(/(?:amount|AMT|ยอด)[=:]?\s*([0-9]+(?:\.[0-9]+)?)/i);
-      if(m2) amount=parseFloat(m2[1]);
-    }
-    return { amount, raw: raw.slice(0,120) };
+    return null;
   },
+  /** OCR ยอดเงินจากข้อความในสลิป (fallback เมื่อไม่มี QR) */
+  async readAmountByOCR(dataUrl, expectedAmount){
+    try{
+      if(typeof Tesseract==='undefined'){
+        await new Promise((resolve,reject)=>{
+          const s=document.createElement('script');
+          s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+          s.onload=resolve; s.onerror=reject;
+          document.head.appendChild(s);
+        });
+      }
+      if(typeof Tesseract==='undefined') return null;
+      const result=await Tesseract.recognize(dataUrl, 'eng', { logger:()=>{} });
+      const text=(result && result.data && result.data.text)||'';
+      // หาตัวเลขเงิน เช่น 120.00, 1,250.00, 89
+      const candidates=[];
+      const re=/(\d{1,3}(?:,\d{3})*(?:\.\d{2})|\d+\.\d{2}|\d{2,6})/g;
+      let m;
+      while((m=re.exec(text))){
+        const n=parseFloat(m[1].replace(/,/g,''));
+        if(!isNaN(n) && n>=1 && n<100000) candidates.push(n);
+      }
+      if(!candidates.length) return null;
+      // ถ้ามียอดตรง expected (±1) เลือกอันนั้น
+      const exp=Number(expectedAmount||0);
+      const hit=candidates.find(n=>Math.abs(n-exp)<=1);
+      if(hit!=null) return { amount: hit, raw: 'ocr:'+text.slice(0,80) };
+      // ไม่มีตัวตรง → ไม่ auto
+      return { amount: null, candidates, raw: 'ocr:'+text.slice(0,80) };
+    }catch(e){
+      console.warn('ocr', e);
+      return null;
+    }
+  },
+
 
   attachTicketQR(){
     try{ this.ensurePayQRAsImage(); }catch(e){}
