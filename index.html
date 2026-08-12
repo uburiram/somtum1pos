@@ -348,7 +348,7 @@ const C={
         this.merchantId=d.merchantId||'EMPKB000002198793001';
         this.kshopPayload=d.kshopPayload||window.KSHOP_QR_PAYLOAD||'';
         if(d.optionConfig) this.optionConfig=Object.assign({spiceMode:'single',toppingMode:'multi',toppingAllowQty:true}, d.optionConfig);
-        document.getElementById('shopName').textContent=this.shopName;
+        const sn=document.getElementById('shopName'); if(sn) sn.textContent=this.shopName;
         document.title=this.shopName+' | สั่งอาหาร';
         this.setShopOpenState(d.isOpen!==false);
       });
@@ -381,9 +381,15 @@ const C={
         }catch(e){ console.warn('fallback get', e); }
       }, 4000);
       this.startKitchenWatch();
+      // กู้ตั๋วคิวหลังรีเฟรช (ถ้ายังไม่จบ)
+      try{ await this.restoreLastOrder(); }catch(e){ console.warn('restore', e); }
       const u=new URL(location.href); const q=u.searchParams.get('queue');
-      if(q){document.getElementById('trackQ').value=q;this.trackQueue()}
-    }catch(e){console.error(e);try{showErr('เริ่มระบบไม่สำเร็จ: '+(e.message||e));}catch(x){} try{document.getElementById('conn').textContent='ผิดพลาด';}catch(x){}}
+      if(q){
+        const tq=document.getElementById('trackQ');
+        if(tq) tq.value=q;
+        this.trackQueue();
+      }
+    }catch(e){console.error(e);try{showErr('เริ่มระบบไม่สำเร็จ: '+(e.message||e));}catch(x){} try{const c=document.getElementById('conn'); if(c) c.textContent='ผิดพลาด';}catch(x){}}
   },
   installApp(){
     var p=window.deferredPwaPrompt;
@@ -1134,6 +1140,62 @@ const C={
       return false;
     }
     return true;
+  },
+  async restoreLastOrder(){
+    let saved=null;
+    try{ saved=JSON.parse(localStorage.getItem('somtum_last_order')||'null'); }catch(e){ saved=null; }
+    if(!saved || !saved.id) return;
+    // ไม่กู้คิวที่ยกเลิก/เสร็จสมบูรณ์แล้ว
+    if(saved.status==='Cancelled' || saved.status==='Completed'){
+      try{ localStorage.removeItem('somtum_last_order'); }catch(e){}
+      return;
+    }
+    try{
+      const snap=await shopRef.collection('orders').doc(saved.id).get();
+      if(!snap.exists){
+        try{ localStorage.removeItem('somtum_last_order'); }catch(e){}
+        return;
+      }
+      const o={id:snap.id, ...snap.data()};
+      if(o.status==='Cancelled' || o.status==='Completed'){
+        try{ localStorage.removeItem('somtum_last_order'); }catch(e){}
+        return;
+      }
+      this.orderId=o.id;
+      this.lastOrder=o;
+      try{ localStorage.setItem('somtum_last_order', JSON.stringify(o)); }catch(e){}
+      // ติดตาม realtime ต่อ
+      try{ if(this.unsub) this.unsub(); }catch(e){}
+      this.unsub=shopRef.collection('orders').doc(o.id).onSnapshot(snap2=>{
+        if(!snap2.exists) return;
+        if(this.orderId && this.orderId!==snap2.id) return;
+        const d=snap2.data(); if(!d) return;
+        const prevPay=this.lastOrder && this.lastOrder.paymentStatus;
+        const prevSt=this.lastOrder && this.lastOrder.status;
+        this.lastOrder={id:snap2.id, ...d};
+        try{ localStorage.setItem('somtum_last_order', JSON.stringify(this.lastOrder)); }catch(e){}
+        // อัปเดตตั๋วถ้าเปิดอยู่
+        const modal=document.getElementById('mTicket');
+        if(modal && modal.classList.contains('on')){
+          try{ this.renderTicket(this.lastOrder); }catch(e){}
+        }
+        if(prevPay!=='PAID' && d.paymentStatus==='PAID'){
+          toast('ชำระเงินสำเร็จ');
+          try{ this.writeReceipt(this.lastOrder); }catch(e){}
+        }
+        if(prevSt && prevSt!=='Ready' && prevSt!=='Completed' && d.status==='Ready'){
+          try{ this.notifyOrderReady(this.lastOrder); }catch(e){}
+        }
+      });
+      // แสดงตั๋วคิวอัตโนมัติหลังรีเฟรช
+      try{
+        this.renderTicket(o);
+        this.show('mTicket');
+        toast('กู้คิว '+ (o.queue||'') +' แล้ว');
+      }catch(e){}
+    }catch(e){
+      console.warn('restoreLastOrder', e);
+    }
   },
   clearOrderState(){
     try{ this.stopOrderWatchers && this.stopOrderWatchers(); }catch(e){}
