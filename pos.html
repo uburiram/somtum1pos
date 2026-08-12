@@ -692,7 +692,7 @@ const M={
     }
     document.getElementById('detailBody').innerHTML=`
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <button class="btn btn-o btn-sm" onclick="document.getElementById('detailModal').classList.remove('on')">← กลับ</button>
+        <button class="btn btn-o btn-sm" onclick="(function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})()">← กลับ</button>
         <h2 style="color:var(--p)">คิว ${esc(o.queue)}</h2><div style="width:50px"></div>
       </div>
       <div style="text-align:center;margin-bottom:12px"><div style="color:#777">ยอดรวม</div>
@@ -746,13 +746,13 @@ const M={
     if(status==='Ready'){
       // ทำเสร็จแล้ว → ปิดการ์ดทันที ออกจากครัว
       const paid = (cur && cur.paymentStatus==='PAID') || patch.paymentStatus==='PAID';
-      document.getElementById('detailModal').classList.remove('on');
+      (function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})();
       this.renderOrders();
       toast(paid ? 'ทำเสร็จแล้ว → เก็บที่「พร้อมรับ」' : 'ทำเสร็จแล้ว → เก็บที่「รอชำระเงิน」');
       return;
     }
     if(status==='Completed'){
-      document.getElementById('detailModal').classList.remove('on');
+      (function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})();
       this.renderOrders();
       toast('เสร็จสมบูรณ์ · บันทึกในประวัติ');
       return;
@@ -768,7 +768,7 @@ const M={
       paymentStatus:'UNPAID', paidAmount:0, changeAmount:0
     });
     toast('ยกเลิกโดยร้านแล้ว');
-    document.getElementById('detailModal').classList.remove('on');
+    (function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})();
   },
   applyShopOpenUI(isOpen){
     this.isOpen = isOpen!==false;
@@ -837,7 +837,7 @@ const M={
       this.orders = (this.orders||[]).filter(o => o.id !== id);
       if(this.seenIds) this.seenIds.delete(id);
       if(this.unviewed) this.unviewed.delete(id);
-      document.getElementById('detailModal').classList.remove('on');
+      (function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})();
       this.loadHistory();
       this.renderOrders();
       this.updateAlarmBadge && this.updateAlarmBadge();
@@ -933,10 +933,11 @@ const M={
     const payload=Object.assign({
       paymentStatus:'PAID',
       paidAt,
-      paidAmount: patch.paidAmount,
-      changeAmount: patch.changeAmount||0,
-      paymentMethod: patch.paymentMethod
+      paidAmount: patch.paidAmount!=null ? Number(patch.paidAmount) : Number(cur&&cur.total||0),
+      changeAmount: Number(patch.changeAmount||0),
+      paymentMethod: patch.paymentMethod||'CASH'
     }, patch);
+    if(payload.paidAmount==null || isNaN(payload.paidAmount)) payload.paidAmount=Number(cur&&cur.total||0);
     // จ่ายเงินแล้ว — ไม่ย้อนสถานะครัว
     // ถ้ายังเป็น AwaitingPayment (ของเก่า) → เข้า Pending (รอคิวทำ)
     if(cur && cur.status==='AwaitingPayment'){
@@ -973,7 +974,8 @@ const M={
   },
   async payCash(id){
     const o=this.orders.find(x=>x.id===id); if(!o) return;
-    const paid=Number(document.getElementById('cashIn').value);
+    const cashEl=document.getElementById('cashIn');
+    const paid=Number(cashEl && cashEl.value);
     if(isNaN(paid)||paid<o.total){toast('เงินไม่พอ');return}
     await this.markPaid(id,{paymentMethod:'CASH',paidAmount:paid,changeAmount:paid-o.total});
     this.openDetail(id);
@@ -1028,7 +1030,7 @@ const M={
     this._lastReceiptHtml = receiptHtml;
     document.getElementById('detailModal').classList.add('on');
     document.getElementById('detailBody').innerHTML=`
-      <button class="btn btn-o btn-sm" onclick="document.getElementById('detailModal').classList.remove('on')">← ปิด</button>
+      <button class="btn btn-o btn-sm" onclick="(function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})()">← ปิด</button>
       <div style="border:1px dashed #ccc;border-radius:12px;margin-top:12px;overflow:hidden">${receiptHtml}</div>
       <button class="btn btn-g btn-block" style="margin-top:12px" onclick="M.printReceiptNow()">🖨️ พิมพ์ใบเสร็จ</button>`;
   },

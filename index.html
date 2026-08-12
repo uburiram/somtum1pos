@@ -621,10 +621,17 @@ const C={
     const t=(this.cart||[]).reduce((s,i)=>s+Number(i.total||0),0);
     const fab=document.getElementById('fab');
     if(!fab) return;
+    const hasActive=!!(this.orderId && this.lastOrder &&
+      this.lastOrder.status!=='Cancelled' && this.lastOrder.status!=='Completed');
     if(c){
       fab.style.display='flex';
       const fc=document.getElementById('fabCount'); if(fc) fc.textContent=c+' รายการ';
       const ft=document.getElementById('fabTotal'); if(ft) ft.textContent=money(t);
+    } else if(hasActive){
+      // ตะกร้าว่างแต่มีคิวยังไม่จบ → ปุ่มลัดดูตั๋ว
+      fab.style.display='flex';
+      const fc=document.getElementById('fabCount'); if(fc) fc.textContent='คิว '+(this.lastOrder.queue||'');
+      const ft=document.getElementById('fabTotal'); if(ft) ft.textContent='ดูตั๋ว';
     } else {
       fab.style.display='none';
     }
@@ -642,6 +649,14 @@ const C={
   },
   openCart(){
     const el=document.getElementById('cartList');
+    if(!el) return;
+    // มีคิวยังไม่จบ + ตะกร้าว่าง → เปิดตั๋วคิวให้เลย
+    if((!this.cart || !this.cart.length) && this.orderId && this.lastOrder &&
+        this.lastOrder.status!=='Cancelled' && this.lastOrder.status!=='Completed'){
+      this.renderTicket(this.lastOrder);
+      this.show('mTicket');
+      return;
+    }
     if(!this.cart.length) el.innerHTML='<div style="text-align:center;color:#999;padding:20px">ตะกร้าว่าง</div>';
     else el.innerHTML=this.cart.map((i,idx)=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty} (${money(t.total)})`).join(', ');
@@ -1187,11 +1202,16 @@ const C={
           try{ this.notifyOrderReady(this.lastOrder); }catch(e){}
         }
       });
-      // แสดงตั๋วคิวอัตโนมัติหลังรีเฟรช
+      // แสดงตั๋วคิวหลังรีเฟรช (ถ้าตะกร้าว่าง — ไม่รบกวนตอนกำลังเลือกเมนู)
       try{
         this.renderTicket(o);
-        this.show('mTicket');
-        toast('กู้คิว '+ (o.queue||'') +' แล้ว');
+        if(!(this.cart && this.cart.length)){
+          this.show('mTicket');
+          toast('กู้คิว '+ (o.queue||'') +' แล้ว');
+        } else {
+          toast('มีคิวค้าง '+ (o.queue||'') +' · กดตะกร้าเพื่อดูตั๋ว');
+        }
+        try{ this.updFab(); }catch(e){}
       }catch(e){}
     }catch(e){
       console.warn('restoreLastOrder', e);
@@ -1216,6 +1236,7 @@ const C={
       const sf=document.getElementById('slipFile');
       if(sf) sf.value='';
     }catch(e){}
+    try{ this.updFab(); }catch(e){}
   },
   startNewOrder(){
     this.clearOrderState();
@@ -1284,7 +1305,8 @@ const C={
         status: 'Pending',
         paymentStatus: 'UNPAID'
       });
-      // createOrderInternal เปิดตั๋วคิว + toast เลขคิวแล้ว
+      // createOrderInternal เปิดตั๋วคิวแล้ว — รีเซ็ตปุ่มเผื่อเปิด mPay อีก
+      if(btn){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
     }catch(e){
       console.error(e);
       toast('ส่งไม่สำเร็จ: '+(e.message||e));
