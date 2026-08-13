@@ -101,6 +101,13 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
 <div class="search"><input type="search" id="q" placeholder="🔍 ค้นหาเมนู..." oninput="C.search(this.value)"></div>
 <div class="cats" id="cats"></div>
 <div class="grid" id="menus"><div style="grid-column:1/-1;text-align:center;padding:40px;color:#999">กำลังโหลดเมนู…</div></div>
+<div id="customerContactFooter" style="margin:28px 12px 100px;padding:16px;background:#FFF8F5;border:1px solid #FFE0D6;border-radius:14px;text-align:center;line-height:1.55;font-size:13px;color:#555">
+  <div style="font-weight:700;color:#E65100;margin-bottom:6px">หากพบปัญหาในการสั่งออเดอร์ โปรดติดต่อ</div>
+  <div style="font-weight:700;color:#333;margin-bottom:4px">ร้านส้มตำนายหนึ่ง</div>
+  <div>คุณการัณย์ โทร <a href="tel:0970376266" style="color:#1565C0;font-weight:600;text-decoration:none">0970376266</a></div>
+  <div>คุณนรากร โทร <a href="tel:0961246872" style="color:#1565C0;font-weight:600;text-decoration:none">0961246872</a></div>
+  <div style="margin-top:6px;font-size:12px;color:#777">หรือติดต่อผ่าน Line ตามเบอร์โทรได้เลยครับ</div>
+</div>
 <div class="fab" id="fab" onclick="C.openCart()"><span id="fabCount">0 รายการ</span><span id="fabTotal">฿0</span></div>
 
 <div class="ov" id="mProduct"><div class="md">
@@ -821,6 +828,75 @@ const C={
       toast(e.message||'อ่านสลิปไม่สำเร็จ');
     }
   },
+  /** แปลงวันเวลาจากสลิป/API เป็น timestamp (ms) — รองรับหลายฟอร์แมต */
+  parseSlipDateTime(raw){
+    if(raw==null || raw==='') return null;
+    if(typeof raw==='number' && isFinite(raw)){
+      // วินาที vs มิลลิวินาที
+      return raw < 1e12 ? raw*1000 : raw;
+    }
+    const s=String(raw).trim();
+    if(!s) return null;
+    // ISO / EasySlip เช่น 2024-01-15T14:30:00+07:00
+    let t=Date.parse(s);
+    if(!isNaN(t)) return t;
+    // 15/01/2024 14:30 หรือ 15-01-2024 14:30:00
+    let m=s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})(?:\s+|T)(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if(m){
+      let dd=+m[1], mo=+m[2], yy=+m[3];
+      if(yy<100) yy+=2000;
+      // ถ้า mo>12 แปลว่าเป็น US format MM/DD
+      if(mo>12 && dd<=12){ const tmp=dd; dd=mo; mo=tmp; }
+      const hh=+m[4], mi=+m[5], ss=m[6]?+m[6]:0;
+      // ใช้เวลาท้องถิ่นไทยโดยประมาณ (เครื่องลูกค้ามักเป็น +7)
+      const d=new Date(yy, mo-1, dd, hh, mi, ss);
+      if(!isNaN(d.getTime())) return d.getTime();
+    }
+    // 2024-01-15 14:30
+    m=s.match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+    if(m){
+      const d=new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], m[6]?+m[6]:0);
+      if(!isNaN(d.getTime())) return d.getTime();
+    }
+    return null;
+  },
+  /** วันเดียวกัน (ตามปฏิทินท้องถิ่นเครื่อง) */
+  isSameLocalDay(tsA, tsB){
+    if(tsA==null || tsB==null) return false;
+    const a=new Date(tsA), b=new Date(tsB);
+    return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+  },
+  /**
+   * ตรวจวัน-เวลาสลิปเทียบออเดอร์
+   * - ต้องวันเดียวกัน
+   * - เวลาในสลิปต้องไม่ก่อนเวลาสั่ง (ยอมให้คลาดเคลื่อน 60 วินาที)
+   */
+  validateSlipVsOrderTime(slipTs, orderCreatedAt){
+    const orderTs=Number(orderCreatedAt||0);
+    if(!orderTs) return {ok:true, msg:'ไม่มีเวลาออเดอร์ — ข้ามตรวจเวลา'};
+    if(slipTs==null) return {ok:false, needManual:true, msg:'อ่านวันเวลาจากสลิปไม่ได้ · รอร้านตรวจ'};
+    if(!this.isSameLocalDay(slipTs, orderTs)){
+      return {ok:false, needManual:true, msg:'วันในสลิปไม่ตรงกับวันสั่งออเดอร์'};
+    }
+    // เวลาสลิปต้อง >= เวลาสั่ง (ยอม -60s)
+    if(slipTs < orderTs - 60000){
+      return {ok:false, needManual:true, msg:'เวลาในสลิปอยู่ก่อนเวลาสั่งออเดอร์'};
+    }
+    return {ok:true, msg:'วันเวลาสลิปผ่าน'};
+  },
+  extractSlipDateFromEasy(j){
+    if(!j || typeof j!=='object') return null;
+    const cands=[
+      j?.data?.date, j?.data?.transDate, j?.date,
+      j?.data?.rawSlip?.date, j?.data?.transactionDate,
+      j?.data?.dateTime, j?.data?.transferDate
+    ];
+    for(const c of cands){
+      const ts=this.parseSlipDateTime(c);
+      if(ts!=null) return ts;
+    }
+    return null;
+  },
   async uploadSlipToOrder(orderId, dataUrl){
     const sm=document.getElementById('slipAutoMsg');
     const tsm=document.getElementById('ticketSlipMsg');
@@ -905,7 +981,7 @@ const C={
       /* bg ocr */
       const ocr=await this.readAmountByOCR(dataUrl, amount);
       if(ocr && ocr.amount!=null && Math.abs(Number(ocr.amount)-amount)<=1){
-        await this.autoMarkPaidFromSlip(orderId, dataUrl, {msg:'OCR ยอดตรงออเดอร์', amount:Number(ocr.amount)});
+        await this.autoMarkPaidFromSlip(orderId, dataUrl, {msg:'OCR ยอดตรงออเดอร์', amount:Number(ocr.amount), slipTs:ocr.slipTs||null});
         setMsg('<span style="color:#2E7D32">✓ ยอดในสลิปตรงออเดอร์ · ยืนยันรับโอนอัตโนมัติ</span>');
         toast('ชำระเงินสำเร็จ (ตรวจอัตโนมัติ)');
         return;
@@ -929,20 +1005,52 @@ const C={
     }catch(e){}
   },
   async autoMarkPaidFromSlip(orderId, dataUrl, meta){
+    meta=meta||{};
+    let order={};
+    try{
+      const snap=await shopRef.collection('orders').doc(orderId).get();
+      order=snap.exists?snap.data():{};
+    }catch(e){}
+    const orderTs=Number(order.createdAt||0);
+    // ดึงวันเวลาจาก meta / EasySlip raw
+    let slipTs=meta.slipTs!=null?Number(meta.slipTs):null;
+    if(slipTs==null && meta.raw) slipTs=this.extractSlipDateFromEasy(meta.raw);
+    if(slipTs==null && meta.date) slipTs=this.parseSlipDateTime(meta.date);
+
+    const timeCheck=this.validateSlipVsOrderTime(slipTs, orderTs);
+    if(!timeCheck.ok){
+      const note=timeCheck.msg||'วันเวลาสลิปไม่ผ่าน';
+      try{
+        await shopRef.collection('orders').doc(orderId).update({
+          slipData:dataUrl,
+          slipStatus:'PENDING_REVIEW',
+          slipVerifyNote:note,
+          slipCheckedAt:Date.now()
+        });
+      }catch(e){ console.warn(e); }
+      this._applyLocalSlip(orderId, dataUrl, 'PENDING_REVIEW');
+      try{
+        const sm=document.getElementById('slipAutoMsg');
+        const tsm=document.getElementById('ticketSlipMsg');
+        const html='<span style="color:#E65100">'+note+' · รอร้านตรวจ</span>';
+        if(sm) sm.innerHTML=html; if(tsm) tsm.innerHTML=html;
+      }catch(e){}
+      return {ok:false, needManual:true, msg:note};
+    }
+
     const patch={
       slipData:dataUrl,
       slipStatus:'AUTO_APPROVED',
       paymentStatus:'PAID',
       paymentMethod:'PROMPTPAY',
       paidAt:Date.now(),
-      paidAmount: meta&&meta.amount!=null?Number(meta.amount):undefined,
-      slipVerifyNote: (meta&&meta.msg)||'ตรวจอัตโนมัติผ่าน',
-      autoPaid:true
+      paidAmount: meta.amount!=null?Number(meta.amount):Number(order.total||0),
+      slipVerifyNote: (meta.msg||'ตรวจอัตโนมัติผ่าน')+' · '+timeCheck.msg,
+      autoPaid:true,
+      slipCheckedAt:Date.now()
     };
-    if(patch.paidAmount==null){
-      const snap=await shopRef.collection('orders').doc(orderId).get();
-      patch.paidAmount=Number((snap.data()||{}).total||0);
-    }
+    if(slipTs) patch.slipTransAt=slipTs;
+    if(isNaN(patch.paidAmount)) patch.paidAmount=Number(order.total||0);
     await shopRef.collection('orders').doc(orderId).update(patch);
     try{
       const snap=await shopRef.collection('orders').doc(orderId).get();
@@ -951,6 +1059,7 @@ const C={
       this.writeReceipt(full);
       this.renderTicket(full);
     }catch(e){}
+    return {ok:true};
   },
   async readAmountFromSlipImage(dataUrl){
     // โหลด jsQR
@@ -1073,7 +1182,13 @@ const C={
       // ถ้ามียอดตรง expected (±1) เลือกอันนั้น
       const exp=Number(expectedAmount||0);
       const hit=candidates.find(n=>Math.abs(n-exp)<=1);
-      if(hit!=null) return { amount: hit, raw: 'ocr:'+text.slice(0,80) };
+      if(hit!=null){
+        const slipTs=this.parseSlipDateTime(
+          (text.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\s+\d{1,2}:\d{2}(?::\d{2})?)/)||[])[1]
+          || (text.match(/(\d{4}-\d{2}-\d{2}[ T]\d{1,2}:\d{2})/)||[])[1]
+        );
+        return { amount: hit, slipTs, raw: 'ocr:'+text.slice(0,80) };
+      }
       // ไม่มีตัวตรง → ไม่ auto
       return { amount: null, candidates, raw: 'ocr:'+text.slice(0,80) };
     }catch(e){
@@ -1430,12 +1545,12 @@ const C={
         return {ok:false,msg:'ตรวจสลิปอัตโนมัติไม่สำเร็จ ('+r.status+') — รอร้านตรวจมือ', raw:t};
       }
       const j=await r.json();
-      // ตรวจยอดคร่าว ๆ ถ้ามี
-      const paid=Number(j?.data?.amount || j?.amount || 0);
+      const paid=Number(j?.data?.amount?.amount || j?.data?.amount || j?.amount || 0);
       if(paid && Math.abs(paid-amount)>1){
-        return {ok:false,msg:'ยอดในสลิปไม่ตรง ฿'+paid, raw:j};
+        return {ok:false,msg:'ยอดในสลิปไม่ตรง ฿'+paid, amount:paid, raw:j};
       }
-      return {ok:true,msg:'✓ ตรวจสลิปอัตโนมัติผ่าน', raw:j};
+      const slipTs=this.extractSlipDateFromEasy(j);
+      return {ok:true,msg:'✓ ตรวจสลิปอัตโนมัติผ่าน', amount:paid||amount, slipTs, raw:j};
     }catch(e){
       return {ok:false,msg:'ตรวจอัตโนมัติไม่ได้ (อาจติด CORS) — รอร้านตรวจมือ', error:String(e.message||e)};
     }
@@ -1469,11 +1584,14 @@ const C={
     return ['Pending','Cooking','AwaitingPayment'].includes(st);
   },
   isSomtumItem(item){
-    const cat=String(item.catName||item.categoryName||'').trim();
-    if(/ส้มตำ|เมนูส้มตำ|somtum/i.test(cat)) return true;
+    // ใช้เฉพาะหมวด "เมนูส้มตำ" ในการคำนวณเวลารอ — หมวดอื่นไม่นับ
+    const cat=String(item.catName||item.categoryName||item.cat||'').trim();
+    if(/เมนูส้มตำ/i.test(cat)) return true;
+    if(/^ส้มตำ$/i.test(cat) || /หมวด.?ส้มตำ/i.test(cat)) return true;
+    // ออเดอร์เก่าที่ไม่มี catName: ชื่อขึ้นต้น/มีคำว่าส้มตำ หรือ ตำ... แต่ไม่ใช่กินคู่/เครื่องดื่ม
+    if(cat) return false; // มีหมวดชัดเจนแล้วแต่ไม่ใช่ส้มตำ → ไม่นับ
     const n=String(item.name||'');
-    // fallback ออเดอร์เก่าที่ไม่มี catName
-    return /(ตำ|ส้มตำ)/.test(n) && !/ยำ|ทอด|น้ำ|ไข่|เครื่องดื่ม|ของทาน|กินคู่/.test(n);
+    return /(ส้มตำ|^ตำ)/.test(n) && !/ยำ|ทอด|เครื่องดื่ม|ของทาน|กินคู่|ไข่เจียว|น้ำ/.test(n);
   },
   countSomtumQty(order){
     return (order.items||[]).reduce((s,it)=>{
@@ -1688,8 +1806,8 @@ const C={
             queueText='<div style="font-weight:700;color:#E65100;font-size:15px">เหลืออีก <span style="font-size:1.35rem">'+eta.ahead+'</span> คิว จะถึงคิวคุณ</div>';
           }
           const minText=eta.minutes>0
-            ? ('<div style="margin-top:6px;font-size:14px;color:#555">รอประมาณ <strong style="color:var(--p)">'+eta.minutes+' นาที</strong></div>')
-            : ('<div style="margin-top:6px;font-size:13px;color:#777">ยังไม่มีรายการส้มตำในคิวก่อนหน้า · รอไม่นาน</div>');
+            ? ('<div style="margin-top:6px;font-size:14px;color:#555">รอประมาณ <strong style="color:var(--p)">'+eta.minutes+' นาที</strong><div style="font-size:11px;color:#999;margin-top:2px">คำนวณจากเมนูหมวดส้มตำเท่านั้น (ประมาณ 2 นาที/รายการ)</div></div>')
+            : ('<div style="margin-top:6px;font-size:13px;color:#777">ยังไม่มีรายการในหมวดเมนูส้มตำในคิวก่อนหน้า · รอไม่นาน</div>');
           const hint='<div style="margin-top:6px;font-size:11px;color:#999">คำนวณจากเมนูส้มตำในคิวที่ยังอยู่ในครัว · รายการละ ~2 นาที</div>';
           etaBox.innerHTML=queueText+minText+hint;
         } else {
