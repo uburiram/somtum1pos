@@ -733,15 +733,85 @@ const C={
     return /Line\//i.test(navigator.userAgent||'');
   },
   getPayQRDataUrl(){
+    if(this._payQRDataUrl) return this._payQRDataUrl;
     const box=document.getElementById('ppQR');
-    if(!box) return '';
-    const canvas=box.querySelector('canvas');
-    const img=box.querySelector('img');
-    if(img && img.src) return img.src;
-    if(canvas){
-      try{ return canvas.toDataURL('image/png'); }catch(e){ return ''; }
+    if(box){
+      const img=box.querySelector('img');
+      if(img && img.src && String(img.src).indexOf('data:')===0) return img.src;
+      const canvas=box.querySelector('canvas');
+      if(canvas){
+        try{ return canvas.toDataURL('image/png'); }catch(e){}
+      }
     }
-    return this._payQRDataUrl||'';
+    const tbox=document.getElementById('ticketPayQrBox');
+    if(tbox){
+      const img=tbox.querySelector('img');
+      if(img && img.src) return img.src;
+    }
+    return '';
+  },
+  buildPayPayload(amount){
+    const total=Math.max(0, Number(amount||0));
+    try{
+      if(this.payType==='kshop' || this.payType==='merchant'){
+        const kshopPayload=this.kshopPayload||window.KSHOP_QR_PAYLOAD||'';
+        let p=null;
+        try{ p=PP.genKShop(total, kshopPayload); }catch(e){}
+        if(!p){ try{ p=PP.genMerchant(this.merchantId||window.KSHOP_REF||'EMPKB000002198793001', total); }catch(e){} }
+        if(p) return p;
+      }
+      return PP.gen(this.promptpay||'', total);
+    }catch(e){
+      console.warn('buildPayPayload', e);
+      try{ return PP.gen(this.promptpay||'', total); }catch(e2){ return null; }
+    }
+  },
+  /** สร้าง QR ลง element บนตั๋ว — ไม่พึ่งหน้าชำระเงิน */
+  renderPayQRInto(el, amount){
+    if(!el) return '';
+    const total=Number(amount||0);
+    const payload=this.buildPayPayload(total);
+    if(!payload){
+      el.innerHTML='<div style="color:#C62828;font-size:13px;padding:8px">ตั้งค่า PromptPay/QR ร้านไม่ครบ</div>';
+      return '';
+    }
+    if(typeof QRCode==='undefined'){
+      el.innerHTML='<div style="color:#999;font-size:13px">กำลังโหลด QR…</div>';
+      return '';
+    }
+    try{
+      el.innerHTML='';
+      // qrcodejs ต้องการ element ว่างแล้วสร้าง canvas ภายใน
+      const holder=document.createElement('div');
+      holder.style.cssText='display:inline-block;padding:6px;background:#fff;border-radius:12px';
+      el.appendChild(holder);
+      new QRCode(holder, { text: String(payload), width: 200, height: 200 });
+      let dataUrl='';
+      const canvas=holder.querySelector('canvas');
+      const img0=holder.querySelector('img');
+      if(canvas){
+        try{ dataUrl=canvas.toDataURL('image/png'); }catch(e){}
+      }
+      if(!dataUrl && img0 && img0.src) dataUrl=img0.src;
+      if(dataUrl){
+        this._payQRDataUrl=dataUrl;
+        this._payQRAmount=total;
+        const img=document.createElement('img');
+        img.setAttribute('data-payqr','1');
+        img.src=dataUrl;
+        img.alt='QR ชำระเงิน';
+        img.style.cssText='width:220px;max-width:100%;height:auto;background:#fff;border-radius:12px;-webkit-touch-callout:default;pointer-events:auto';
+        el.innerHTML='';
+        el.appendChild(img);
+        return dataUrl;
+      }
+      // เหลือ canvas ไว้ก็ยังสแกนได้
+      return '';
+    }catch(e){
+      console.warn('renderPayQRInto', e);
+      el.innerHTML='<div style="color:#C62828;font-size:13px">สร้าง QR ไม่สำเร็จ: '+(e.message||e)+'</div>';
+      return '';
+    }
   },
   ensurePayQRAsImage(){
     const box=document.getElementById('ppQR');
@@ -1841,19 +1911,20 @@ const C={
         '<div style="margin-top:10px"><button type="button" class="btn btn-p btn-sm" style="width:auto" onclick="document.getElementById(\'slipFile\').click()">📎 อัปโหลดสลิปโอนเงิน</button></div>'+
         '<div id="ticketSlipMsg" style="font-size:12px;margin-top:6px;color:#666"></div>';
       const box=document.getElementById('ticketPayQrBox');
-      try{
-        if(needNew || !this.getPayQRDataUrl()){
+      const draw=()=>{
+        try{
+          if(!box) return false;
+          // บังคับสร้างใหม่เสมอเมื่อยังไม่ชำระ — กัน cache ว่าง
           this.renderPayQRInto(box, amount);
-        } else {
-          box.innerHTML='<img data-payqr="1" src="'+this.getPayQRDataUrl()+'" alt="QR" style="width:220px;max-width:100%;background:#fff;border-radius:12px;-webkit-touch-callout:default">';
+          return !!(box.querySelector('img,canvas'));
+        }catch(e){
+          console.warn('ticketQR', e);
+          if(box) box.innerHTML='<div style="color:#C62828;font-size:13px">สร้าง QR ไม่สำเร็จ: '+(e.message||e)+'</div>';
+          return false;
         }
-        // ถ้ายังว่าง (lib ยังไม่พร้อม) ลองอีกครั้งสั้น ๆ
-        if(!box.querySelector('img,canvas')){
-          setTimeout(()=>{ try{ this.renderPayQRInto(box, amount); }catch(e){} }, 400);
-        }
-      }catch(e){
-        console.warn(e);
-        if(box) box.innerHTML='<div style="color:#C62828">สร้าง QR ไม่สำเร็จ · ลองรีเฟรช</div>';
+      };
+      if(!draw()){
+        setTimeout(()=>{ if(!draw()) setTimeout(draw, 800); }, 400);
       }
     } else {
       qz.style.display='none'; qz.innerHTML='';
