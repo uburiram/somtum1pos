@@ -1731,8 +1731,8 @@ const C={
     const paid=(o.paymentStatus==='PAID');
     const cancelled=(o.status==='Cancelled');
     const hasSlip=!!(o.slipData) || (o.slipStatus && o.slipStatus!=='NONE');
-    // แสดง QR ตลอดจนกว่าร้านยืนยันรับเงิน (เงินสด/โอน) หรือลูกค้าแนบสลิปแล้ว
-    const waitPay=!paid && !cancelled && !hasSlip;
+    // แสดง QR ตลอดจนกว่าร้านยืนยันรับเงินแล้วเท่านั้น (รีเฟรช/ค้นคิว/แนบสลิปแล้วยังโชว์)
+    const waitPay=!paid && !cancelled;
     const map={
       Pending: paid ? ['bw','🟡 รอครัวรับออเดอร์'] : ['bw','🟡 รอชำระเงิน / รอรับออเดอร์'],
       Cooking:['bi','🔵 กำลังทำ'],
@@ -1832,6 +1832,7 @@ const C={
       qz.innerHTML= (dataUrl?('<img data-payqr="1" src="'+dataUrl+'" alt="QR" style="width:220px;max-width:100%;background:#fff;border-radius:12px;-webkit-touch-callout:default">'):'<div style="color:#999">QR อยู่หน้าชำระเงิน</div>') +
         '<div style="font-size:12px;color:#E65100;margin-top:6px">'+(this.isLineBrowser()?'ใน LINE: กดค้างที่รูป → บันทึกรูป':'กดค้างที่รูปเพื่อบันทึก')+'</div>'+
         '<div style="font-size:12px;color:#555;margin-top:4px">หรือจ่ายเงินสดที่ร้าน · พนักงานกดยืนยันรับเงินสด</div>'+
+        (hasSlip?'<div style="font-size:12px;color:#E65100;margin-top:4px">ส่งสลิปแล้ว · รอร้านตรวจ — QR ยังใช้ได้จนกว่าร้านยืนยันรับเงิน</div>':'')+
         '<button type="button" class="btn btn-o btn-sm" style="margin-top:8px;width:auto" onclick="C.openPayQRFull()">เปิดรูป QR เต็มจอ</button>'+
         '<button type="button" class="btn btn-o btn-sm" style="margin-top:8px;width:auto" onclick="C.savePayQR()">บันทึก / แชร์ QR</button>'+
         '<div style="margin-top:10px"><button type="button" class="btn btn-p btn-sm" style="width:auto" onclick="document.getElementById(\'slipFile\').click()">📎 อัปโหลดสลิปโอนเงิน</button></div>'+

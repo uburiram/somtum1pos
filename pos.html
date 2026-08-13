@@ -579,7 +579,7 @@ const M={
           this.unviewed=new Set();
           this.ready=true;
         }
-        this.lastActive=active; this.renderOrders();
+        this.lastActive=active; this.renderOrders(); this.startEtaTicker();
         this.updateAlarmBadge();
       }, err=>{
         console.warn('orderBy snapshot failed, fallback', err);
@@ -650,6 +650,80 @@ const M={
       bar.style.display='none';
     }
   },
+  isSomtumItem(item){
+    const cat=String(item.catName||item.categoryName||item.cat||'').trim();
+    if(/เมนูส้มตำ/i.test(cat)) return true;
+    if(/^ส้มตำ$/i.test(cat) || /หมวด.?ส้มตำ/i.test(cat)) return true;
+    if(cat) return false;
+    const n=String(item.name||'');
+    return /(ส้มตำ|^ตำ)/.test(n) && !/ยำ|ทอด|เครื่องดื่ม|ของทาน|กินคู่|ไข่เจียว|น้ำ/.test(n);
+  },
+  countSomtumQty(order){
+    return (order.items||[]).reduce((s,it)=>{
+      if(!this.isSomtumItem(it)) return s;
+      return s+Number(it.qty||0);
+    },0);
+  },
+  isKitchenStatus(st){
+    return ['Pending','Cooking','AwaitingPayment'].includes(st);
+  },
+  /** นาทีรอแบบเดียวกับตั๋วลูกค้า: คิวก่อนหน้าในครัว + ของตัวเอง × 2 นาที/รายการส้มตำ */
+  calcOrderEtaMinutes(order){
+    if(!order || !this.isKitchenStatus(order.status)) return 0;
+    const myT=Number(order.createdAt||0);
+    const myId=order.id;
+    const kitchen=(this.orders||[]).filter(o=>this.isKitchenStatus(o.status) && (o.items||[]).length>0);
+    const ahead=kitchen.filter(o=>{
+      if(o.id===myId) return false;
+      const t=Number(o.createdAt||0);
+      if(t<myT) return true;
+      if(t===myT && String(o.id)<String(myId)) return true;
+      return false;
+    });
+    const somtumAhead=ahead.reduce((s,o)=>s+this.countSomtumQty(o),0);
+    const somtumMine=this.countSomtumQty(order);
+    return (somtumAhead+somtumMine)*2;
+  },
+  formatEtaCountdown(order){
+    if(!order || order.status==='Ready' || order.status==='Completed' || order.status==='Cancelled'){
+      return '';
+    }
+    if(!this.isKitchenStatus(order.status)) return '';
+    const mins=this.calcOrderEtaMinutes(order);
+    if(mins<=0) return '<div class="eta-cd" style="margin-top:6px;font-size:12px;font-weight:700;color:#2E7D32">⏱ ถึงคิวแล้ว / ใกล้เสร็จ</div>';
+    // นับถอยหลังจากเวลาสั่ง + นาทีประมาณ
+    const endAt=Number(order.createdAt||Date.now())+mins*60000;
+    const leftMs=endAt-Date.now();
+    if(leftMs<=0) return '<div class="eta-cd" style="margin-top:6px;font-size:12px;font-weight:700;color:#C62828">⏱ เลยกำหนดแล้ว · เร่งทำ</div>';
+    const leftMin=Math.ceil(leftMs/60000);
+    const mm=Math.floor(leftMs/60000);
+    const ss=Math.floor((leftMs%60000)/1000);
+    const clock=String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0');
+    return '<div class="eta-cd" data-end="'+endAt+'" style="margin-top:6px;font-size:12px;font-weight:700;color:#E65100">⏱ เหลือ ~'+leftMin+' นาที <span style="font-variant-numeric:tabular-nums">('+clock+')</span></div>';
+  },
+  startEtaTicker(){
+    if(this._etaTicker) return;
+    this._etaTicker=setInterval(()=>{
+      try{
+        // อัปเดตเฉพาะตัวเลขนับถอยหลังโดยไม่รีเรนเดอร์ทั้งกริด (เบา)
+        document.querySelectorAll('.eta-cd[data-end]').forEach(el=>{
+          const endAt=Number(el.getAttribute('data-end')||0);
+          const leftMs=endAt-Date.now();
+          if(leftMs<=0){
+            el.style.color='#C62828';
+            el.textContent='⏱ เลยกำหนดแล้ว · เร่งทำ';
+            el.removeAttribute('data-end');
+            return;
+          }
+          const leftMin=Math.ceil(leftMs/60000);
+          const mm=Math.floor(leftMs/60000);
+          const ss=Math.floor((leftMs%60000)/1000);
+          const clock=String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0');
+          el.textContent='⏱ เหลือ ~'+leftMin+' นาที ('+clock+')';
+        });
+      }catch(e){}
+    }, 1000);
+  },
   renderOrders(){
     const today=new Date(); today.setHours(0,0,0,0); const t0=today.getTime();
     // กรองออเดอร์ผีที่ไม่มีรายการเมนู (กันการ์ดค้างว่าง)
@@ -711,6 +785,7 @@ const M={
         <div style="text-align:right"><div style="color:#888;font-size:12px">${o.createdAt?new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}</div>
         <div style="font-size:11px;font-weight:600;margin-top:2px;color:${o.status==='Cooking'?'#1565C0':o.status==='Ready'?'#2E7D32':'#E65100'}">${({Pending:'รอคิวทำ',AwaitingPayment:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:'ยกเลิก'})[o.status]||o.status}</div></div></div>
         <div style="margin:8px 0;color:#444">${esc(prev)}</div>
+        ${this.formatEtaCountdown(o)}
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px"><strong style="color:var(--p);font-size:1.25rem">${money(o.total)}</strong><span style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${method}${pay}${slip}</span></div></div>`;
     }).join('');
   },
