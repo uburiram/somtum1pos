@@ -878,11 +878,15 @@ const C={
     if(!this.isSameLocalDay(slipTs, orderTs)){
       return {ok:false, needManual:true, msg:'วันในสลิปไม่ตรงกับวันสั่งออเดอร์'};
     }
-    // เวลาสลิปต้อง >= เวลาสั่ง (ยอม -60s)
-    if(slipTs < orderTs - 60000){
-      return {ok:false, needManual:true, msg:'เวลาในสลิปอยู่ก่อนเวลาสั่งออเดอร์'};
+    // กรอบ 5 นาที: ถ้าเวลาในสลิปอยู่ก่อนเวลาสั่ง >= 5 นาที → ไม่ผ่าน
+    // (ยอมคลาดเคลื่อนนาฬิกาธนาคารได้ไม่เกิน 5 นาที)
+    const FIVE_MIN=5*60*1000;
+    if(slipTs < orderTs - FIVE_MIN){
+      return {ok:false, needManual:true, msg:'เวลาในสลิปอยู่ก่อนเวลาสั่งออเดอร์เกิน 5 นาที'};
     }
-    return {ok:true, msg:'วันเวลาสลิปผ่าน'};
+    // เวลาในสลิปอยู่ก่อนสั่งเล็กน้อย (<5 นาที) ยังผ่านได้ — กันนาฬิกาธนาคารคลาด
+    // เวลาในสลิปหลังสั่ง → ผ่านตามปกติ
+    return {ok:true, msg:'วันเวลาสลิปผ่าน (≥ เกณฑ์ 5 นาที)'};
   },
   extractSlipDateFromEasy(j){
     if(!j || typeof j!=='object') return null;
