@@ -1424,8 +1424,9 @@ const M={
 
   async awardMemberPoints(order){
     if(!order||!order.memberPhone||order.pointsAwarded) return;
-    const paid=Number(order.paidAmount!=null?order.paidAmount:order.total||0);
-    const earn=Math.floor(paid/100);
+    // สะสมแต้มจากยอดขายจริง (total หลังส่วนลด) ไม่ใช่เงินสดทอน/รับเกิน
+    const sale=Math.max(0, Number(order.total!=null?order.total:0));
+    const earn=Math.floor(sale/100);
     const phone=this.normPhone(order.memberPhone);
     try{
       await db.runTransaction(async tx=>{
@@ -1438,7 +1439,7 @@ const M={
         const md=ms.data()||{};
         tx.update(mref,{
           points:Number(md.points||0)+earn,
-          totalSpent:Number(md.totalSpent||0)+paid,
+          totalSpent:Number(md.totalSpent||0)+sale,
           orderCount:Number(md.orderCount||0)+1,
           updatedAt:Date.now()
         });

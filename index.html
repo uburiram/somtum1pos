@@ -735,7 +735,16 @@ const C={
     document.getElementById('cartSum').textContent=money(this.cart.reduce((s,i)=>s+i.total,0));
     this.show('mCart');
   },
-  rmCart(i){this.cart.splice(i,1);this.updFab();this.openCart()},
+  rmCart(i){
+    this.cart.splice(i,1);
+    this.updFab();
+    this.openCart();
+    // ถ้าอยู่หน้าชำระเงิน ให้คำนวณส่วนลด/QR ใหม่ตามตะกร้า
+    try{
+      const pay=document.getElementById('mPay');
+      if(pay && pay.classList.contains('on')) this.recalcPayTotal();
+    }catch(e){}
+  },
   checkout(){
     if(!this.cart.length)return;
     try{ this.recalcPayTotal(); }catch(e){}
@@ -1915,8 +1924,9 @@ const C={
 
   async awardMemberPoints(order){
     if(!order || !order.memberPhone || order.pointsAwarded) return;
-    const paid=Number(order.paidAmount!=null ? order.paidAmount : order.total||0);
-    const earn=Math.floor(paid/100);
+    // สะสมแต้มจากยอดขายจริง (total หลังส่วนลด) ไม่ใช่เงินสดที่รับเกิน
+    const sale=Math.max(0, Number(order.total!=null ? order.total : 0));
+    const earn=Math.floor(sale/100);
     const phone=this.normPhone(order.memberPhone);
     if(!phone) return;
     try{
@@ -1933,7 +1943,7 @@ const C={
         const md=ms.data()||{};
         tx.update(mref,{
           points: Number(md.points||0)+earn,
-          totalSpent: Number(md.totalSpent||0)+paid,
+          totalSpent: Number(md.totalSpent||0)+sale,
           orderCount: Number(md.orderCount||0)+1,
           updatedAt: Date.now()
         });
