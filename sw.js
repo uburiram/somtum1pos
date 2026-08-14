@@ -1,5 +1,5 @@
 /* Somtum POS PWA Service Worker */
-const CACHE = 'somtum-pwa-v55';
+const CACHE = 'somtum-pwa-v56';
 const ASSETS = [
   './',
   './index.html',

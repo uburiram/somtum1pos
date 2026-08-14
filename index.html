@@ -2179,7 +2179,7 @@ const C={
       createdAt: Date.now()
     };
     await shopRef.collection('orders').doc(id).set(order);
-    // sync สิทธิ์บน client หลังตัดจริงแล้ว (กันสั่งซ้ำด้วยยอดแต้มเก่า)
+    // sync สิทธิ์บน client หลังตัดจริงแล้ว (กันสั่งซ้ำด้วยยอดแต้ม/คูปองเก่า)
     try{
       if(this.member && memberPhone){
         if(pointsUsed>0) this.member.points=Math.max(0, Number(this.member.points||0)-pointsUsed);
@@ -2189,11 +2189,11 @@ const C={
             return c;
           });
         }
-        this.selectedPersonalCouponId='';
-        const ptsEl=document.getElementById('memPointsUse'); if(ptsEl) ptsEl.value='0';
-        const cpEl=document.getElementById('memCoupon'); if(cpEl) cpEl.value='';
-        this.memDiscount={ pointsUsed:0, couponCode:'', couponDisc:0, pointsDisc:0, totalDisc:0 };
       }
+      this.selectedPersonalCouponId='';
+      const ptsEl=document.getElementById('memPointsUse'); if(ptsEl) ptsEl.value='0';
+      const cpEl=document.getElementById('memCoupon'); if(cpEl) cpEl.value='';
+      this.memDiscount={ pointsUsed:0, couponCode:'', couponDisc:0, pointsDisc:0, totalDisc:0 };
     }catch(e){ console.warn('sync member local', e); }
     if(fullyCovered){
       try{ await this.awardMemberPoints(order); }catch(e){ console.warn(e); }
