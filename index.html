@@ -153,10 +153,17 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
     <div id="memBox" style="display:none;margin-top:10px;padding:10px;background:#fff;border-radius:10px;border:1px solid #eee">
       <div id="memInfo" style="font-size:13px;margin-bottom:8px"></div>
       <div id="memPersonalCoupons" style="display:none;margin:8px 0"></div>
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0">
-        <input type="checkbox" id="memUsePoints" onchange="C.recalcPayTotal()"> ใช้แต้มเป็นส่วนลด
-      </label>
-      <div id="memPointsHint" style="font-size:12px;color:#888;margin-bottom:6px"></div>
+      <div style="margin:8px 0">
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px">ใช้แต้มเป็นส่วนลด</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <input type="number" id="memPointsUse" min="0" step="1" value="0" inputmode="numeric"
+            style="flex:1;min-width:100px;padding:10px;border:1px solid #ddd;border-radius:10px;font-size:15px"
+            oninput="C.onPointsUseInput()">
+          <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="C.useAllPoints()">ใช้ทั้งหมด</button>
+          <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="C.clearPointsUse()">ไม่ใช้</button>
+        </div>
+        <div id="memPointsHint" style="font-size:12px;color:#888;margin-top:4px">1 แต้ม = ส่วนลด 1 บาท · ใส่จำนวนที่ต้องการใช้</div>
+      </div>
       <label style="font-size:12px;color:#666">รหัสคูปอง (ถ้ามี)</label>
       <div style="display:flex;gap:6px;margin-top:4px">
         <input id="memCoupon" type="text" placeholder="เช่น SAVE10" maxlength="20"
@@ -1769,6 +1776,63 @@ const C={
       await this.lookupMember();
     }catch(e){ toast('สมัครไม่สำเร็จ: '+(e.message||e)); }
   },
+  
+  
+  async refundMemberBenefits(o){
+    if(!o) return;
+    const phone=this.normPhone(o.memberPhone||'');
+    const pts=Number(o.pointsUsed||0);
+    const pcid=o.personalCouponId||'';
+    if(!phone) return;
+    if(pts<=0 && !pcid) return;
+    try{
+      await db.runTransaction(async tx=>{
+        const ref=shopRef.collection('members').doc(phone);
+        const s=await tx.get(ref);
+        if(!s.exists) return;
+        const md=s.data()||{};
+        const patch={ updatedAt:Date.now() };
+        if(pts>0) patch.points=Number(md.points||0)+pts;
+        if(pcid && Array.isArray(md.personalCoupons)){
+          patch.personalCoupons=md.personalCoupons.map(c=>{
+            if(c && c.id===pcid && c.used) return Object.assign({}, c, {used:false, usedAt:null});
+            return c;
+          });
+        }
+        tx.update(ref, patch);
+      });
+    }catch(e){ console.warn('refundMemberBenefits', e); }
+  },
+
+  async awardMemberPoints(order){
+    if(!order || !order.memberPhone || order.pointsAwarded) return;
+    const paid=Number(order.paidAmount!=null ? order.paidAmount : order.total||0);
+    const earn=Math.floor(paid/100);
+    const phone=this.normPhone(order.memberPhone);
+    if(!phone) return;
+    try{
+      await db.runTransaction(async tx=>{
+        const oref=shopRef.collection('orders').doc(order.id);
+        const os=await tx.get(oref);
+        if(!os.exists || (os.data()||{}).pointsAwarded) return;
+        const mref=shopRef.collection('members').doc(phone);
+        const ms=await tx.get(mref);
+        if(!ms.exists){
+          tx.update(oref,{ pointsAwarded:true, pointsEarned:0 });
+          return;
+        }
+        const md=ms.data()||{};
+        tx.update(mref,{
+          points: Number(md.points||0)+earn,
+          totalSpent: Number(md.totalSpent||0)+paid,
+          orderCount: Number(md.orderCount||0)+1,
+          updatedAt: Date.now()
+        });
+        tx.update(oref,{ pointsAwarded:true, pointsEarned:earn });
+      });
+    }catch(e){ console.warn('awardMemberPoints', e); }
+  },
+
   async confirmOrder(){
     this.payM='PROMPTPAY';
     if(!this.assertShopOpen()) return;
@@ -1842,6 +1906,8 @@ const C={
     const personalCouponId=memberPhone?(md.personalCouponId||''):'';
     const isPublicCoupon=couponCode && !String(couponCode).startsWith('PERSONAL:');
     this._creatingOrder=true;
+    // เก็บไว้คืนสิทธิ์ถ้าสร้างออเดอร์พังหลังตัดแต้ม
+    this._pendingBenefits={ memberPhone, pointsUsed, personalCouponId };
     try{
     // ตัดแต้ม + ใช้คูปอง (รวม/ส่วนตัว) ใน transaction ก่อนสร้างออเดอร์
     if(memberPhone && (pointsUsed>0 || isPublicCoupon || personalCouponId)){
@@ -1905,7 +1971,7 @@ const C={
       paymentStatus: fullyCovered ? 'PAID' : (opts.paymentStatus||'UNPAID'),
       paidAmount: fullyCovered ? 0 : 0,
       changeAmount:0,
-      paidAt: fullyCovered ? Date.now() : null,
+      paidAt: fullyCovered ? Date.now() : 0,
       autoPaid: !!fullyCovered,
       paidByDiscount: !!fullyCovered,
       slipData:'', slipStatus:'NONE',
@@ -1955,9 +2021,20 @@ const C={
     });
     this.startPayWatch(id);
     try{ this.ensureNotifyPermission(); }catch(e){}
+    this._pendingBenefits=null;
     return order;
+    } catch(err){
+      try{
+        const pb=this._pendingBenefits||{};
+        if(pb.memberPhone && (pb.pointsUsed>0 || pb.personalCouponId)){
+          await this.refundMemberBenefits(pb);
+        }
+      }catch(e2){ console.warn(e2); }
+      this._pendingBenefits=null;
+      throw err;
     } finally {
       this._creatingOrder=false;
+      this._pendingBenefits=null;
     }
   },
 
