@@ -957,12 +957,19 @@ const M={
   async cancelOrder(id){
     if(!confirm('ยืนยันยกเลิกออเดอร์นี้?')) return;
     const order=(this.orders||[]).find(o=>o.id===id) || null;
+    if(order && (order.status==='Cancelled' || order.status==='Completed')){
+      toast(order.status==='Completed'?'ออเดอร์เสร็จสมบูรณ์แล้ว ยกเลิกไม่ได้':'ออเดอร์นี้ยกเลิกไปแล้ว');
+      return;
+    }
+    // คืนสิทธิ์ก่อน แล้วค่อย mark ยกเลิก + กันคืนซ้ำด้วย benefitsRefunded
+    if(order && !order.benefitsRefunded){
+      try{ await this.refundMemberBenefits(order); }catch(e){ console.warn('refund', e); }
+    }
     await shopRef.collection('orders').doc(id).update({
       status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
-      paymentStatus:'UNPAID', paidAmount:0, changeAmount:0
+      paymentStatus:'UNPAID', paidAmount:0, changeAmount:0,
+      benefitsRefunded: true
     });
-    // คืนแต้ม / คูปองส่วนตัว / คูปองรวม ถ้ามีการใช้
-    try{ await this.refundMemberBenefits(order||{id}); }catch(e){ console.warn('refund', e); }
     toast('ยกเลิกโดยร้านแล้ว');
     (function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})();
   },
@@ -1061,10 +1068,12 @@ const M={
       // ลบได้เฉพาะสถานะจบ — ถ้ายังไม่จบให้ยกเลิกก่อน
       const cur=this.orders.find(x=>x.id===id);
       if(cur && cur.status!=='Completed' && cur.status!=='Cancelled'){
-        try{ await this.refundMemberBenefits(cur); }catch(e){ console.warn(e); }
+        if(!cur.benefitsRefunded){
+          try{ await this.refundMemberBenefits(cur); }catch(e){ console.warn(e); }
+        }
         await shopRef.collection('orders').doc(id).update({
           status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
-          cancelReason:'ลบประวัติโดยร้าน'
+          cancelReason:'ลบประวัติโดยร้าน', benefitsRefunded:true
         });
       }
       await shopRef.collection('orders').doc(id).delete();

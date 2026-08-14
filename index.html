@@ -1502,14 +1502,17 @@ const C={
     }
     if(!confirm('ยืนยันยกเลิกออเดอร์คิว '+(o.queue||'')+' ?')) return;
     try{
+      if(!o.benefitsRefunded){
+        try{ await this.refundMemberBenefits(o); }catch(e){ console.warn('refund', e); }
+      }
       await shopRef.collection('orders').doc(o.id).update({
         status:'Cancelled',
         cancelledAt:Date.now(),
         cancelledBy:'customer',
-        cancelReason:'ลูกค้ายกเลิกตอนรอคิวทำ'
+        cancelReason:'ลูกค้ายกเลิกตอนรอคิวทำ',
+        benefitsRefunded: true
       });
-      try{ await this.refundMemberBenefits(o); }catch(e){ console.warn('refund', e); }
-      this.lastOrder=Object.assign({}, o, {status:'Cancelled', cancelledBy:'customer'});
+      this.lastOrder=Object.assign({}, o, {status:'Cancelled', cancelledBy:'customer', benefitsRefunded:true});
       this.renderTicket(this.lastOrder);
       toast('ยกเลิกโดยลูกค้าแล้ว');
       // เคลียร์ state หลังโชว์ตั๋วยกเลิกสั้น ๆ — ให้สั่งคิวใหม่ได้ทันที
@@ -1872,7 +1875,7 @@ const C={
   async refundMemberBenefits(o){
     if(!o) return;
     const phone=this.normPhone(o.memberPhone||'');
-    const pts=Number(o.pointsUsed||0);
+    const pts=Number(o.pointsUsed!=null?o.pointsUsed:(o.pointsDisc||0));
     const pcid=o.personalCouponId||'';
     const pubCode=String(o.couponCode||'').trim().toUpperCase();
     const isPub=pubCode && !pubCode.startsWith('PERSONAL:');
@@ -1997,56 +2000,93 @@ const C={
       throw new Error('ตะกร้าว่าง ไม่สามารถสร้างออเดอร์ได้');
     }
     const subtotal=items.reduce((s,i)=>s+Number(i.total||0),0);
-    // คำนวณส่วนลดสมาชิกอีกครั้งก่อนสร้างออเดอร์
+    // sync UI ส่วนลด แล้วใช้เฉพาะ "ความตั้งใจ" (จำนวนแต้ม/รหัสคูปอง) — ยอดส่วนลดคำนวณใหม่จาก Firestore ใน transaction
     try{ await this.recalcPayTotal(); }catch(e){}
     const md=this.memDiscount||{};
-    const discountAmount=Math.min(Number(md.totalDisc||0), subtotal);
-    const total=Math.max(0, subtotal-discountAmount);
+    const contactPhone=this.normPhone((document.getElementById('memPhone')||{}).value||'');
+    const memberPhone=(this.member&&this.member.phone)||'';
+    const wantPts=memberPhone?Math.max(0, Math.floor(Number(md.pointsUsed||0))):0;
+    let wantPersonalId=memberPhone?(md.personalCouponId||''):'';
+    let wantCouponCode=memberPhone?(md.couponCode||''):'';
+    if(String(wantCouponCode).startsWith('PERSONAL:')) wantCouponCode='';
+    if(wantPersonalId) wantCouponCode=''; // ส่วนตัวมาก่อน
+    const isPublicIntent=!!(wantCouponCode && !String(wantCouponCode).startsWith('PERSONAL:'));
+
+    let pointsUsed=0, couponDisc=0, pointsDisc=0, couponCode='', personalCouponId='';
+    let discountAmount=0;
+    let total=subtotal;
     if(!(total>=0) || total>=200000){
       throw new Error('ยอดออเดอร์ไม่ถูกต้อง');
     }
-    const contactPhone=this.normPhone((document.getElementById('memPhone')||{}).value||'');
-    const memberPhone=(this.member&&this.member.phone)||'';
-    const pointsUsed=memberPhone?Math.min(Number(md.pointsUsed||0), total+discountAmount):0;
-    const couponCode=memberPhone?(md.couponCode||''):'';
-    const personalCouponId=memberPhone?(md.personalCouponId||''):'';
-    const isPublicCoupon=couponCode && !String(couponCode).startsWith('PERSONAL:');
+
     this._creatingOrder=true;
-    // เก็บไว้คืนสิทธิ์ถ้าสร้างออเดอร์พังหลังตัดแต้ม/คูปอง
-    this._pendingBenefits={ memberPhone, pointsUsed, personalCouponId, couponCode: isPublicCoupon ? couponCode : '' };
+    this._pendingBenefits={ memberPhone, pointsUsed:0, personalCouponId:'', couponCode:'' };
     try{
-    // ตัดแต้ม + ใช้คูปอง (รวม/ส่วนตัว) ใน transaction ก่อนสร้างออเดอร์
-    if(memberPhone && (pointsUsed>0 || isPublicCoupon || personalCouponId)){
-      await db.runTransaction(async tx=>{
+    // ตัดแต้ม + ใช้คูปอง และคำนวณส่วนลดจริงจากข้อมูลเซิร์ฟเวอร์ (ไม่เชื่อยอดจาก client)
+    if(memberPhone && (wantPts>0 || isPublicIntent || wantPersonalId)){
+      const benefit=await db.runTransaction(async tx=>{
+        const now=Date.now();
         const mref=shopRef.collection('members').doc(memberPhone);
         const ms=await tx.get(mref);
         if(!ms.exists) throw new Error('ไม่พบสมาชิก');
         const md0=ms.data()||{};
+        if(md0.status==='cancelled' || md0.active===false) throw new Error('สมาชิกถูกระงับสิทธิ์');
         let pts=Number(md0.points||0);
-        if(pointsUsed>0){
-          if(pts<pointsUsed) throw new Error('แต้มไม่พอ');
-          pts=pts-pointsUsed;
-        }
         let personalCoupons=Array.isArray(md0.personalCoupons)?md0.personalCoupons.slice():[];
-        if(personalCouponId){
-          const ix=personalCoupons.findIndex(c=>c && c.id===personalCouponId);
+        let cDisc=0, cCode='', pcId='';
+
+        if(wantPersonalId){
+          const ix=personalCoupons.findIndex(c=>c && String(c.id)===String(wantPersonalId));
           if(ix<0) throw new Error('ไม่พบคูปองส่วนตัว');
-          if(personalCoupons[ix].used) throw new Error('คูปองส่วนตัวถูกใช้แล้ว');
-          personalCoupons[ix]={...personalCoupons[ix], used:true, usedAt:Date.now()};
-        }
-        tx.update(mref,{ points:pts, personalCoupons, updatedAt:Date.now() });
-        if(isPublicCoupon){
-          const cref=shopRef.collection('coupons').doc(couponCode);
+          const pc=personalCoupons[ix];
+          if(pc.used) throw new Error('คูปองส่วนตัวถูกใช้แล้ว');
+          if(pc.expiresAt && Number(pc.expiresAt)<now) throw new Error('คูปองส่วนตัวหมดอายุ');
+          if(pc.minOrder!=null && subtotal<Number(pc.minOrder)) throw new Error('ยอดไม่ถึงขั้นต่ำคูปองส่วนตัว ฿'+pc.minOrder);
+          if(pc.type==='percent') cDisc=Math.floor(subtotal*Number(pc.value||0)/100);
+          else cDisc=Math.floor(Number(pc.value||0));
+          cDisc=Math.min(Math.max(0,cDisc), Math.floor(subtotal));
+          pcId=String(pc.id);
+          cCode='PERSONAL:'+pcId;
+          personalCoupons[ix]=Object.assign({}, pc, {used:true, usedAt:now});
+        } else if(isPublicIntent){
+          const code=String(wantCouponCode).trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+          const cref=shopRef.collection('coupons').doc(code);
           const cs=await tx.get(cref);
           if(!cs.exists) throw new Error('ไม่พบคูปอง');
           const c=cs.data()||{};
           if(c.active===false) throw new Error('คูปองปิดใช้งาน');
-          if(c.expiresAt && Number(c.expiresAt)<Date.now()) throw new Error('คูปองหมดอายุ');
+          if(c.expiresAt && Number(c.expiresAt)<now) throw new Error('คูปองหมดอายุ');
           const used=Number(c.usedCount||0), max=c.maxUses!=null?Number(c.maxUses):null;
           if(max!=null && used>=max) throw new Error('คูปองใช้ครบแล้ว');
-          tx.update(cref,{ usedCount:used+1, updatedAt:Date.now() });
+          if(c.minOrder!=null && subtotal<Number(c.minOrder)) throw new Error('ยอดไม่ถึงขั้นต่ำคูปอง ฿'+c.minOrder);
+          if(c.type==='percent') cDisc=Math.floor(subtotal*Number(c.value||0)/100);
+          else cDisc=Math.floor(Number(c.value||0));
+          cDisc=Math.min(Math.max(0,cDisc), Math.floor(subtotal));
+          cCode=code;
+          tx.update(cref,{ usedCount:used+1, updatedAt:now });
         }
+
+        const afterCoupon=Math.max(0, subtotal-cDisc);
+        let pUsed=Math.min(Math.max(0,wantPts), Math.floor(pts), Math.floor(afterCoupon));
+        if(pUsed>0){
+          if(pts<pUsed) throw new Error('แต้มไม่พอ');
+          pts=pts-pUsed;
+        }
+        tx.update(mref,{ points:pts, personalCoupons, updatedAt:now });
+        return { pointsUsed:pUsed, couponDisc:cDisc, pointsDisc:pUsed, couponCode:cCode, personalCouponId:pcId };
       });
+      pointsUsed=Number(benefit.pointsUsed||0);
+      couponDisc=Number(benefit.couponDisc||0);
+      pointsDisc=Number(benefit.pointsDisc||0);
+      couponCode=benefit.couponCode||'';
+      personalCouponId=benefit.personalCouponId||'';
+      const isPublicCoupon=couponCode && !String(couponCode).startsWith('PERSONAL:');
+      this._pendingBenefits={ memberPhone, pointsUsed, personalCouponId, couponCode: isPublicCoupon ? couponCode : '' };
+    }
+    discountAmount=Math.min(Math.max(0, couponDisc+pointsDisc), subtotal);
+    total=Math.max(0, Math.round((subtotal-discountAmount)*100)/100);
+    if(!(total>=0) || total>=200000){
+      throw new Error('ยอดออเดอร์ไม่ถูกต้อง');
     }
     const queueRef=shopRef.collection('settings').doc('queue');
     const today=new Date();
@@ -2068,7 +2108,7 @@ const C={
       id, queue, items, total, subtotal,
       discountAmount, pointsUsed: pointsUsed||0, couponCode: couponCode||'',
       personalCouponId: personalCouponId||'',
-      couponDisc: Number(md.couponDisc||0), pointsDisc: Number(md.pointsDisc||0),
+      couponDisc: Number(couponDisc||0), pointsDisc: Number(pointsDisc||0),
       memberPhone: memberPhone||'', contactPhone: contactPhone||memberPhone||'',
       memberName: this.member?this.escName(this.member):'',
       pointsAwarded:0, pointsEarned:0,
@@ -2085,6 +2125,22 @@ const C={
       createdAt: Date.now()
     };
     await shopRef.collection('orders').doc(id).set(order);
+    // sync สิทธิ์บน client หลังตัดจริงแล้ว (กันสั่งซ้ำด้วยยอดแต้มเก่า)
+    try{
+      if(this.member && memberPhone){
+        if(pointsUsed>0) this.member.points=Math.max(0, Number(this.member.points||0)-pointsUsed);
+        if(personalCouponId && Array.isArray(this.member.personalCoupons)){
+          this.member.personalCoupons=this.member.personalCoupons.map(c=>{
+            if(c && String(c.id)===String(personalCouponId)) return Object.assign({}, c, {used:true, usedAt:Date.now()});
+            return c;
+          });
+        }
+        this.selectedPersonalCouponId='';
+        const ptsEl=document.getElementById('memPointsUse'); if(ptsEl) ptsEl.value='0';
+        const cpEl=document.getElementById('memCoupon'); if(cpEl) cpEl.value='';
+        this.memDiscount={ pointsUsed:0, couponCode:'', couponDisc:0, pointsDisc:0, totalDisc:0 };
+      }
+    }catch(e){ console.warn('sync member local', e); }
     if(fullyCovered){
       try{ await this.awardMemberPoints(order); }catch(e){ console.warn(e); }
     }
