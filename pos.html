@@ -2361,8 +2361,8 @@ M.boot().catch(function(e){ console.error(e); toast("เริ่มไม่ส
 })();
 </script>
 
-<div class="ov" id="mPersonalCoupon"><div class="md" style="max-width:420px">
-  <div class="mh"><span>มอบคูปองส่วนตัว</span><button type="button" class="x" onclick="M.hidePersonalCouponModal()">×</button></div>
+<div class="ov" id="mPersonalCoupon" onclick="if(event.target===this)M.hidePersonalCouponModal()"><div class="md" style="max-width:420px">
+  <div class="mh"><span>มอบคูปองส่วนตัว</span><button type="button" class="x" type="button" onclick="M.hidePersonalCouponModal()">×</button></div>
   <input type="hidden" id="pcPhone">
   <div style="font-size:13px;color:#666;margin-bottom:10px">สมาชิก: <strong id="pcPhoneLabel"></strong></div>
   <label class="lbl">ชื่อคูปอง (ที่ลูกค้าเห็น)</label>
@@ -2376,7 +2376,7 @@ M.boot().catch(function(e){ console.error(e); toast("เริ่มไม่ส
   <label class="lbl">วันหมดอายุ</label>
   <input id="pcExp" type="date" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;box-sizing:border-box">
   <div style="font-size:11px;color:#888;margin:4px 0 10px">เว้นว่าง = ไม่มีวันหมดอายุ · กดช่องวันที่เพื่อเปิดปฏิทิน</div>
-  <button type="button" class="btn btn-p" onclick="M.submitPersonalCoupon()">บันทึกคูปองส่วนตัว</button>
+  <div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="btn btn-o" style="flex:1;margin:0" onclick="M.hidePersonalCouponModal()">ปิด</button><button type="button" class="btn btn-p" style="flex:1;margin:0" onclick="M.submitPersonalCoupon()">บันทึก</button></div>
 </div></div>
 
 </body>
