@@ -1567,7 +1567,7 @@ const C={
       if(info) info.innerHTML='<strong>'+this.escName(this.member)+'</strong><br>แต้มคงเหลือ <strong style="color:var(--p)">'+Number(this.member.points||0)+'</strong> แต้ม';
       const ph=document.getElementById('memPointsHint');
       if(ph) ph.textContent='ใช้ได้สูงสุดตามยอดออเดอร์ · 1 แต้ม = ส่วนลด 1 บาท';
-      const up=document.getElementById('memUsePoints'); if(up) up.checked=false;
+      const up=document.getElementById('memPointsUse'); if(up) up.value='0';
       const cp=document.getElementById('memCoupon'); if(cp) cp.value='';
       this.selectedPersonalCouponId='';
       this.renderPersonalCoupons();
@@ -1615,10 +1615,31 @@ const C={
     this.recalcPayTotal();
   },
 
+  onPointsUseInput(){
+    const el=document.getElementById('memPointsUse');
+    if(!el) return;
+    let v=Math.floor(Number(el.value||0));
+    if(isNaN(v) || v<0) v=0;
+    el.value=String(v);
+    this.recalcPayTotal();
+  },
+  useAllPoints(){
+    if(!this.member){ toast('ตรวจเบอร์สมาชิกก่อน'); return; }
+    const el=document.getElementById('memPointsUse');
+    if(!el) return;
+    // ใส่ค่าสูง แล้วให้ recalc ตัดตาม max จริง
+    el.value=String(Number(this.member.points||0));
+    this.recalcPayTotal();
+  },
+  clearPointsUse(){
+    const el=document.getElementById('memPointsUse');
+    if(el) el.value='0';
+    this.recalcPayTotal();
+  },
   async recalcPayTotal(){
     const sub=this.cartSubtotal();
     let pointsDisc=0, couponDisc=0, couponCode='', personalCouponId='';
-    const usePts=document.getElementById('memUsePoints');
+    const ptsEl=document.getElementById('memPointsUse');
     const couponEl=document.getElementById('memCoupon');
     const line=document.getElementById('memDiscountLine');
     // 1) คูปองส่วนตัว (เลือกจากรายการ)
@@ -1662,14 +1683,19 @@ const C={
         }
       }catch(e){ console.warn(e); }
     }
-    // 3) แต้ม หลังหักคูปอง
-    if(this.member && usePts && usePts.checked){
-      const afterC=Math.max(0, sub-couponDisc);
-      const maxPts=Math.min(Number(this.member.points||0), Math.floor(afterC));
-      pointsDisc=Math.max(0, maxPts);
-    }
+    // 3) แต้ม — ลูกค้าใส่จำนวนเอง (ไม่บังคับใช้ทั้งหมด)
     let afterCoupon=Math.max(0, sub-couponDisc);
-    if(pointsDisc>afterCoupon) pointsDisc=afterCoupon;
+    const maxPts=this.member ? Math.min(Number(this.member.points||0), Math.floor(afterCoupon)) : 0;
+    let wantPts=ptsEl ? Math.floor(Number(ptsEl.value||0)) : 0;
+    if(isNaN(wantPts) || wantPts<0) wantPts=0;
+    if(wantPts>maxPts) wantPts=maxPts;
+    if(ptsEl && document.activeElement!==ptsEl) ptsEl.value=String(wantPts||0);
+    if(ptsEl) ptsEl.max=String(maxPts);
+    pointsDisc=wantPts;
+    const ph=document.getElementById('memPointsHint');
+    if(ph && this.member){
+      ph.textContent='ใช้ได้สูงสุด '+maxPts+' แต้ม (คงเหลือ '+Number(this.member.points||0)+' · 1 แต้ม = 1 บาท)';
+    }
     const totalDisc=couponDisc+pointsDisc;
     const payable=Math.max(0, sub-totalDisc);
     this.memDiscount={ pointsUsed:pointsDisc, couponCode, couponDisc, pointsDisc, totalDisc, personalCouponId };
@@ -1680,9 +1706,15 @@ const C={
     }
     const hint=document.getElementById('paySubHint');
     if(hint){
-      if(totalDisc>0) hint.textContent='ยอดก่อนลด ฿'+sub+' · ส่วนลด ฿'+totalDisc;
+      if(payable<=0 && totalDisc>0) hint.innerHTML='<span style="color:#2E7D32;font-weight:600">ใช้ส่วนลด/แต้มครบ · กดยืนยันแล้วชำระทันที ไม่ต้องโอนเงิน</span>';
+      else if(totalDisc>0) hint.textContent='ยอดก่อนลด ฿'+sub+' · ส่วนลด ฿'+totalDisc;
       else hint.textContent=sub>0?('ยอดตะกร้า ฿'+sub):'';
     }
+    // ซ่อน QR ถ้ายอด 0
+    try{
+      const z=document.getElementById('ppZone');
+      if(z) z.style.display = (payable<=0 ? 'none' : 'block');
+    }catch(e){}
     if(line){
       if(totalDisc>0){
         let t=[];

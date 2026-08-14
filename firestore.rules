@@ -4,8 +4,11 @@ service cloud.firestore {
 
     function isValidNewOrder() {
       let d = request.resource.data;
+      // อนุญาต UNPAID ปกติ หรือ PAID เมื่อยอด 0 (ใช้แต้ม/คูปองครบ)
+      let payOk = d.paymentStatus == 'UNPAID'
+        || (d.paymentStatus == 'PAID' && d.total == 0);
       return d.keys().hasAll(['id', 'queue', 'items', 'total', 'status', 'paymentStatus', 'createdAt'])
-        && d.paymentStatus == 'UNPAID'
+        && payOk
         && (d.status == 'Pending' || d.status == 'AwaitingPayment')
         && d.total is number
         && d.total >= 0
