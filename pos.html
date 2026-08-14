@@ -1238,18 +1238,57 @@ const M={
       const snap=await shopRef.collection('coupons').limit(100).get();
       const list=snap.docs.map(d=>({id:d.id, ...d.data()}));
       if(!list.length){ box.innerHTML='<div style="color:#888;padding:8px">ยังไม่มีคูปอง</div>'; return; }
-      box.innerHTML='<div style="font-weight:600;margin:8px 0">คูปองทั้งหมด</div>'+list.map(c=>{
+      box.innerHTML='<div style="font-weight:600;margin:8px 0">คูปองรวม (ลูกค้ากรอกรหัส)</div>'+list.map(c=>{
         const t=c.type==='percent'?(c.value+'%'):('฿'+c.value);
         const used=Number(c.usedCount||0)+'/'+(c.maxUses!=null?c.maxUses:'∞');
         const code=esc(c.code||c.id);
-        const turnOn=c.active===false;
-        return '<div class="form-card" style="padding:8px;margin:0 0 6px"><strong>'+code+'</strong> · '+t
-          +' · ใช้แล้ว '+used+(c.active===false?' · <span style="color:#C62828">ปิด</span>':'')
-          +' <button type="button" class="btn btn-o btn-sm" style="width:auto;margin-left:6px" onclick="M.toggleCoupon(\''+code+'\','+turnOn+')">'
-          +(c.active===false?'เปิด':'ปิด')+'</button></div>';
+        const active=c.active!==false;
+        const q="'"+code+"'";
+        return '<div class="form-card" style="padding:10px;margin:0 0 8px">'
+          +'<div style="font-weight:700">'+code+(active?'':' <span style="color:#C62828">ปิด</span>')+'</div>'
+          +'<div style="font-size:13px;color:#555;margin:4px 0">'+t+' · ใช้แล้ว '+used
+          +(c.minOrder?(' · ขั้นต่ำ ฿'+c.minOrder):'')
+          +(c.expiresAt?(' · หมดอายุ '+new Date(c.expiresAt).toLocaleDateString('th-TH')):'')
+          +'</div>'
+          +'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'
+          +'<button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="M.editCoupon('+q+')">แก้ไข</button>'
+          +'<button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="M.toggleCoupon('+q+','+(active?'false':'true')+')">'+(active?'ปิด':'เปิด')+'</button>'
+          +'<button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0;color:var(--d)" onclick="M.deleteCoupon('+q+')">ลบ</button>'
+          +'</div></div>';
       }).join('');
     }catch(e){ box.innerHTML='<div style="color:#C62828">โหลดคูปองไม่สำเร็จ</div>'; }
   },
+  async editCoupon(code){
+    code=String(code||'').toUpperCase();
+    try{
+      const snap=await shopRef.collection('coupons').doc(code).get();
+      if(!snap.exists){ toast('ไม่พบคูปอง'); return; }
+      const c=snap.data()||{};
+      document.getElementById('cpCode').value=code;
+      document.getElementById('cpCode').readOnly=true;
+      document.getElementById('cpType').value=c.type||'fixed';
+      document.getElementById('cpValue').value=c.value||'';
+      document.getElementById('cpMin').value=c.minOrder||'';
+      document.getElementById('cpMax').value=c.maxUses!=null?c.maxUses:'';
+      if(c.expiresAt){
+        const d=new Date(c.expiresAt);
+        document.getElementById('cpExp').value=d.toISOString().slice(0,10);
+      } else document.getElementById('cpExp').value='';
+      toast('แก้ไขคูปอง '+code+' · กดบันทึกเมื่อแก้เสร็จ');
+      document.getElementById('cpCode').scrollIntoView({behavior:'smooth',block:'center'});
+    }catch(e){ toast('โหลดคูปองไม่สำเร็จ'); }
+  },
+  async deleteCoupon(code){
+    code=String(code||'').toUpperCase();
+    if(!confirm('ลบคูปองรวม '+code+' ถาวร?')) return;
+    try{
+      await shopRef.collection('coupons').doc(code).delete();
+      toast('ลบคูปองแล้ว');
+      this.loadCoupons();
+      try{ document.getElementById('cpCode').readOnly=false; document.getElementById('cpCode').value=''; }catch(e){}
+    }catch(e){ toast('ลบไม่สำเร็จ: '+(e.message||e)); }
+  },
+
   async createCoupon(){
     const code=String((document.getElementById('cpCode')||{}).value||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
     const type=(document.getElementById('cpType')||{}).value||'fixed';
@@ -1268,7 +1307,7 @@ const M={
         createdAt:Date.now(), updatedAt:Date.now()
       });
       toast('บันทึกคูปอง '+code);
-      document.getElementById('cpCode').value='';
+      try{ document.getElementById('cpCode').readOnly=false; document.getElementById('cpCode').value=''; }catch(e){}
       this.loadCoupons();
     }catch(e){ toast('ไม่สำเร็จ: '+(e.message||e)); }
   },
@@ -1279,23 +1318,36 @@ const M={
     }catch(e){ toast('ปรับสถานะไม่สำเร็จ'); }
   },
   
-  async assignPersonalCoupon(phone){
+  assignPersonalCoupon(phone){
     phone=this.normPhone(phone);
     if(!phone){ toast('ไม่มีเบอร์'); return; }
-    const typeAns=prompt('ประเภทคูปอง:\nfixed = จำนวนเงิน\npercent = เปอร์เซ็นต์', 'fixed');
-    if(typeAns==null) return;
-    const t=String(typeAns).toLowerCase().indexOf('p')>=0?'percent':'fixed';
-    const valRaw=prompt(t==='percent'?'ส่วนลดกี่ %':'ส่วนลดกี่บาท', t==='percent'?'10':'20');
-    if(valRaw==null) return;
-    const value=Number(valRaw);
-    if(!(value>0)){ toast('มูลค่าไม่ถูกต้อง'); return; }
-    if(t==='percent'&&value>100){ toast('% ไม่เกิน 100'); return; }
-    const minRaw=prompt('ยอดขั้นต่ำบาท (0=ไม่จำกัด)', '0');
-    const minOrder=Math.max(0, Number(minRaw||0)||0);
-    const note=prompt('ชื่อที่ลูกค้าเห็น', t==='percent'?(value+'%'):('฿'+value))||'';
-    const expRaw=prompt('หมดอายุ YYYY-MM-DD (ว่าง=ไม่หมด)', '');
+    const el=document.getElementById('mPersonalCoupon');
+    if(!el){ toast('ไม่พบฟอร์มคูปอง'); return; }
+    document.getElementById('pcPhone').value=phone;
+    document.getElementById('pcPhoneLabel').textContent=phone;
+    document.getElementById('pcNote').value='';
+    document.getElementById('pcType').value='fixed';
+    document.getElementById('pcValue').value='';
+    document.getElementById('pcMin').value='0';
+    document.getElementById('pcExp').value='';
+    el.classList.add('on');
+  },
+  hidePersonalCouponModal(){
+    const el=document.getElementById('mPersonalCoupon');
+    if(el) el.classList.remove('on');
+  },
+  async submitPersonalCoupon(){
+    const phone=this.normPhone((document.getElementById('pcPhone')||{}).value);
+    if(!phone){ toast('ไม่มีเบอร์'); return; }
+    const t=(document.getElementById('pcType')||{}).value||'fixed';
+    const value=Number((document.getElementById('pcValue')||{}).value||0);
+    const minOrder=Math.max(0, Number((document.getElementById('pcMin')||{}).value||0)||0);
+    const note=String((document.getElementById('pcNote')||{}).value||'').trim() || (t==='percent'?(value+'%'):('฿'+value));
+    const expRaw=String((document.getElementById('pcExp')||{}).value||'').trim();
     let expiresAt=null;
-    if(expRaw&&String(expRaw).trim()) expiresAt=new Date(String(expRaw).trim()+'T23:59:59').getTime();
+    if(expRaw) expiresAt=new Date(expRaw+'T23:59:59').getTime();
+    if(!(value>0)){ toast('ใส่มูลค่าคูปอง'); return; }
+    if(t==='percent'&&value>100){ toast('% ไม่เกิน 100'); return; }
     const id='PC'+Date.now().toString(36).toUpperCase()+Math.floor(Math.random()*900);
     try{
       await db.runTransaction(async tx=>{
@@ -1304,11 +1356,17 @@ const M={
         if(!snap.exists) throw new Error('ไม่พบสมาชิก');
         const md=snap.data()||{};
         const list=Array.isArray(md.personalCoupons)?md.personalCoupons.slice():[];
-        list.push({ id, type:t, value, minOrder, note:String(note).trim(), expiresAt, used:false, assignedAt:Date.now() });
+        list.push({ id, type:t, value, minOrder, note, expiresAt, used:false, assignedAt:Date.now() });
         tx.update(ref,{ personalCoupons:list, updatedAt:Date.now() });
       });
       toast('มอบคูปองส่วนตัวแล้ว');
-      this.loadMembersPanel();
+      this.hidePersonalCouponModal();
+      await this.loadMembersPanel();
+      if(this._editingMember){
+        const p=this.normPhone(this._editingMember.phone||this._editingMember.id);
+        const updated=(this.membersCache||[]).find(x=>this.normPhone(x.phone||x.id)===p);
+        if(updated){ this._editingMember=updated; this.renderMemberDetail(updated); }
+      }
     }catch(e){ toast('ไม่สำเร็จ: '+(e.message||e)); }
   },
 
@@ -2302,5 +2360,24 @@ M.boot().catch(function(e){ console.error(e); toast("เริ่มไม่ส
   });
 })();
 </script>
+
+<div class="ov" id="mPersonalCoupon"><div class="md" style="max-width:420px">
+  <div class="mh"><span>มอบคูปองส่วนตัว</span><button type="button" class="x" onclick="M.hidePersonalCouponModal()">×</button></div>
+  <input type="hidden" id="pcPhone">
+  <div style="font-size:13px;color:#666;margin-bottom:10px">สมาชิก: <strong id="pcPhoneLabel"></strong></div>
+  <label class="lbl">ชื่อคูปอง (ที่ลูกค้าเห็น)</label>
+  <input id="pcNote" placeholder="เช่น ส่วนลดวันเกิด">
+  <label class="lbl">ประเภท</label>
+  <select id="pcType"><option value="fixed">จำนวนเงิน (บาท)</option><option value="percent">เปอร์เซ็นต์ (%)</option></select>
+  <label class="lbl">มูลค่า</label>
+  <input id="pcValue" type="number" min="1" step="1" placeholder="เช่น 20">
+  <label class="lbl">ยอดขั้นต่ำ (บาท)</label>
+  <input id="pcMin" type="number" min="0" value="0">
+  <label class="lbl">วันหมดอายุ</label>
+  <input id="pcExp" type="date" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;box-sizing:border-box">
+  <div style="font-size:11px;color:#888;margin:4px 0 10px">เว้นว่าง = ไม่มีวันหมดอายุ · กดช่องวันที่เพื่อเปิดปฏิทิน</div>
+  <button type="button" class="btn btn-p" onclick="M.submitPersonalCoupon()">บันทึกคูปองส่วนตัว</button>
+</div></div>
+
 </body>
 </html>

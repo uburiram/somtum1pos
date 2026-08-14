@@ -252,7 +252,7 @@ const PP={
     else return null;
     const mai=this.tlv('00','A000000677010111')+this.tlv(idTag,t);
     let p=this.tlv('00','01')+this.tlv('01', Number(amount)>0 ? '12' : '11')+this.tlv('29',mai)+this.tlv('53','764');
-    if(Number(amount)>0) p+=this.tlv('54', Number(amount).toFixed(2));
+    if(Number(amount)>0){ const a=(Math.round(Number(amount)*100)/100).toFixed(2); p+=this.tlv('54', a); }
     p+=this.tlv('58','TH')+'6304';
     return p+this.crc(p);
   },
@@ -272,7 +272,7 @@ const PP={
     }
     const tag = (digits.length>=10 && digits.length<=15 && digits===id.replace(/\s/g,'')) ? '30' : '29';
     let p=this.tlv('00','01')+this.tlv('01', Number(amount)>0?'12':'11')+this.tlv(tag,mai)+this.tlv('53','764');
-    if(Number(amount)>0) p+=this.tlv('54', Number(amount).toFixed(2));
+    if(Number(amount)>0){ const a=(Math.round(Number(amount)*100)/100).toFixed(2); p+=this.tlv('54', a); }
     p+=this.tlv('58','TH')+'6304';
     return p+this.crc(p);
   },/* ใส่ยอดเงินลง Thai QR payload เดิม (จาก K Shop) แล้วคำนวณ CRC ใหม่ */
@@ -297,14 +297,14 @@ const PP={
     const next=[];
     for(const [t,v] of parts){
       if(t==='01'){ next.push(['01', hasAmt?'12':'11']); }
-      else if(t==='54'){ has54=true; if(hasAmt) next.push(['54', amt.toFixed(2)]); }
+      else if(t==='54'){ has54=true; if(hasAmt) next.push(['54', (Math.round(amt*100)/100).toFixed(2)]); }
       else next.push([t,v]);
     }
     let final=next;
     if(hasAmt && !has54){
       final=[];
       for(const [t,v] of next){
-        if(t==='58') final.push(['54', amt.toFixed(2)]);
+        if(t==='58') final.push(['54', (Math.round(amt*100)/100).toFixed(2)]);
         final.push([t,v]);
       }
     }
@@ -757,39 +757,23 @@ const C={
     try{ this.recalcPayTotal(); }catch(e){}
   },
   payMethod(m){
-    this.payM='PROMPTPAY'; // ตัดเงินสดฝั่งลูกค้า — ร้านยืนยันรับเงินสดที่ POS
+    this.payM='PROMPTPAY';
     const btn=document.getElementById('btnOrder');
     if(btn){
       if(this.orderId){ btn.disabled=true; btn.textContent='ยืนยันแล้ว · รอโอนเงิน / แนบสลิป'; }
       else { btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
     }
-    const z=document.getElementById('ppZone');
-    if(!z) return;
-    if(true){ // PROMPTPAY only
-      // ยอด QR ต้องเป็นยอดหลังส่วนลด/แต้ม เท่านั้น
-      const sub=(this.cart||[]).reduce((s,i)=>s+Number(i.total||0),0);
-      const md=this.memDiscount||{};
-      const disc=Math.min(Number(md.totalDisc||0), sub);
-      const total=Math.max(0, sub-disc);
-      if(total<=0){ z.style.display='none'; return; }
-      z.style.display='block';
-      let payload=null, label='';
-      const kshopPayload=this.kshopPayload||window.KSHOP_QR_PAYLOAD||'';
-      if(this.payType==='kshop' || this.payType==='merchant'){
-        payload=PP.genKShop(total, kshopPayload) || PP.genMerchant(this.merchantId||'EMPKB000002198793001', total);
-        label='Thai QR (K Shop): '+(this.merchantId||'EMPKB000002198793001');
-      } else {
-        payload=PP.gen(this.promptpay, total);
-        label='พร้อมเพย์: '+(this.promptpay||'-');
-      }
-      document.getElementById('ppNum').textContent=label;
-      document.getElementById('ppName').textContent=(this.accountName?('ชื่อบัญชี: '+this.accountName+' · '):'')+('ร้าน: '+this.shopName);
-      const qr=document.getElementById('ppQR'); qr.innerHTML='';
-      if(payload){ new QRCode(qr,{text:payload,width:200,height:200}); try{C.ensurePayQRAsImage();}catch(e){}
-        try{ const h=document.getElementById('ppQRHint'); if(h) h.style.display=C.isLineBrowser()?'block':'none'; }catch(e){} }
-      else qr.innerHTML='<p style="color:var(--d)">'+(this.payType==='merchant'?'ตั้งค่ารหัสร้าน K Shop ไม่ถูกต้อง':'ตั้งค่า PromptPay ไม่ถูกต้อง (ต้อง 10 หรือ 13 หลัก)')+'</p>';
+    // คำนวณยอดหลังส่วนลดแล้วสร้าง QR ใหม่ (เส้นทางเดียวกับ refreshPayQR)
+    try{
+      const p=this.recalcPayTotal();
+      if(p && typeof p.then==='function') p.then(amt=>{ try{ this.refreshPayQR(amt); }catch(e){} });
+      else try{ this.refreshPayQR(p); }catch(e){}
+    }catch(e){
+      console.warn(e);
+      try{ this.refreshPayQR(this.cartSubtotal()); }catch(e2){}
     }
   },
+
   isLineBrowser(){
     return /Line\//i.test(navigator.userAgent||'');
   },
@@ -812,7 +796,7 @@ const C={
     return '';
   },
   buildPayPayload(amount){
-    const total=Math.max(0, Number(amount||0));
+    const total=Math.max(0, Math.round(Number(amount||0)*100)/100);
     try{
       if(this.payType==='kshop' || this.payType==='merchant'){
         const kshopPayload=this.kshopPayload||window.KSHOP_QR_PAYLOAD||'';
@@ -1774,7 +1758,8 @@ const C={
     const z=document.getElementById('ppZone');
     const qr=document.getElementById('ppQR');
     if(!z) return;
-    const amount=Math.max(0, Number(payable||0));
+    // ปัดเศษยอดเป็นสตางค์ — กัน QR พังจากทศนิยมเพี้ยนตอนใช้แต้ม
+    const amount=Math.max(0, Math.round(Number(payable||0)*100)/100);
     if(amount<=0){
       z.style.display='none';
       if(qr) qr.innerHTML='';
@@ -1783,52 +1768,44 @@ const C={
       return;
     }
     z.style.display='block';
-    // สร้างใหม่เมื่อยอดเปลี่ยน
-    if(this._payQRAmount===amount && this._payQRDataUrl){
-      if(qr && !qr.querySelector('img,canvas')){
-        // ยังว่าง
-      } else return;
+    // สร้างใหม่ทุกครั้งที่ยอดเปลี่ยน (บังคับเคลียร์ container)
+    const same=this._payQRAmount===amount && this._payQRDataUrl && qr && qr.querySelector('img,canvas');
+    if(same) return;
+    this._payQRDataUrl='';
+    this._payQRAmount=null;
+    if(qr) qr.innerHTML='';
+    const payload=this.buildPayPayload(amount);
+    let label='';
+    if(this.payType==='kshop' || this.payType==='merchant'){
+      label='Thai QR (K Shop): '+(this.merchantId||'EMPKB000002198793001');
+    } else {
+      label='พร้อมเพย์: '+(this.promptpay||'-');
     }
-    let payload=null, label='';
-    const kshopPayload=this.kshopPayload||window.KSHOP_QR_PAYLOAD||'';
-    try{
-      if(this.payType==='kshop' || this.payType==='merchant'){
-        payload=PP.genKShop(amount, kshopPayload) || PP.genMerchant(this.merchantId||'EMPKB000002198793001', amount);
-        label='Thai QR (K Shop): '+(this.merchantId||'EMPKB000002198793001');
-      } else {
-        payload=PP.gen(this.promptpay, amount);
-        label='พร้อมเพย์: '+(this.promptpay||'-');
-      }
-    }catch(e){ console.warn(e); }
-    const pn=document.getElementById('ppNum'); if(pn) pn.textContent=label||'';
+    const pn=document.getElementById('ppNum'); if(pn) pn.textContent=label;
     const pnm=document.getElementById('ppName');
-    if(pnm) pnm.textContent=(this.accountName?('ชื่อบัญชี: '+this.accountName+' · '):'')+('ร้าน: '+this.shopName);
-    if(qr){
-      qr.innerHTML='';
-      if(payload && typeof QRCode!=='undefined'){
-        try{
-          new QRCode(qr,{text:payload,width:200,height:200});
-          try{ this.ensurePayQRAsImage(); }catch(e){}
-          this._payQRAmount=amount;
-          try{
-            const c=qr.querySelector('canvas');
-            if(c) this._payQRDataUrl=c.toDataURL('image/png');
-          }catch(e){}
-        }catch(e){ console.warn(e); }
-      }
+    if(pnm) pnm.textContent=(this.accountName?('ชื่อบัญชี: '+this.accountName+' · '):'')+('ร้าน: '+this.shopName)+(amount?(' · ยอด ฿'+amount.toFixed(2)):'');
+    if(!payload){
+      if(qr) qr.innerHTML='<p style="color:var(--d);font-size:13px">สร้าง QR ไม่ได้ · ตรวจตั้งค่า PromptPay/K Shop</p>';
+      return;
     }
-  },
-
-  normCoupon(c){ return String(c||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,''); },
-  openMemberReg(phone){
-    const p=this.normPhone(phone||((document.getElementById('memPhone')||{}).value)||'');
-    const rp=document.getElementById('regPhone');
-    if(rp){
-      rp.value=p;
-      rp.readOnly=p.length>=9;
+    if(typeof QRCode==='undefined'){
+      if(qr) qr.innerHTML='<p style="color:#999">กำลังโหลด QR…</p>';
+      return;
     }
-    try{ document.getElementById('regFirst').focus(); }catch(e){}
-    this.show('mMemberReg');
+    try{
+      new QRCode(qr,{text:String(payload),width:200,height:200});
+      try{ this.ensurePayQRAsImage(); }catch(e){}
+      this._payQRAmount=amount;
+      try{
+        const c=qr.querySelector('canvas');
+        const img=qr.querySelector('img');
+        if(c) this._payQRDataUrl=c.toDataURL('image/png');
+        else if(img&&img.src) this._payQRDataUrl=img.src;
+      }catch(e){}
+    }catch(e){
+      console.warn('refreshPayQR', e);
+      if(qr) qr.innerHTML='<p style="color:var(--d);font-size:13px">สร้าง QR ไม่สำเร็จ</p>';
+    }
   },
   async registerMember(){
     const first=(document.getElementById('regFirst')||{}).value||'';
