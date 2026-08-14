@@ -73,6 +73,20 @@ service cloud.firestore {
       match /fcmTokens/{tokenId} {
         allow read, write: if true;
       }
+
+      // สมาชิกร้าน — ลูกค้าสมัคร/อ่านได้, ร้านจัดการแต้ม
+      match /members/{phone} {
+        allow read: if true;
+        allow create: if true;
+        allow update: if true;
+        allow delete: if true;
+      }
+
+      // คูปองส่วนลด
+      match /coupons/{code} {
+        allow read: if true;
+        allow write: if true;
+      }
     }
   }
 }

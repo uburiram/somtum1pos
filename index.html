@@ -159,8 +159,49 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
     <div id="slipPreview" style="margin-top:8px"></div>
     <div id="slipAutoMsg" style="font-size:13px;margin-top:6px"></div>
   </div>
+  <!-- สมาชิก / แต้ม / คูปอง -->
+  <div style="margin:14px 0;padding:12px;background:#FFF8F5;border:1px solid #FFE0D6;border-radius:12px;text-align:left">
+    <div style="font-weight:700;color:#E65100;margin-bottom:8px">👤 สมาชิก / เบอร์ติดต่อ</div>
+    <label style="font-size:12px;color:#666">เบอร์โทรศัพท์</label>
+    <div style="display:flex;gap:6px;margin-top:4px">
+      <input id="memPhone" type="tel" inputmode="numeric" placeholder="08xxxxxxxx" maxlength="10"
+        style="flex:1;padding:10px;border:1px solid #ddd;border-radius:10px;font-size:15px"
+        oninput="C.onMemberPhoneInput()">
+      <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="C.lookupMember()">ตรวจ</button>
+    </div>
+    <div id="memStatus" style="font-size:12px;margin-top:6px;color:#666">ใส่เบอร์แล้วกดตรวจ — ไม่เป็นสมาชิกก็สั่งได้</div>
+    <div id="memBox" style="display:none;margin-top:10px;padding:10px;background:#fff;border-radius:10px;border:1px solid #eee">
+      <div id="memInfo" style="font-size:13px;margin-bottom:8px"></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0">
+        <input type="checkbox" id="memUsePoints" onchange="C.recalcPayTotal()"> ใช้แต้มเป็นส่วนลด
+      </label>
+      <div id="memPointsHint" style="font-size:12px;color:#888;margin-bottom:6px"></div>
+      <label style="font-size:12px;color:#666">รหัสคูปอง (ถ้ามี)</label>
+      <div style="display:flex;gap:6px;margin-top:4px">
+        <input id="memCoupon" type="text" placeholder="เช่น SAVE10" maxlength="20"
+          style="flex:1;padding:8px;border:1px solid #ddd;border-radius:8px;text-transform:uppercase"
+          onchange="C.recalcPayTotal()">
+        <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="C.recalcPayTotal()">ใช้</button>
+      </div>
+      <div id="memDiscountLine" style="font-size:13px;margin-top:8px;color:#2E7D32;font-weight:600"></div>
+    </div>
+    <button type="button" class="btn btn-o btn-sm" style="width:100%;margin-top:10px" onclick="C.show('mMemberReg')">สมัครสมาชิก</button>
+  </div>
   <button class="btn btn-p" id="btnOrder" onclick="C.confirmOrder()">ยืนยันออเดอร์</button>
 </div></div>
+
+<div class="ov" id="mMemberReg"><div class="md">
+  <div class="mh"><span>สมัครสมาชิก</span><button class="x" onclick="C.hide('mMemberReg')">×</button></div>
+  <p style="font-size:13px;color:#666;margin-bottom:10px">กรอกชื่อและเบอร์โทร · ซื้อครบ 100 บาท = 1 แต้ม (1 แต้ม = 1 บาท)</p>
+  <label style="font-size:12px;color:#666">ชื่อ</label>
+  <input id="regFirst" placeholder="ชื่อ" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;margin:4px 0 8px;box-sizing:border-box">
+  <label style="font-size:12px;color:#666">นามสกุล</label>
+  <input id="regLast" placeholder="นามสกุล" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;margin:4px 0 8px;box-sizing:border-box">
+  <label style="font-size:12px;color:#666">เบอร์โทรศัพท์</label>
+  <input id="regPhone" type="tel" inputmode="numeric" maxlength="10" placeholder="08xxxxxxxx" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;margin:4px 0 12px;box-sizing:border-box">
+  <button class="btn btn-p" onclick="C.registerMember()">สมัครสมาชิก</button>
+</div></div>
+
 
 <div class="ov" id="mTicket"><div class="md" style="text-align:center">
   <div id="ticketBody"></div>
@@ -679,6 +720,7 @@ const C={
   rmCart(i){this.cart.splice(i,1);this.updFab();this.openCart()},
   checkout(){
     if(!this.cart.length)return;
+    try{ this.recalcPayTotal(); }catch(e){}
     // ถ้ามีคิวยังไม่จบ อย่าเคลียร์ — เปิดตั๋วเดิม
     if(this.orderId && this.lastOrder && this.lastOrder.status!=='Cancelled' && this.lastOrder.status!=='Completed'){
       this.renderTicket(this.lastOrder);
@@ -1128,7 +1170,12 @@ const C={
     await shopRef.collection('orders').doc(orderId).update(patch);
     try{
       const snap=await shopRef.collection('orders').doc(orderId).get();
-      const full={id:orderId, ...(snap.data()||{})};
+      let full={id:orderId, ...(snap.data()||{})};
+      try{ await this.awardMemberPoints(full); }catch(e){}
+      try{
+        const s2=await shopRef.collection('orders').doc(orderId).get();
+        if(s2.exists) full={id:orderId, ...s2.data()};
+      }catch(e){}
       this.lastOrder=full;
       this.writeReceipt(full);
       this.renderTicket(full);
@@ -1453,6 +1500,7 @@ const C={
         cancelledBy:'customer',
         cancelReason:'ลูกค้ายกเลิกตอนรอคิวทำ'
       });
+      try{ await this.refundMemberBenefits(o); }catch(e){ console.warn('refund', e); }
       this.lastOrder=Object.assign({}, o, {status:'Cancelled', cancelledBy:'customer'});
       this.renderTicket(this.lastOrder);
       toast('ยกเลิกโดยลูกค้าแล้ว');
@@ -1467,6 +1515,150 @@ const C={
     }catch(e){
       toast('ยกเลิกไม่สำเร็จ: '+(e.message||e));
     }
+  },
+  
+  // ========== สมาชิก / แต้ม / คูปอง ==========
+  member:null,
+  memDiscount:{ pointsUsed:0, couponCode:'', couponDisc:0, pointsDisc:0, totalDisc:0 },
+  normPhone(p){
+    let s=String(p||'').replace(/\D/g,'');
+    if(s.length===11 && s.startsWith('66')) s='0'+s.slice(2);
+    return s;
+  },
+  onMemberPhoneInput(){
+    const el=document.getElementById('memPhone');
+    if(!el) return;
+    el.value=this.normPhone(el.value).slice(0,10);
+  },
+  async lookupMember(){
+    const phone=this.normPhone((document.getElementById('memPhone')||{}).value);
+    const st=document.getElementById('memStatus');
+    const box=document.getElementById('memBox');
+    this.member=null;
+    this.memDiscount={ pointsUsed:0, couponCode:'', couponDisc:0, pointsDisc:0, totalDisc:0 };
+    if(phone.length<9){
+      if(st) st.innerHTML='<span style="color:#E65100">กรอกเบอร์ให้ครบ</span>';
+      if(box) box.style.display='none';
+      this.recalcPayTotal();
+      return;
+    }
+    if(st) st.textContent='กำลังค้นหา…';
+    try{
+      const snap=await shopRef.collection('members').doc(phone).get();
+      if(!snap.exists){
+        if(st) st.innerHTML='<span style="color:#E65100">ไม่พบสมาชิก · สั่งได้ปกติ (เบอร์นี้ใช้ติดต่อเมื่ออาหารพร้อม)</span>';
+        if(box) box.style.display='none';
+        this.recalcPayTotal();
+        return;
+      }
+      this.member={phone, ...snap.data()};
+      if(st) st.innerHTML='<span style="color:#2E7D32">✓ สมาชิก: '+this.escName(this.member)+'</span>';
+      if(box) box.style.display='block';
+      const info=document.getElementById('memInfo');
+      if(info) info.innerHTML='<strong>'+this.escName(this.member)+'</strong><br>แต้มคงเหลือ <strong style="color:var(--p)">'+Number(this.member.points||0)+'</strong> แต้ม';
+      const ph=document.getElementById('memPointsHint');
+      if(ph) ph.textContent='ใช้ได้สูงสุดตามยอดออเดอร์ · 1 แต้ม = ส่วนลด 1 บาท';
+      const up=document.getElementById('memUsePoints'); if(up) up.checked=false;
+      const cp=document.getElementById('memCoupon'); if(cp) cp.value='';
+      this.recalcPayTotal();
+    }catch(e){
+      console.warn(e);
+      if(st) st.textContent='ค้นหาไม่สำเร็จ · สั่งได้ตามปกติ';
+      if(box) box.style.display='none';
+    }
+  },
+  escName(m){
+    return (String(m.firstName||'')+' '+String(m.lastName||'')).trim()||m.phone||'';
+  },
+  cartSubtotal(){
+    return (this.cart||[]).reduce((s,i)=>s+Number(i.total||0),0);
+  },
+  async recalcPayTotal(){
+    const sub=this.cartSubtotal();
+    let pointsDisc=0, couponDisc=0, couponCode='';
+    const usePts=document.getElementById('memUsePoints');
+    const couponEl=document.getElementById('memCoupon');
+    const line=document.getElementById('memDiscountLine');
+    if(this.member && usePts && usePts.checked){
+      const maxPts=Math.min(Number(this.member.points||0), Math.floor(sub));
+      pointsDisc=Math.max(0, maxPts);
+    }
+    const code=this.normCoupon((couponEl&&couponEl.value)||'');
+    if(code){
+      try{
+        const snap=await shopRef.collection('coupons').doc(code).get();
+        if(!snap.exists){
+          if(line) line.innerHTML='<span style="color:#C62828">ไม่พบคูปอง '+code+'</span>';
+          couponDisc=0; couponCode='';
+        } else {
+          const c=snap.data()||{};
+          const now=Date.now();
+          if(c.active===false){ if(line) line.innerHTML='<span style="color:#C62828">คูปองปิดใช้งาน</span>'; }
+          else if(c.expiresAt && Number(c.expiresAt)<now){ if(line) line.innerHTML='<span style="color:#C62828">คูปองหมดอายุ</span>'; }
+          else if(c.maxUses!=null && Number(c.usedCount||0)>=Number(c.maxUses)){ if(line) line.innerHTML='<span style="color:#C62828">คูปองใช้ครบจำนวนแล้ว</span>'; }
+          else if(c.minOrder!=null && sub<Number(c.minOrder)){ if(line) line.innerHTML='<span style="color:#C62828">ยอดขั้นต่ำ ฿'+c.minOrder+'</span>'; }
+          else {
+            couponCode=code;
+            if(c.type==='percent') couponDisc=Math.floor(sub*Number(c.value||0)/100);
+            else couponDisc=Math.floor(Number(c.value||0));
+            couponDisc=Math.min(couponDisc, Math.floor(sub));
+          }
+        }
+      }catch(e){ console.warn(e); }
+    }
+    // ใช้คูปองก่อน แล้วค่อยแต้ม กับยอดที่เหลือ
+    let afterCoupon=Math.max(0, sub-couponDisc);
+    if(pointsDisc>afterCoupon) pointsDisc=afterCoupon;
+    const totalDisc=couponDisc+pointsDisc;
+    const payable=Math.max(0, sub-totalDisc);
+    this.memDiscount={ pointsUsed:pointsDisc, couponCode, couponDisc, pointsDisc, totalDisc };
+    const pt=document.getElementById('payTotal');
+    if(pt){
+      if(totalDisc>0) pt.innerHTML='<span style="text-decoration:line-through;color:#999;font-size:1rem;font-weight:500">฿'+sub+'</span> ฿'+payable;
+      else pt.textContent='฿'+payable;
+    }
+    if(line){
+      if(totalDisc>0){
+        let t=[];
+        if(couponDisc) t.push('คูปอง -฿'+couponDisc);
+        if(pointsDisc) t.push('แต้ม -฿'+pointsDisc);
+        line.innerHTML='ส่วนลดรวม <strong>-฿'+totalDisc+'</strong> ('+t.join(' · ')+') · ยอดชำระ ฿'+payable;
+      } else if(code && !couponCode){ /* error already set */ }
+      else line.textContent='';
+    }
+    // อัปเดต QR ตามยอดใหม่ถ้ามี
+    try{
+      if(typeof this.renderPayQRInto==='function' && payable>=0){
+        const box=document.getElementById('ppQR');
+        if(box && document.getElementById('mPay') && document.getElementById('mPay').classList.contains('on')){
+          // regenerate pay QR on pay page via existing flow
+          this._payQRDataUrl=''; this._payQRAmount=null;
+        }
+      }
+    }catch(e){}
+    return payable;
+  },
+  normCoupon(c){ return String(c||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,''); },
+  async registerMember(){
+    const first=(document.getElementById('regFirst')||{}).value||'';
+    const last=(document.getElementById('regLast')||{}).value||'';
+    const phone=this.normPhone((document.getElementById('regPhone')||{}).value);
+    if(!String(first).trim()){ toast('กรอกชื่อ'); return; }
+    if(phone.length<9){ toast('กรอกเบอร์โทรให้ครบ'); return; }
+    try{
+      const ref=shopRef.collection('members').doc(phone);
+      const snap=await ref.get();
+      if(snap.exists){ toast('เบอร์นี้เป็นสมาชิกแล้ว'); return; }
+      await ref.set({
+        phone, firstName:String(first).trim(), lastName:String(last).trim(),
+        points:0, totalSpent:0, orderCount:0,
+        createdAt:Date.now(), updatedAt:Date.now()
+      });
+      toast('สมัครสมาชิกสำเร็จ');
+      this.hide('mMemberReg');
+      const mp=document.getElementById('memPhone'); if(mp) mp.value=phone;
+      await this.lookupMember();
+    }catch(e){ toast('สมัครไม่สำเร็จ: '+(e.message||e)); }
   },
   async confirmOrder(){
     this.payM='PROMPTPAY';
@@ -1525,12 +1717,45 @@ const C={
     if(!items.length){
       throw new Error('ตะกร้าว่าง ไม่สามารถสร้างออเดอร์ได้');
     }
-    const total=items.reduce((s,i)=>s+Number(i.total||0),0);
+    const subtotal=items.reduce((s,i)=>s+Number(i.total||0),0);
+    // คำนวณส่วนลดสมาชิกอีกครั้งก่อนสร้างออเดอร์
+    try{ await this.recalcPayTotal(); }catch(e){}
+    const md=this.memDiscount||{};
+    const discountAmount=Math.min(Number(md.totalDisc||0), subtotal);
+    const total=Math.max(0, subtotal-discountAmount);
     if(!(total>=0) || total>=200000){
       throw new Error('ยอดออเดอร์ไม่ถูกต้อง');
     }
+    const contactPhone=this.normPhone((document.getElementById('memPhone')||{}).value||'');
+    const memberPhone=(this.member&&this.member.phone)||'';
+    const pointsUsed=memberPhone?Math.min(Number(md.pointsUsed||0), total+discountAmount):0;
+    const couponCode=memberPhone?(md.couponCode||''):'';
     this._creatingOrder=true;
     try{
+    // ตัดแต้ม + ใช้คูปองใน transaction ก่อนสร้างออเดอร์
+    if(memberPhone && (pointsUsed>0 || couponCode)){
+      await db.runTransaction(async tx=>{
+        if(pointsUsed>0){
+          const mref=shopRef.collection('members').doc(memberPhone);
+          const ms=await tx.get(mref);
+          if(!ms.exists) throw new Error('ไม่พบสมาชิก');
+          const pts=Number((ms.data()||{}).points||0);
+          if(pts<pointsUsed) throw new Error('แต้มไม่พอ');
+          tx.update(mref,{ points:pts-pointsUsed, updatedAt:Date.now() });
+        }
+        if(couponCode){
+          const cref=shopRef.collection('coupons').doc(couponCode);
+          const cs=await tx.get(cref);
+          if(!cs.exists) throw new Error('ไม่พบคูปอง');
+          const c=cs.data()||{};
+          if(c.active===false) throw new Error('คูปองปิดใช้งาน');
+          if(c.expiresAt && Number(c.expiresAt)<Date.now()) throw new Error('คูปองหมดอายุ');
+          const used=Number(c.usedCount||0), max=c.maxUses!=null?Number(c.maxUses):null;
+          if(max!=null && used>=max) throw new Error('คูปองใช้ครบแล้ว');
+          tx.update(cref,{ usedCount:used+1, updatedAt:Date.now() });
+        }
+      });
+    }
     const queueRef=shopRef.collection('settings').doc('queue');
     const today=new Date();
     const dayKey=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
@@ -1547,7 +1772,12 @@ const C={
     });
     const id=uid();
     const order={
-      id, queue, items, total,
+      id, queue, items, total, subtotal,
+      discountAmount, pointsUsed: pointsUsed||0, couponCode: couponCode||'',
+      couponDisc: Number(md.couponDisc||0), pointsDisc: Number(md.pointsDisc||0),
+      memberPhone: memberPhone||'', contactPhone: contactPhone||memberPhone||'',
+      memberName: this.member?this.escName(this.member):'',
+      pointsAwarded:0, pointsEarned:0,
       status: opts.status||'Pending',
       paymentMethod: 'PROMPTPAY',
       paymentStatus: opts.paymentStatus||'UNPAID',

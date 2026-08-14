@@ -112,6 +112,7 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
     <button id="navHistory" onclick="M.tab('history')">📚 ประวัติ</button>
     <button id="navShop" onclick="M.tab('shop')">🏪 จัดการร้าน</button>
     <button id="navReport" onclick="M.tab('report')">📊 รายงาน</button>
+    <button id="navMembers" onclick="M.tab('members')">👤 สมาชิก</button>
     <button id="navSet" onclick="M.tab('settings')">⚙️ ตั้งค่า</button>
     <a href="./">ลูกค้า</a>
     <button onclick="M.logout()" style="background:#fee;color:var(--d)">ออก</button>
@@ -260,6 +261,49 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
     <div class="rpt" id="reportBox"></div>
     <h3 style="margin:14px 0 8px">เมนูขายดี</h3>
     <div id="topMenus"></div>
+  </div>
+
+  
+  <div id="panelMembers" class="hide">
+    <div class="form-card" style="padding:12px">
+      <div style="font-weight:700;color:var(--p);margin-bottom:8px">👤 ระบบสมาชิก</div>
+      <div class="subtabs" style="margin-bottom:12px">
+        <button class="on" id="memTabList" onclick="M.memSubTab('list')">รายชื่อ</button>
+        <button id="memTabCoupon" onclick="M.memSubTab('coupon')">คูปอง</button>
+        <button id="memTabAdd" onclick="M.memSubTab('add')">เพิ่มสมาชิก</button>
+      </div>
+
+      <div id="memPanelList">
+        <input id="memSearch" placeholder="ค้นหาชื่อหรือเบอร์" oninput="M.filterMembers()" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;margin-bottom:10px;box-sizing:border-box">
+        <div id="memList" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+
+      <div id="memPanelCoupon" class="hide">
+        <div style="font-weight:600;margin-bottom:8px">สร้างคูปองส่วนลด</div>
+        <label class="lbl">รหัสคูปอง</label>
+        <input id="cpCode" placeholder="SAVE10" style="text-transform:uppercase">
+        <label class="lbl">ประเภท</label>
+        <select id="cpType"><option value="fixed">จำนวนเงิน (บาท)</option><option value="percent">เปอร์เซ็นต์ (%)</option></select>
+        <label class="lbl">มูลค่า</label>
+        <input id="cpValue" type="number" min="1" placeholder="เช่น 10">
+        <label class="lbl">ยอดขั้นต่ำ (บาท, ว่าง = ไม่จำกัด)</label>
+        <input id="cpMin" type="number" min="0" placeholder="0">
+        <label class="lbl">จำนวนครั้งใช้ได้ (ว่าง = ไม่จำกัด)</label>
+        <input id="cpMax" type="number" min="1" placeholder="ไม่จำกัด">
+        <label class="lbl">หมดอายุ (ว่าง = ไม่หมดอายุ)</label>
+        <input id="cpExp" type="date">
+        <button class="btn btn-p" style="margin-top:10px" onclick="M.createCoupon()">บันทึกคูปอง</button>
+        <div id="cpList" style="margin-top:14px"></div>
+      </div>
+
+      <div id="memPanelAdd" class="hide">
+        <label class="lbl">ชื่อ</label><input id="admMemFirst">
+        <label class="lbl">นามสกุล</label><input id="admMemLast">
+        <label class="lbl">เบอร์โทร</label><input id="admMemPhone" type="tel" maxlength="10">
+        <label class="lbl">แต้มเริ่มต้น</label><input id="admMemPts" type="number" value="0" min="0">
+        <button class="btn btn-p" style="margin-top:10px" onclick="M.adminAddMember()">บันทึกสมาชิก</button>
+      </div>
+    </div>
   </div>
 
   <div id="panelSettings" class="hide">
@@ -785,6 +829,7 @@ const M={
         <div style="text-align:right"><div style="color:#888;font-size:12px">${o.createdAt?new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}</div>
         <div style="font-size:11px;font-weight:600;margin-top:2px;color:${o.status==='Cooking'?'#1565C0':o.status==='Ready'?'#2E7D32':'#E65100'}">${({Pending:'รอคิวทำ',AwaitingPayment:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:'ยกเลิก'})[o.status]||o.status}</div></div></div>
         <div style="margin:8px 0;color:#444">${esc(prev)}</div>
+        ${o.memberPhone?`<div style="font-size:11px;color:#6A1B9A">👤 ${esc(o.memberName||o.memberPhone)}${o.discountAmount?(' · ส่วนลด ฿'+o.discountAmount):''}</div>`: (o.contactPhone?`<div style="font-size:11px;color:#666">📞 ${esc(o.contactPhone)}</div>`:'')}
         ${this.formatEtaCountdown(o)}
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px"><strong style="color:var(--p);font-size:1.25rem">${money(o.total)}</strong><span style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${method}${pay}${slip}</span></div></div>`;
     }).join('');
@@ -1088,6 +1133,12 @@ const M={
     // รีโหลดจาก Firestore เป็นแหล่งจริง
     const snap=await shopRef.collection('orders').doc(id).get();
     const full={id, ...(snap.data()||{})};
+    try{ await this.awardMemberPoints(full); }catch(e){ console.warn(e); }
+    // reload after points
+    try{
+      const snap2=await shopRef.collection('orders').doc(id).get();
+      if(snap2.exists) Object.assign(full, snap2.data());
+    }catch(e){}
     await this.writeReceipt(full);
     // อัปเดต local list ให้ตรง
     const idx=this.orders.findIndex(x=>x.id===id);
@@ -1257,6 +1308,7 @@ const M={
     if(name==='history') this.loadHistory();
     if(name==='shop') this.shopTab(this.shopTabName||'menu');
     if(name==='settings') this.loadSettingsUI();
+    if(name==='members') this.loadMembersPanel();
   },
   histPreset(p){
     const from=document.getElementById('histFrom');
