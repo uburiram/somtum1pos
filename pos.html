@@ -264,6 +264,15 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
   </div>
 
   
+  
+  <div id="panelMemberDetail" class="hide">
+    <div class="form-card" style="padding:12px">
+      <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0 0 10px" onclick="M.closeMemberDetail()">← กลับรายชื่อ</button>
+      <div style="font-weight:700;color:var(--p);margin-bottom:8px">รายละเอียดสมาชิก</div>
+      <div id="memDetailBody"></div>
+    </div>
+  </div>
+
   <div id="panelMembers" class="hide">
     <div class="form-card" style="padding:12px">
       <div style="font-weight:700;color:var(--p);margin-bottom:8px">👤 ระบบสมาชิก</div>
@@ -1164,17 +1173,20 @@ const M={
     }
     box.innerHTML=list.map(m=>{
       const phone=esc(m.phone||m.id||'');
-      return '<div class="form-card" style="padding:10px;margin:0">'
+      const active=m.status!=='cancelled' && m.active!==false;
+      const pts=Number(m.points||0);
+      const pc=(m.personalCoupons||[]).filter(c=>c&&!c.used).length;
+      return '<div class="form-card" style="padding:10px;margin:0;cursor:pointer;opacity:'+(active?'1':'0.65')+'" onclick="M.openMemberDetail(\''+phone+'\')">'
         +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">'
-        +'<div><div style="font-weight:700">'+esc(m.firstName||'')+' '+esc(m.lastName||'')+'</div>'
+        +'<div><div style="font-weight:700">'+esc(m.firstName||'')+' '+esc(m.lastName||'')
+        +(active?'':' <span style="color:#C62828;font-size:11px">(ยกเลิกสิทธิ์)</span>')+'</div>'
         +'<div style="font-size:13px;color:#555">'+phone+'</div>'
-        +'<div style="font-size:12px;margin-top:4px">แต้ม: <strong style="color:var(--p)">'+Number(m.points||0)
-        +'</strong> · ยอดสะสม ฿'+Number(m.totalSpent||0)+' · '+Number(m.orderCount||0)+' ออเดอร์'+(((m.personalCoupons||[]).filter(function(c){return c&&!c.used;}).length)?(' · คูปองส่วนตัว '+(m.personalCoupons||[]).filter(function(c){return c&&!c.used;}).length+' ใบ'):'')+'</div></div>'
-        +'<div style="display:flex;flex-direction:column;gap:4px">'
-        +'<button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="M.adjustPoints(\''+phone+'\')">± แต้ม</button>'
-        +'<button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="M.assignPersonalCoupon(\''+phone+'\')">🎟 คูปอง</button>'
-        +'<button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0;color:var(--d)" onclick="M.deleteMember(\''+phone+'\')">ลบ</button>'
-        +'</div></div></div>';
+        +'<div style="font-size:12px;margin-top:4px">แต้ม: <strong style="color:var(--p)">'+pts
+        +'</strong> · ยอดสะสม ฿'+Number(m.totalSpent||0)+' · '+Number(m.orderCount||0)+' ออเดอร์'
+        +(pc?(' · คูปองส่วนตัว '+pc+' ใบ'):'')
+        +'</div></div>'
+        +'<div style="font-size:12px;color:var(--p);font-weight:600">จัดการ ›</div>'
+        +'</div></div>';
     }).join('');
   },
   async adjustPoints(phone){
@@ -1324,6 +1336,134 @@ const M={
       });
       if(earn>0) toast('สมาชิก +'+earn+' แต้ม');
     }catch(e){ console.warn('award', e); }
+  },
+
+  
+  openMemberDetail(phone){
+    phone=this.normPhone(phone);
+    const m=(this.membersCache||[]).find(x=>this.normPhone(x.phone||x.id)===phone);
+    if(!m){ toast('ไม่พบสมาชิก'); return; }
+    this._editingMember=m;
+    const panel=document.getElementById('panelMemberDetail');
+    const list=document.getElementById('panelMembers');
+    if(list) list.classList.add('hide');
+    if(panel) panel.classList.remove('hide');
+    this.renderMemberDetail(m);
+  },
+  closeMemberDetail(){
+    const panel=document.getElementById('panelMemberDetail');
+    const list=document.getElementById('panelMembers');
+    if(panel) panel.classList.add('hide');
+    if(list) list.classList.remove('hide');
+    this._editingMember=null;
+    this.loadMembersPanel();
+  },
+  renderMemberDetail(m){
+    const box=document.getElementById('memDetailBody');
+    if(!box||!m) return;
+    const phone=esc(m.phone||m.id||'');
+    const active=m.status!=='cancelled' && m.active!==false;
+    const created=m.createdAt?new Date(m.createdAt).toLocaleString('th-TH'):'-';
+    const cancelled=m.cancelledAt?new Date(m.cancelledAt).toLocaleString('th-TH'):'-';
+    const pcs=Array.isArray(m.personalCoupons)?m.personalCoupons:[];
+    let pcHtml='';
+    if(!pcs.length) pcHtml='<div style="color:#888;font-size:13px">ยังไม่มีคูปองส่วนตัว</div>';
+    else {
+      pcHtml=pcs.map(c=>{
+        const lab=c.type==='percent'?(c.value+'%'):('฿'+c.value);
+        const st=c.used?'<span style="color:#888">ใช้แล้ว</span>':'<span style="color:#2E7D32">ยังใช้ได้</span>';
+        return '<div style="padding:6px 0;border-bottom:1px solid #eee;font-size:13px;display:flex;justify-content:space-between;gap:6px">'
+          +'<span>'+esc(c.note||lab)+' ('+lab+') · '+st+'</span>'
+          +(c.used?'':'<button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="M.removePersonalCoupon(\''+phone+'\',\''+esc(c.id)+'\')">ลบ</button>')
+          +'</div>';
+      }).join('');
+    }
+    box.innerHTML=
+      '<div style="margin-bottom:10px;padding:8px;background:'+(active?'#E8F5E9':'#FFEBEE')+';border-radius:8px;font-size:13px">'
+      +(active?'✓ สิทธิ์สมาชิกใช้งานได้':'✗ ยกเลิกสิทธิ์แล้ว')
+      +'<div style="font-size:12px;color:#555;margin-top:4px">สมัครเมื่อ: '+created
+      +(m.cancelledAt?(' · ยกเลิกเมื่อ: '+cancelled):'')
+      +(m.cancelReason?(' · เหตุผล: '+esc(m.cancelReason)):'')
+      +'</div></div>'
+      +'<label class="lbl">ชื่อ</label><input id="mdFirst" value="'+esc(m.firstName||'')+'">'
+      +'<label class="lbl">นามสกุล</label><input id="mdLast" value="'+esc(m.lastName||'')+'">'
+      +'<label class="lbl">เบอร์โทร (แก้ไม่ได้)</label><input id="mdPhone" value="'+phone+'" disabled>'
+      +'<label class="lbl">แต้ม</label><input id="mdPoints" type="number" min="0" value="'+Number(m.points||0)+'">'
+      +'<button type="button" class="btn btn-p" style="margin-top:10px" onclick="M.saveMemberDetail()">บันทึกข้อมูล / แต้ม</button>'
+      +'<div style="margin-top:16px;font-weight:600">🎟 คูปองส่วนตัว</div>'
+      +'<div style="margin:8px 0">'+pcHtml+'</div>'
+      +'<button type="button" class="btn btn-o" style="margin-top:6px" onclick="M.assignPersonalCoupon(\''+phone+'\')">+ มอบคูปองส่วนตัว</button>'
+      +(active
+        ? ('<button type="button" class="btn btn-o" style="margin-top:12px;color:var(--d);border-color:#ef9a9a" onclick="M.cancelMembership(\''+phone+'\')">ยกเลิกสิทธิ์สมาชิก</button>'
+           +'<div style="font-size:11px;color:#888;margin-top:4px">ไม่ลบประวัติ · เก็บวันสมัคร/วันยกเลิกไว้ตรวจสอบย้อนหลัง</div>')
+        : ('<button type="button" class="btn btn-o" style="margin-top:12px" onclick="M.reactivateMembership(\''+phone+'\')">เปิดสิทธิ์สมาชิกอีกครั้ง</button>'));
+  },
+  async saveMemberDetail(){
+    const m=this._editingMember; if(!m) return;
+    const phone=this.normPhone(m.phone||m.id);
+    const first=String((document.getElementById('mdFirst')||{}).value||'').trim();
+    const last=String((document.getElementById('mdLast')||{}).value||'').trim();
+    const pts=Math.max(0, Math.floor(Number((document.getElementById('mdPoints')||{}).value||0)));
+    if(!first){ toast('กรอกชื่อ'); return; }
+    try{
+      await shopRef.collection('members').doc(phone).set({
+        firstName:first, lastName:last, points:pts, updatedAt:Date.now()
+      }, {merge:true});
+      toast('บันทึกแล้ว');
+      await this.loadMembersPanel();
+      const updated=(this.membersCache||[]).find(x=>this.normPhone(x.phone||x.id)===phone);
+      if(updated){ this._editingMember=updated; this.renderMemberDetail(updated); }
+    }catch(e){ toast('บันทึกไม่สำเร็จ: '+(e.message||e)); }
+  },
+  async cancelMembership(phone){
+    phone=this.normPhone(phone);
+    const reason=prompt('เหตุผลการยกเลิกสิทธิ์สมาชิก (จำเป็น)', '');
+    if(reason==null) return;
+    if(!String(reason).trim()){ toast('ต้องใส่เหตุผล'); return; }
+    if(!confirm('ยืนยันยกเลิกสิทธิ์สมาชิก '+phone+'?\nข้อมูลจะถูกเก็บไว้ตรวจสอบย้อนหลัง')) return;
+    try{
+      await shopRef.collection('members').doc(phone).set({
+        status:'cancelled', active:false,
+        cancelledAt:Date.now(), cancelReason:String(reason).trim(),
+        updatedAt:Date.now()
+      }, {merge:true});
+      toast('ยกเลิกสิทธิ์สมาชิกแล้ว');
+      await this.loadMembersPanel();
+      const updated=(this.membersCache||[]).find(x=>this.normPhone(x.phone||x.id)===phone);
+      if(updated){ this._editingMember=updated; this.renderMemberDetail(updated); }
+    }catch(e){ toast('ไม่สำเร็จ: '+(e.message||e)); }
+  },
+  async reactivateMembership(phone){
+    phone=this.normPhone(phone);
+    if(!confirm('เปิดสิทธิ์สมาชิก '+phone+' อีกครั้ง?')) return;
+    try{
+      await shopRef.collection('members').doc(phone).set({
+        status:'active', active:true,
+        reactivatedAt:Date.now(), updatedAt:Date.now()
+      }, {merge:true});
+      toast('เปิดสิทธิ์แล้ว');
+      await this.loadMembersPanel();
+      const updated=(this.membersCache||[]).find(x=>this.normPhone(x.phone||x.id)===phone);
+      if(updated){ this._editingMember=updated; this.renderMemberDetail(updated); }
+    }catch(e){ toast('ไม่สำเร็จ: '+(e.message||e)); }
+  },
+  async removePersonalCoupon(phone, couponId){
+    phone=this.normPhone(phone);
+    if(!confirm('ลบคูปองส่วนตัวนี้?')) return;
+    try{
+      await db.runTransaction(async tx=>{
+        const ref=shopRef.collection('members').doc(phone);
+        const snap=await tx.get(ref);
+        if(!snap.exists) throw new Error('ไม่พบสมาชิก');
+        const md=snap.data()||{};
+        const list=(md.personalCoupons||[]).filter(c=>c && c.id!==couponId);
+        tx.update(ref,{ personalCoupons:list, updatedAt:Date.now() });
+      });
+      toast('ลบคูปองแล้ว');
+      await this.loadMembersPanel();
+      const updated=(this.membersCache||[]).find(x=>this.normPhone(x.phone||x.id)===phone);
+      if(updated){ this._editingMember=updated; this.renderMemberDetail(updated); }
+    }catch(e){ toast('ลบไม่สำเร็จ: '+(e.message||e)); }
   },
 
   async markPaid(id, patch){
@@ -1523,7 +1663,7 @@ const M={
     if(name==='history') this.loadHistory();
     if(name==='shop') this.shopTab(this.shopTabName||'menu');
     if(name==='settings') this.loadSettingsUI();
-    if(name==='members') this.loadMembersPanel();
+    if(name==='members'){ const d=document.getElementById('panelMemberDetail'); if(d) d.classList.add('hide'); this.loadMembersPanel(); }
   },
   histPreset(p){
     const from=document.getElementById('histFrom');
@@ -1597,13 +1737,21 @@ const M={
     else if(range==='30d') from=now-30*864e5;
     const list=this.orders.filter(o=>(o.createdAt||0)>=from);
     const paid=list.filter(o=>o.paymentStatus==='PAID');
-    const cash=paid.filter(o=>o.paymentMethod==='CASH').reduce((s,o)=>s+Number(o.total||0),0);
-    const pp=paid.filter(o=>o.paymentMethod==='PROMPTPAY').reduce((s,o)=>s+Number(o.total||0),0);
+    const cash=paid.filter(o=>o.paymentMethod==='CASH').reduce((s,o)=>s+Number(o.paidAmount!=null?o.paidAmount:o.total||0),0);
+    const pp=paid.filter(o=>o.paymentMethod==='PROMPTPAY'||o.paymentMethod==='QR').reduce((s,o)=>s+Number(o.paidAmount!=null?o.paidAmount:o.total||0),0);
+    const ptsPay=paid.filter(o=>o.paymentMethod==='POINTS').reduce((s,o)=>s+Number(o.pointsDisc||o.pointsUsed||0),0);
+    const pointsUsedTotal=list.reduce((s,o)=>s+Number(o.pointsUsed||o.pointsDisc||0),0);
+    const couponDiscTotal=list.reduce((s,o)=>s+Number(o.couponDisc||0),0);
+    const discountTotal=list.reduce((s,o)=>s+Number(o.discountAmount||0),0);
+    const salesPaid=paid.reduce((s,o)=>s+Number(o.paidAmount!=null?o.paidAmount:o.total||0),0);
     document.getElementById('reportBox').innerHTML=`
-      <div class="rc"><div class="v">${money(paid.reduce((s,o)=>s+Number(o.total||0),0))}</div><div class="l">ยอดขายชำระแล้ว</div></div>
-      <div class="rc"><div class="v">${list.length}</div><div class="l">ออเดอร์</div></div>
+      <div class="rc"><div class="v">${money(salesPaid)}</div><div class="l">ยอดรับเงินจริง (ชำระแล้ว)</div></div>
+      <div class="rc"><div class="v">${list.length}</div><div class="l">ออเดอร์ทั้งหมด</div></div>
       <div class="rc"><div class="v">${money(cash)}</div><div class="l">เงินสด</div></div>
-      <div class="rc"><div class="v">${money(pp)}</div><div class="l">พร้อมเพย์</div></div>`;
+      <div class="rc"><div class="v">${money(pp)}</div><div class="l">พร้อมเพย์</div></div>
+      <div class="rc"><div class="v">${money(pointsUsedTotal)}</div><div class="l">ใช้แต้ม (฿)</div></div>
+      <div class="rc"><div class="v">${money(couponDiscTotal)}</div><div class="l">ส่วนลดคูปอง</div></div>
+      <div class="rc"><div class="v">${money(discountTotal)}</div><div class="l">ส่วนลดรวม (แต้ม+คูปอง)</div></div>`;
     const mc={}; list.forEach(o=>(o.items||[]).forEach(i=>{mc[i.name]=(mc[i.name]||0)+Number(i.qty||0)}));
     const top=Object.entries(mc).sort((a,b)=>b[1]-a[1]).slice(0,8);
     document.getElementById('topMenus').innerHTML=top.length?top.map(([n,q],i)=>`<div class="list-item" style="justify-content:space-between"><div class="meta"><div class="name">${i+1}. ${esc(n)}</div></div><strong style="flex:0 0 auto;white-space:nowrap">${q}</strong></div>`).join(''):'<div style="color:#888">ยังไม่มี</div>';

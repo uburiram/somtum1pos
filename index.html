@@ -173,7 +173,7 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
       </div>
       <div id="memDiscountLine" style="font-size:13px;margin-top:8px;color:#2E7D32;font-weight:600"></div>
     </div>
-    <button type="button" class="btn btn-o btn-sm" style="width:100%;margin-top:10px" onclick="C.openMemberReg()">สมัครสมาชิก</button>
+    <button type="button" class="btn btn-o btn-sm" style="width:100%;margin-top:10px" id="btnMemberReg" onclick="C.openMemberReg()">สมัครสมาชิก</button>
   </div>
 
   <div style="text-align:center;margin-bottom:12px">
@@ -766,8 +766,13 @@ const C={
     const z=document.getElementById('ppZone');
     if(!z) return;
     if(true){ // PROMPTPAY only
+      // ยอด QR ต้องเป็นยอดหลังส่วนลด/แต้ม เท่านั้น
+      const sub=(this.cart||[]).reduce((s,i)=>s+Number(i.total||0),0);
+      const md=this.memDiscount||{};
+      const disc=Math.min(Number(md.totalDisc||0), sub);
+      const total=Math.max(0, sub-disc);
+      if(total<=0){ z.style.display='none'; return; }
       z.style.display='block';
-      const total=this.cart.reduce((s,i)=>s+i.total,0);
       let payload=null, label='';
       const kshopPayload=this.kshopPayload||window.KSHOP_QR_PAYLOAD||'';
       if(this.payType==='kshop' || this.payType==='merchant'){
@@ -1553,6 +1558,8 @@ const C={
     if(phone.length<9){
       if(st) st.innerHTML='<span style="color:#E65100">กรอกเบอร์ให้ครบ</span>';
       if(box) box.style.display='none';
+      const regBtn=document.getElementById('btnMemberReg');
+      if(regBtn) regBtn.style.display='block';
       this.recalcPayTotal();
       return;
     }
@@ -1560,14 +1567,30 @@ const C={
     try{
       const snap=await shopRef.collection('members').doc(phone).get();
       if(!snap.exists){
-        if(st) st.innerHTML='<span style="color:#E65100">ไม่พบสมาชิก · สั่งได้ปกติ</span><br>'+
-          '<button type="button" class="btn btn-o btn-sm" style="width:auto;margin:6px 0 0;display:inline-flex" onclick="C.openMemberReg(\''+phone+'\')">สมัครสมาชิกด้วยเบอร์นี้</button>'+
-          '<div style="font-size:11px;color:#888;margin-top:4px">เบอร์นี้ใช้ติดต่อเมื่ออาหารพร้อม · กดสมัครแล้วกรอกแค่ชื่อ-นามสกุล</div>';
+        if(st) st.innerHTML='<span style="color:#E65100">ไม่พบสมาชิก · สั่งได้ปกติ</span>'+
+          '<div style="font-size:11px;color:#888;margin-top:4px">เบอร์นี้เก็บเป็นเบอร์ติดต่อเมื่ออาหารพร้อม · สมัครได้ที่ปุ่มด้านล่าง</div>';
         if(box) box.style.display='none';
+        // จำเบอร์ไว้หน้าสมัคร
+        try{
+          const rp=document.getElementById('regPhone');
+          if(rp) rp.value=phone;
+        }catch(e){}
+        const regBtn=document.getElementById('btnMemberReg');
+        if(regBtn) regBtn.style.display='block';
+        this.recalcPayTotal();
+        return
+      }
+      const md={phone, ...snap.data()};
+      if(md.status==='cancelled' || md.active===false){
+        if(st) st.innerHTML='<span style="color:#E65100">เบอร์นี้ถูกยกเลิกสิทธิ์สมาชิก</span><div style="font-size:11px;color:#888">สั่งได้ปกติแต่ไม่มีแต้ม/คูปอง</div>';
+        if(box) box.style.display='none';
+        this.member=null;
+        const regBtn=document.getElementById('btnMemberReg');
+        if(regBtn) regBtn.style.display='none';
         this.recalcPayTotal();
         return;
       }
-      this.member={phone, ...snap.data()};
+      this.member=md;
       if(st) st.innerHTML='<span style="color:#2E7D32">✓ สมาชิก: '+this.escName(this.member)+'</span>';
       if(box) box.style.display='block';
       const info=document.getElementById('memInfo');
@@ -1578,6 +1601,8 @@ const C={
       const cp=document.getElementById('memCoupon'); if(cp) cp.value='';
       this.selectedPersonalCouponId='';
       this.renderPersonalCoupons();
+      const regBtn=document.getElementById('btnMemberReg');
+      if(regBtn) regBtn.style.display='none';
       this.recalcPayTotal();
     }catch(e){
       console.warn(e);
@@ -1741,8 +1766,59 @@ const C={
         }
       }
     }catch(e){}
+    // รีเฟรช QR ตามยอดหลังส่วนลดทุกครั้งที่คำนวณใหม่
+    try{ this.refreshPayQR(payable); }catch(e){ console.warn(e); }
     return payable;
   },
+  refreshPayQR(payable){
+    const z=document.getElementById('ppZone');
+    const qr=document.getElementById('ppQR');
+    if(!z) return;
+    const amount=Math.max(0, Number(payable||0));
+    if(amount<=0){
+      z.style.display='none';
+      if(qr) qr.innerHTML='';
+      this._payQRDataUrl='';
+      this._payQRAmount=0;
+      return;
+    }
+    z.style.display='block';
+    // สร้างใหม่เมื่อยอดเปลี่ยน
+    if(this._payQRAmount===amount && this._payQRDataUrl){
+      if(qr && !qr.querySelector('img,canvas')){
+        // ยังว่าง
+      } else return;
+    }
+    let payload=null, label='';
+    const kshopPayload=this.kshopPayload||window.KSHOP_QR_PAYLOAD||'';
+    try{
+      if(this.payType==='kshop' || this.payType==='merchant'){
+        payload=PP.genKShop(amount, kshopPayload) || PP.genMerchant(this.merchantId||'EMPKB000002198793001', amount);
+        label='Thai QR (K Shop): '+(this.merchantId||'EMPKB000002198793001');
+      } else {
+        payload=PP.gen(this.promptpay, amount);
+        label='พร้อมเพย์: '+(this.promptpay||'-');
+      }
+    }catch(e){ console.warn(e); }
+    const pn=document.getElementById('ppNum'); if(pn) pn.textContent=label||'';
+    const pnm=document.getElementById('ppName');
+    if(pnm) pnm.textContent=(this.accountName?('ชื่อบัญชี: '+this.accountName+' · '):'')+('ร้าน: '+this.shopName);
+    if(qr){
+      qr.innerHTML='';
+      if(payload && typeof QRCode!=='undefined'){
+        try{
+          new QRCode(qr,{text:payload,width:200,height:200});
+          try{ this.ensurePayQRAsImage(); }catch(e){}
+          this._payQRAmount=amount;
+          try{
+            const c=qr.querySelector('canvas');
+            if(c) this._payQRDataUrl=c.toDataURL('image/png');
+          }catch(e){}
+        }catch(e){ console.warn(e); }
+      }
+    }
+  },
+
   normCoupon(c){ return String(c||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,''); },
   openMemberReg(phone){
     const p=this.normPhone(phone||((document.getElementById('memPhone')||{}).value)||'');
