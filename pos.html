@@ -1169,9 +1169,10 @@ const M={
         +'<div><div style="font-weight:700">'+esc(m.firstName||'')+' '+esc(m.lastName||'')+'</div>'
         +'<div style="font-size:13px;color:#555">'+phone+'</div>'
         +'<div style="font-size:12px;margin-top:4px">แต้ม: <strong style="color:var(--p)">'+Number(m.points||0)
-        +'</strong> · ยอดสะสม ฿'+Number(m.totalSpent||0)+' · '+Number(m.orderCount||0)+' ออเดอร์</div></div>'
+        +'</strong> · ยอดสะสม ฿'+Number(m.totalSpent||0)+' · '+Number(m.orderCount||0)+' ออเดอร์'+(((m.personalCoupons||[]).filter(function(c){return c&&!c.used;}).length)?(' · คูปองส่วนตัว '+(m.personalCoupons||[]).filter(function(c){return c&&!c.used;}).length+' ใบ'):'')+'</div></div>'
         +'<div style="display:flex;flex-direction:column;gap:4px">'
         +'<button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="M.adjustPoints(\''+phone+'\')">± แต้ม</button>'
+        +'<button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="M.assignPersonalCoupon(\''+phone+'\')">🎟 คูปอง</button>'
         +'<button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0;color:var(--d)" onclick="M.deleteMember(\''+phone+'\')">ลบ</button>'
         +'</div></div></div>';
     }).join('');
@@ -1265,6 +1266,40 @@ const M={
       this.loadCoupons();
     }catch(e){ toast('ปรับสถานะไม่สำเร็จ'); }
   },
+  
+  async assignPersonalCoupon(phone){
+    phone=this.normPhone(phone);
+    if(!phone){ toast('ไม่มีเบอร์'); return; }
+    const typeAns=prompt('ประเภทคูปอง:\nfixed = จำนวนเงิน\npercent = เปอร์เซ็นต์', 'fixed');
+    if(typeAns==null) return;
+    const t=String(typeAns).toLowerCase().indexOf('p')>=0?'percent':'fixed';
+    const valRaw=prompt(t==='percent'?'ส่วนลดกี่ %':'ส่วนลดกี่บาท', t==='percent'?'10':'20');
+    if(valRaw==null) return;
+    const value=Number(valRaw);
+    if(!(value>0)){ toast('มูลค่าไม่ถูกต้อง'); return; }
+    if(t==='percent'&&value>100){ toast('% ไม่เกิน 100'); return; }
+    const minRaw=prompt('ยอดขั้นต่ำบาท (0=ไม่จำกัด)', '0');
+    const minOrder=Math.max(0, Number(minRaw||0)||0);
+    const note=prompt('ชื่อที่ลูกค้าเห็น', t==='percent'?(value+'%'):('฿'+value))||'';
+    const expRaw=prompt('หมดอายุ YYYY-MM-DD (ว่าง=ไม่หมด)', '');
+    let expiresAt=null;
+    if(expRaw&&String(expRaw).trim()) expiresAt=new Date(String(expRaw).trim()+'T23:59:59').getTime();
+    const id='PC'+Date.now().toString(36).toUpperCase()+Math.floor(Math.random()*900);
+    try{
+      await db.runTransaction(async tx=>{
+        const ref=shopRef.collection('members').doc(phone);
+        const snap=await tx.get(ref);
+        if(!snap.exists) throw new Error('ไม่พบสมาชิก');
+        const md=snap.data()||{};
+        const list=Array.isArray(md.personalCoupons)?md.personalCoupons.slice():[];
+        list.push({ id, type:t, value, minOrder, note:String(note).trim(), expiresAt, used:false, assignedAt:Date.now() });
+        tx.update(ref,{ personalCoupons:list, updatedAt:Date.now() });
+      });
+      toast('มอบคูปองส่วนตัวแล้ว');
+      this.loadMembersPanel();
+    }catch(e){ toast('ไม่สำเร็จ: '+(e.message||e)); }
+  },
+
   async awardMemberPoints(order){
     if(!order||!order.memberPhone||order.pointsAwarded) return;
     const paid=Number(order.paidAmount!=null?order.paidAmount:order.total||0);
