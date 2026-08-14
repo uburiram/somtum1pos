@@ -956,12 +956,54 @@ const M={
   },
   async cancelOrder(id){
     if(!confirm('ยืนยันยกเลิกออเดอร์นี้?')) return;
+    const order=(this.orders||[]).find(o=>o.id===id) || null;
     await shopRef.collection('orders').doc(id).update({
       status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
       paymentStatus:'UNPAID', paidAmount:0, changeAmount:0
     });
+    // คืนแต้ม / คูปองส่วนตัว / คูปองรวม ถ้ามีการใช้
+    try{ await this.refundMemberBenefits(order||{id}); }catch(e){ console.warn('refund', e); }
     toast('ยกเลิกโดยร้านแล้ว');
     (function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})();
+  },
+  async refundMemberBenefits(o){
+    if(!o) return;
+    const phone=this.normPhone(o.memberPhone||'');
+    const pts=Number(o.pointsUsed||o.pointsDisc||0);
+    const pcid=o.personalCouponId||'';
+    const pubCode=String(o.couponCode||'').trim().toUpperCase();
+    const isPub=pubCode && !String(pubCode).startsWith('PERSONAL:');
+    if(!phone && !isPub) return;
+    if(pts<=0 && !pcid && !isPub) return;
+    try{
+      await db.runTransaction(async tx=>{
+        if(phone){
+          const ref=shopRef.collection('members').doc(phone);
+          const s=await tx.get(ref);
+          if(s.exists){
+            const md=s.data()||{};
+            const patch={ updatedAt:Date.now() };
+            if(pts>0) patch.points=Number(md.points||0)+pts;
+            if(pcid && Array.isArray(md.personalCoupons)){
+              patch.personalCoupons=md.personalCoupons.map(c=>{
+                if(c && c.id===pcid && c.used) return Object.assign({}, c, {used:false, usedAt:null});
+                return c;
+              });
+            }
+            tx.update(ref, patch);
+          }
+        }
+        if(isPub){
+          const cref=shopRef.collection('coupons').doc(pubCode);
+          const cs=await tx.get(cref);
+          if(cs.exists){
+            const c=cs.data()||{};
+            const used=Math.max(0, Number(c.usedCount||0)-1);
+            tx.update(cref,{ usedCount:used, updatedAt:Date.now() });
+          }
+        }
+      });
+    }catch(e){ console.warn('refundMemberBenefits', e); }
   },
   applyShopOpenUI(isOpen){
     this.isOpen = isOpen!==false;
@@ -1019,6 +1061,7 @@ const M={
       // ลบได้เฉพาะสถานะจบ — ถ้ายังไม่จบให้ยกเลิกก่อน
       const cur=this.orders.find(x=>x.id===id);
       if(cur && cur.status!=='Completed' && cur.status!=='Cancelled'){
+        try{ await this.refundMemberBenefits(cur); }catch(e){ console.warn(e); }
         await shopRef.collection('orders').doc(id).update({
           status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
           cancelReason:'ลบประวัติโดยร้าน'

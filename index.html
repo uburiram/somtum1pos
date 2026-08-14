@@ -168,7 +168,7 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
       <div style="display:flex;gap:6px;margin-top:4px">
         <input id="memCoupon" type="text" placeholder="เช่น SAVE10" maxlength="20"
           style="flex:1;padding:8px;border:1px solid #ddd;border-radius:8px;text-transform:uppercase"
-          onchange="C.recalcPayTotal()">
+          oninput="C.recalcPayTotal()" onchange="C.recalcPayTotal()">
         <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="C.recalcPayTotal()">ใช้</button>
       </div>
       <div id="memDiscountLine" style="font-size:13px;margin-top:8px;color:#2E7D32;font-weight:600"></div>
@@ -1533,6 +1533,10 @@ const C={
     if(s.length===11 && s.startsWith('66')) s='0'+s.slice(2);
     return s;
   },
+  /** รหัสคูปอง: ตัวพิมพ์ใหญ่ + เฉพาะ A-Z0-9 (ตรงกับฝั่งร้าน) */
+  normCoupon(c){
+    return String(c||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  },
   onMemberPhoneInput(){
     const el=document.getElementById('memPhone');
     if(!el) return;
@@ -1597,6 +1601,9 @@ const C={
       console.warn(e);
       if(st) st.textContent='ค้นหาไม่สำเร็จ · สั่งได้ตามปกติ';
       if(box) box.style.display='none';
+      this.member=null;
+      this.selectedPersonalCouponId='';
+      try{ this.recalcPayTotal(); }catch(e2){}
     }
   },
   escName(m){
@@ -1685,9 +1692,12 @@ const C={
       }
 
       // 2) คูปองรวม (เมื่อไม่ได้ใช้ส่วนตัว)
-      const code=this.normCoupon((couponEl&&couponEl.value)||'');
+      const code=(typeof this.normCoupon==='function'
+        ? this.normCoupon((couponEl&&couponEl.value)||'')
+        : String((couponEl&&couponEl.value)||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,''));
       if(!personalCouponId && code){
         try{
+          if(!shopRef){ throw new Error('ยังไม่เชื่อมต่อร้าน'); }
           const snap=await shopRef.collection('coupons').doc(code).get();
           if(!snap.exists){
             if(line) line.innerHTML='<span style="color:#C62828">ไม่พบคูปอง '+code+'</span>';
@@ -1864,23 +1874,38 @@ const C={
     const phone=this.normPhone(o.memberPhone||'');
     const pts=Number(o.pointsUsed||0);
     const pcid=o.personalCouponId||'';
-    if(!phone) return;
-    if(pts<=0 && !pcid) return;
+    const pubCode=String(o.couponCode||'').trim().toUpperCase();
+    const isPub=pubCode && !pubCode.startsWith('PERSONAL:');
+    if(!phone && !isPub) return;
+    if(pts<=0 && !pcid && !isPub) return;
     try{
       await db.runTransaction(async tx=>{
-        const ref=shopRef.collection('members').doc(phone);
-        const s=await tx.get(ref);
-        if(!s.exists) return;
-        const md=s.data()||{};
-        const patch={ updatedAt:Date.now() };
-        if(pts>0) patch.points=Number(md.points||0)+pts;
-        if(pcid && Array.isArray(md.personalCoupons)){
-          patch.personalCoupons=md.personalCoupons.map(c=>{
-            if(c && c.id===pcid && c.used) return Object.assign({}, c, {used:false, usedAt:null});
-            return c;
-          });
+        if(phone){
+          const ref=shopRef.collection('members').doc(phone);
+          const s=await tx.get(ref);
+          if(s.exists){
+            const md=s.data()||{};
+            const patch={ updatedAt:Date.now() };
+            if(pts>0) patch.points=Number(md.points||0)+pts;
+            if(pcid && Array.isArray(md.personalCoupons)){
+              patch.personalCoupons=md.personalCoupons.map(c=>{
+                if(c && c.id===pcid && c.used) return Object.assign({}, c, {used:false, usedAt:null});
+                return c;
+              });
+            }
+            tx.update(ref, patch);
+          }
         }
-        tx.update(ref, patch);
+        // คืน usedCount คูปองรวม
+        if(isPub){
+          const cref=shopRef.collection('coupons').doc(pubCode);
+          const cs=await tx.get(cref);
+          if(cs.exists){
+            const c=cs.data()||{};
+            const used=Math.max(0, Number(c.usedCount||0)-1);
+            tx.update(cref,{ usedCount:used, updatedAt:Date.now() });
+          }
+        }
       });
     }catch(e){ console.warn('refundMemberBenefits', e); }
   },
@@ -1987,8 +2012,8 @@ const C={
     const personalCouponId=memberPhone?(md.personalCouponId||''):'';
     const isPublicCoupon=couponCode && !String(couponCode).startsWith('PERSONAL:');
     this._creatingOrder=true;
-    // เก็บไว้คืนสิทธิ์ถ้าสร้างออเดอร์พังหลังตัดแต้ม
-    this._pendingBenefits={ memberPhone, pointsUsed, personalCouponId };
+    // เก็บไว้คืนสิทธิ์ถ้าสร้างออเดอร์พังหลังตัดแต้ม/คูปอง
+    this._pendingBenefits={ memberPhone, pointsUsed, personalCouponId, couponCode: isPublicCoupon ? couponCode : '' };
     try{
     // ตัดแต้ม + ใช้คูปอง (รวม/ส่วนตัว) ใน transaction ก่อนสร้างออเดอร์
     if(memberPhone && (pointsUsed>0 || isPublicCoupon || personalCouponId)){
@@ -2107,7 +2132,7 @@ const C={
     } catch(err){
       try{
         const pb=this._pendingBenefits||{};
-        if(pb.memberPhone && (pb.pointsUsed>0 || pb.personalCouponId)){
+        if(pb.memberPhone && (pb.pointsUsed>0 || pb.personalCouponId || pb.couponCode)){
           await this.refundMemberBenefits(pb);
         }
       }catch(e2){ console.warn(e2); }
