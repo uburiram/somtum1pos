@@ -164,14 +164,18 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
         </div>
         <div id="memPointsHint" style="font-size:12px;color:#888;margin-top:4px">1 แต้ม = ส่วนลด 1 บาท · ใส่จำนวนที่ต้องการใช้</div>
       </div>
-      <label style="font-size:12px;color:#666">รหัสคูปอง (ถ้ามี)</label>
+    </div>
+    <!-- คูปองรวม: ใช้นอก memBox ได้ — ไม่บังคับเป็นสมาชิก -->
+    <div style="margin-top:10px;padding:10px;background:#fff;border-radius:10px;border:1px solid #eee">
+      <label style="font-size:12px;color:#666;font-weight:600">🎟 รหัสคูปองรวม (ถ้ามี)</label>
       <div style="display:flex;gap:6px;margin-top:4px">
-        <input id="memCoupon" type="text" placeholder="เช่น SAVE10" maxlength="20"
+        <input id="memCoupon" type="text" placeholder="เช่น SAVE10" maxlength="20" autocomplete="off"
           style="flex:1;padding:8px;border:1px solid #ddd;border-radius:8px;text-transform:uppercase"
-          oninput="C.recalcPayTotal()" onchange="C.recalcPayTotal()">
+          oninput="C.onCouponInput()" onchange="C.recalcPayTotal()">
         <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="C.recalcPayTotal()">ใช้</button>
       </div>
       <div id="memDiscountLine" style="font-size:13px;margin-top:8px;color:#2E7D32;font-weight:600"></div>
+      <div style="font-size:11px;color:#888;margin-top:4px">สมาชิก: ใช้คู่กับแต้ม/คูปองส่วนตัวได้ · ไม่เป็นสมาชิกก็ใช้คูปองรวมได้</div>
     </div>
     <button type="button" class="btn btn-o btn-sm" style="width:100%;margin-top:10px" id="btnMemberReg" onclick="C.openMemberReg()">สมัครสมาชิก</button>
   </div>
@@ -1676,8 +1680,14 @@ const C={
     if(el) el.value='0';
     this.recalcPayTotal();
   },
+  /** debounce คูปองรวม — กัน race ตอนพิมพ์ทีละตัวแล้ว response เก่าทับใหม่ */
+  onCouponInput(){
+    clearTimeout(this._couponDebounce);
+    this._couponDebounce=setTimeout(()=>{ try{ this.recalcPayTotal(); }catch(e){} }, 280);
+  },
   async recalcPayTotal(){
     try{
+      const reqId=(this._recalcSeq=(this._recalcSeq||0)+1);
       const sub=Math.max(0, Number(this.cartSubtotal()||0));
       let pointsDisc=0, couponDisc=0, couponCode='', personalCouponId='';
       const ptsEl=document.getElementById('memPointsUse');
@@ -1746,6 +1756,8 @@ const C={
         ph.textContent='ใช้ได้สูงสุด '+maxPts+' แต้ม (คงเหลือ '+Number(this.member.points||0)+' · 1 แต้ม = 1 บาท)';
       }
 
+      // ถ้ามี recalc ใหม่ค้างอยู่ อย่าเอาผลเก่าทับ
+      if(reqId!==this._recalcSeq) return this.memDiscount && this.memDiscount.payable;
       const totalDisc=Math.max(0, couponDisc+pointsDisc);
       const payable=Math.max(0, Math.round((sub-totalDisc)*100)/100);
       this.memDiscount={
@@ -2017,7 +2029,8 @@ const C={
     const memberPhone=(this.member&&this.member.phone)||'';
     const wantPts=memberPhone?Math.max(0, Math.floor(Number(md.pointsUsed||0))):0;
     let wantPersonalId=memberPhone?(md.personalCouponId||''):'';
-    let wantCouponCode=memberPhone?(md.couponCode||''):'';
+    // คูปองรวมใช้ได้แม้ไม่เป็นสมาชิก — อ่านจาก memDiscount โดยตรง
+    let wantCouponCode=String(md.couponCode||'');
     if(String(wantCouponCode).startsWith('PERSONAL:')) wantCouponCode='';
     if(wantPersonalId) wantCouponCode=''; // ส่วนตัวมาก่อน
     const isPublicIntent=!!(wantCouponCode && !String(wantCouponCode).startsWith('PERSONAL:'));
@@ -2032,20 +2045,27 @@ const C={
     this._creatingOrder=true;
     this._pendingBenefits={ memberPhone, pointsUsed:0, personalCouponId:'', couponCode:'' };
     try{
-    // ตัดแต้ม + ใช้คูปอง และคำนวณส่วนลดจริงจากข้อมูลเซิร์ฟเวอร์ (ไม่เชื่อยอดจาก client)
-    if(memberPhone && (wantPts>0 || isPublicIntent || wantPersonalId)){
+    // ตัดแต้ม/คูปองส่วนตัว (ต้องเป็นสมาชิก) + คูปองรวม (ใช้ได้ทุกคน) — คำนวณส่วนลดจาก Firestore
+    if(wantPts>0 || isPublicIntent || wantPersonalId){
       const benefit=await db.runTransaction(async tx=>{
         const now=Date.now();
-        const mref=shopRef.collection('members').doc(memberPhone);
-        const ms=await tx.get(mref);
-        if(!ms.exists) throw new Error('ไม่พบสมาชิก');
-        const md0=ms.data()||{};
-        if(md0.status==='cancelled' || md0.active===false) throw new Error('สมาชิกถูกระงับสิทธิ์');
-        let pts=Number(md0.points||0);
-        let personalCoupons=Array.isArray(md0.personalCoupons)?md0.personalCoupons.slice():[];
+        let pts=0;
+        let personalCoupons=[];
+        let mref=null;
+        let md0={};
+        if(memberPhone && (wantPts>0 || wantPersonalId)){
+          mref=shopRef.collection('members').doc(memberPhone);
+          const ms=await tx.get(mref);
+          if(!ms.exists) throw new Error('ไม่พบสมาชิก');
+          md0=ms.data()||{};
+          if(md0.status==='cancelled' || md0.active===false) throw new Error('สมาชิกถูกระงับสิทธิ์');
+          pts=Number(md0.points||0);
+          personalCoupons=Array.isArray(md0.personalCoupons)?md0.personalCoupons.slice():[];
+        }
         let cDisc=0, cCode='', pcId='';
 
         if(wantPersonalId){
+          if(!memberPhone) throw new Error('คูปองส่วนตัวต้องเป็นสมาชิก');
           const ix=personalCoupons.findIndex(c=>c && String(c.id)===String(wantPersonalId));
           if(ix<0) throw new Error('ไม่พบคูปองส่วนตัว');
           const pc=personalCoupons[ix];
@@ -2077,12 +2097,18 @@ const C={
         }
 
         const afterCoupon=Math.max(0, subtotal-cDisc);
-        let pUsed=Math.min(Math.max(0,wantPts), Math.floor(pts), Math.floor(afterCoupon));
-        if(pUsed>0){
-          if(pts<pUsed) throw new Error('แต้มไม่พอ');
-          pts=pts-pUsed;
+        let pUsed=0;
+        if(memberPhone && wantPts>0){
+          pUsed=Math.min(Math.max(0,wantPts), Math.floor(pts), Math.floor(afterCoupon));
+          if(pUsed>0){
+            if(pts<pUsed) throw new Error('แต้มไม่พอ');
+            pts=pts-pUsed;
+          }
         }
-        tx.update(mref,{ points:pts, personalCoupons, updatedAt:now });
+        // อัปเดตสมาชิกเฉพาะเมื่อมีการตัดแต้มหรือใช้คูปองส่วนตัว
+        if(mref && (pUsed>0 || pcId)){
+          tx.update(mref,{ points:pts, personalCoupons, updatedAt:now });
+        }
         return { pointsUsed:pUsed, couponDisc:cDisc, pointsDisc:pUsed, couponCode:cCode, personalCouponId:pcId };
       });
       pointsUsed=Number(benefit.pointsUsed||0);
@@ -2198,7 +2224,7 @@ const C={
     } catch(err){
       try{
         const pb=this._pendingBenefits||{};
-        if(pb.memberPhone && (pb.pointsUsed>0 || pb.personalCouponId || pb.couponCode)){
+        if(pb.pointsUsed>0 || pb.personalCouponId || pb.couponCode){
           await this.refundMemberBenefits(pb);
         }
       }catch(e2){ console.warn(e2); }
