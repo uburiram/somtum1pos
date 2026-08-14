@@ -175,7 +175,7 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
         <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="C.recalcPayTotal()">ใช้</button>
       </div>
       <div id="memDiscountLine" style="font-size:13px;margin-top:8px;color:#2E7D32;font-weight:600"></div>
-      <div style="font-size:11px;color:#888;margin-top:4px">สมาชิก: ใช้คู่กับแต้ม/คูปองส่วนตัวได้ · ไม่เป็นสมาชิกก็ใช้คูปองรวมได้</div>
+      <div style="font-size:11px;color:#888;margin-top:4px">คูปองรวม <strong>หรือ</strong> คูปองส่วนตัว เลือกอย่างใดอย่างหนึ่ง · ใช้คู่กับแต้มได้ · ไม่เป็นสมาชิกก็ใช้คูปองรวมได้อย่างเดียว</div>
     </div>
     <button type="button" class="btn btn-o btn-sm" style="width:100%;margin-top:10px" id="btnMemberReg" onclick="C.openMemberReg()">สมัครสมาชิก</button>
   </div>
@@ -1644,7 +1644,7 @@ const C={
       const label=esc(c.note||lab)+' ('+lab+')'+(sel?' ✓':'');
       html+='<button type="button" data-pcid="'+esc(c.id)+'" class="btn '+(sel?'btn-p':'btn-o')+' btn-sm" style="width:auto;margin:0 6px 6px 0" onclick="C.selectPersonalCoupon(this.getAttribute(\'data-pcid\'))">'+label+'</button>';
     });
-    html+='<div style="font-size:11px;color:#888">เลือกได้ 1 ใบ · หรือกรอกรหัสคูปองรวมด้านล่าง</div>';
+    html+='<div style="font-size:11px;color:#888">เลือกได้ 1 ใบ (ใช้แทนคูปองรวม) · ใช้คู่กับแต้มได้</div>';
     el.innerHTML=html;
   },
   selectPersonalCoupon(id){
@@ -1682,6 +1682,12 @@ const C={
   },
   /** debounce คูปองรวม — กัน race ตอนพิมพ์ทีละตัวแล้ว response เก่าทับใหม่ */
   onCouponInput(){
+    // พิมพ์คูปองรวม → ยกเลิกคูปองส่วนตัว (ใช้ร่วมกันไม่ได้)
+    const raw=String((document.getElementById('memCoupon')||{}).value||'').trim();
+    if(raw && this.selectedPersonalCouponId){
+      this.selectedPersonalCouponId='';
+      try{ this.renderPersonalCoupons(); }catch(e){}
+    }
     clearTimeout(this._couponDebounce);
     this._couponDebounce=setTimeout(()=>{ try{ this.recalcPayTotal(); }catch(e){} }, 280);
   },
@@ -1695,8 +1701,13 @@ const C={
       const line=document.getElementById('memDiscountLine');
       const now=Date.now();
 
-      // 1) คูปองส่วนตัว
-      const selId=String(this.selectedPersonalCouponId||'');
+      // 1) คูปองส่วนตัว (ข้ามถ้ามีรหัสคูปองรวมในช่อง — ใช้ร่วมกันไม่ได้)
+      const typedPublic=String((couponEl&&couponEl.value)||'').trim();
+      const selId=typedPublic ? '' : String(this.selectedPersonalCouponId||'');
+      if(typedPublic && this.selectedPersonalCouponId){
+        this.selectedPersonalCouponId='';
+        try{ this.renderPersonalCoupons(); }catch(e){}
+      }
       if(this.member && selId){
         const list=this.member.personalCoupons||[];
         const pc=list.find(c=>c && String(c.id)===selId && !c.used);
@@ -1786,7 +1797,11 @@ const C={
           hint.innerHTML='<span style="color:#2E7D32;font-weight:600">ใช้ส่วนลด/แต้มครบ · กดยืนยันแล้วชำระทันที</span>';
         } else if(totalDisc>0){
           let parts=[];
-          if(couponDisc) parts.push('คูปอง -฿'+couponDisc);
+          if(couponDisc){
+            if(personalCouponId) parts.push('คูปองส่วนตัว -฿'+couponDisc);
+            else if(couponCode) parts.push('คูปองรวม '+couponCode+' -฿'+couponDisc);
+            else parts.push('คูปอง -฿'+couponDisc);
+          }
           if(pointsDisc) parts.push('แต้ม -฿'+pointsDisc);
           hint.textContent='ยอดก่อนลด ฿'+sub+' · '+parts.join(' · ')+' · เหลือ ฿'+payable;
         } else {
@@ -1794,7 +1809,10 @@ const C={
         }
       }
       if(line && totalDisc>0){
-        line.innerHTML='ส่วนลดรวม <strong>-฿'+totalDisc+'</strong> · ยอดชำระ <strong>฿'+payable+'</strong>';
+        let detail=[];
+        if(couponDisc) detail.push(personalCouponId?'คูปองส่วนตัว':'คูปองรวม '+ (couponCode||''));
+        if(pointsDisc) detail.push('แต้ม '+pointsDisc);
+        line.innerHTML='ส่วนลดรวม <strong>-฿'+totalDisc+'</strong>'+(detail.length?' ('+detail.join(' + ')+')':'')+' · ยอดชำระ <strong>฿'+payable+'</strong>';
       } else if(line && !code && !personalCouponId){
         line.textContent='';
       }
