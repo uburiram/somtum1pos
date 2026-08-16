@@ -524,8 +524,9 @@ const C={
     const cat=(this.cats||[]).find(c=>c.id===m.catId);
     const catName=(cat&&cat.name)||'';
     const isSimple=/กินคู่|คู่ส้มตำ/.test(catName);
-    // tops: {id: qty}
-    this.modal={menu:m,qty:1,spice:this.spice.filter(s=>s.isActive!==false)[0]?.id||null,topQty:{},note:'',plara:null,isSimple};
+    // tops: {id: qty} · ค่าเริ่มต้นความเผ็ด = เผ็ดกลาง
+    const defaultSpiceId=this.getDefaultSpiceId();
+    this.modal={menu:m,qty:1,spice:defaultSpiceId,topQty:{},note:'',plara:null,isSimple};
     const pn=document.getElementById('pNote'); if(pn) pn.value='';
     // รองรับ boolean / string / number จาก Firestore
     const enablePlara = (function(v){
@@ -565,14 +566,23 @@ const C={
     const spiceMulti=(this.optionConfig.spiceMode==='multi');
     if(spiceMulti){
       this.modal.spiceSet={};
-      document.getElementById('spiceList').innerHTML=activeSp.map(s=>
-        `<label class="cl" id="spRow_${esc(s.id)}"><span>${esc(s.name)}</span>
-         <input type="checkbox" style="width:18px;height:18px;accent-color:var(--p)" onchange="C.toggleSpice('${esc(s.id)}',this)"></label>`).join('');
+      // multi: ติ๊กเผ็ดกลางเป็นค่าเริ่มต้นถ้ามี
+      const defId=this.getDefaultSpiceId();
+      if(defId) this.modal.spiceSet[defId]=true;
+      document.getElementById('spiceList').innerHTML=activeSp.map(s=>{
+        const on=!!(defId && String(s.id)===String(defId));
+        return `<label class="cl ${on?'on':''}" id="spRow_${esc(s.id)}"><span>${esc(s.name)}</span>
+         <input type="checkbox" ${on?'checked':''} style="width:18px;height:18px;accent-color:var(--p)" onchange="C.toggleSpice('${esc(s.id)}',this)"></label>`;
+      }).join('');
       this.modal.spice=null;
     } else {
-      document.getElementById('spiceList').innerHTML=activeSp.map((s,i)=>
-        `<label class="rl ${i===0?'on':''}" onclick="C.pickSpice('${esc(s.id)}',this)"><span>${esc(s.name)}</span>
-         <input type="radio" name="sp" ${i===0?'checked':''} style="width:18px;height:18px;accent-color:var(--p)"></label>`).join('');
+      const defId=this.modal.spice || this.getDefaultSpiceId();
+      if(defId) this.modal.spice=defId;
+      document.getElementById('spiceList').innerHTML=activeSp.map(s=>{
+        const on=String(s.id)===String(defId);
+        return `<label class="rl ${on?'on':''}" onclick="C.pickSpice('${esc(s.id)}',this)"><span>${esc(s.name)}</span>
+         <input type="radio" name="sp" ${on?'checked':''} style="width:18px;height:18px;accent-color:var(--p)"></label>`;
+      }).join('');
     }
     document.getElementById('spiceBox').style.display=(isSimple||!activeSp.length)?'none':(activeSp.length?'block':'none');
     const ot=document.querySelector('#spiceBox .ot');
@@ -605,6 +615,43 @@ const C={
     }
     document.getElementById('topBox').style.display=(isSimple||!tops.length)?'none':'block';
     this.updPrice(); this.show('mProduct');
+    // ทุกครั้งที่เปิดเมนูใหม่: เลื่อนไปส่วนเลือกระดับความเผ็ดก่อน
+    try{ this.scrollProductToSpice(); }catch(e){}
+  },
+  /** ค่าเริ่มต้นความเผ็ด = เผ็ดกลาง (ชื่อ/ id s3 / order 3) */
+  getDefaultSpiceId(){
+    const active=(this.spice||[]).filter(s=>s && s.isActive!==false);
+    if(!active.length) return null;
+    const byName=active.find(s=>/เผ็ดกลาง|กลาง/.test(String(s.name||'')));
+    if(byName) return byName.id;
+    const byId=active.find(s=>String(s.id)==='s3' || String(s.id).toLowerCase()==='medium');
+    if(byId) return byId.id;
+    const byOrder=active.find(s=>Number(s.order)===3);
+    if(byOrder) return byOrder.id;
+    // fallback: ตัวกลางของรายการ
+    return active[Math.min(Math.floor(active.length/2), active.length-1)].id;
+  },
+  /** เลื่อน modal เมนูไปที่กล่องระดับความเผ็ด */
+  scrollProductToSpice(){
+    const modal=document.querySelector('#mProduct .md');
+    const spice=document.getElementById('spiceBox');
+    if(modal){
+      try{ modal.scrollTop=0; }catch(e){}
+    }
+    // รอ paint แล้วเลื่อนให้เห็นตัวเลือกระดับเผ็ดชัดเจน
+    const go=()=>{
+      try{
+        if(spice && spice.style.display!=='none'){
+          spice.scrollIntoView({behavior:'smooth', block:'start', inline:'nearest'});
+        } else if(modal){
+          modal.scrollTop=0;
+        }
+      }catch(e){
+        try{ if(modal) modal.scrollTop=0; }catch(e2){}
+      }
+    };
+    setTimeout(go, 50);
+    setTimeout(go, 200);
   },
   pickPlara(v,el){
     this.modal.plara=v;
