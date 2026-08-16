@@ -329,6 +329,15 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
         <div id="shopOpenStatus" style="margin-top:8px;font-size:13px;font-weight:600;color:#2E7D32">สถานะปัจจุบัน: เปิดร้าน</div>
         <p style="font-size:12px;color:#777;margin-top:6px">ปิดร้านแล้วลูกค้ายังเข้าหน้าเมนูได้ แต่สั่งอาหารไม่ได้</p>
       </div>
+      <div style="margin-top:14px;padding:12px;border-radius:12px;background:#F3E5F5;border:1px solid #E1BEE7">
+        <div style="font-weight:700;margin-bottom:8px;color:#6A1B9A">👤 ระบบสมาชิกบนหน้าลูกค้า</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <button type="button" class="btn btn-g" id="btnMemSysOn" onclick="M.setMemberSystem(true)">เปิดระบบสมาชิก</button>
+          <button type="button" class="btn btn-d" id="btnMemSysOff" onclick="M.setMemberSystem(false)">ปิดระบบสมาชิก</button>
+        </div>
+        <div id="memberSystemStatus" style="margin-top:8px;font-size:13px;font-weight:600;color:#2E7D32">สถานะ: เปิด (ลูกค้าเห็นแต้ม/คูปอง)</div>
+        <p style="font-size:12px;color:#777;margin-top:6px">ปิดแล้วหน้าสั่งของลูกค้าจะเหลือแค่เบอร์ติดต่อ ไม่แสดงแต้ม คูปอง และการสมัครสมาชิก — หน้าจอไม่รก ลูกค้าไม่สับสน</p>
+      </div>
       <button class="btn btn-p btn-block" style="margin-top:10px" onclick="M.saveSettings()">บันทึกชื่อร้าน</button>
     </div>
     <div class="form-card">
@@ -506,8 +515,11 @@ const M={
     if (shopRef) {
       shopRef.collection('settings').doc('public').onSnapshot(s => {
         if (s.exists) {
+          const d = s.data()||{};
           const el = document.getElementById('shopTitle');
-          if (el) el.textContent = s.data().shopName || 'POS';
+          if (el) el.textContent = d.shopName || 'POS';
+          try{ this.applyShopOpenUI(d.isOpen!==false); }catch(e){}
+          try{ this.applyMemberSystemUI(d.memberSystemEnabled!==false); }catch(e){}
         }
       });
     }
@@ -1053,6 +1065,34 @@ const M={
       toast(isOpen ? 'เปิดร้านแล้ว · ลูกค้าสั่งอาหารได้' : 'ปิดร้านแล้ว · ลูกค้าสั่งอาหารไม่ได้');
     }catch(e){
       toast('อัปเดตสถานะร้านไม่สำเร็จ: '+(e.message||e));
+    }
+  },
+  applyMemberSystemUI(enabled){
+    this.memberSystemEnabled = enabled!==false;
+    const st=document.getElementById('memberSystemStatus');
+    if(st){
+      st.textContent = this.memberSystemEnabled
+        ? 'สถานะ: เปิด (ลูกค้าเห็นแต้ม/คูปอง)'
+        : 'สถานะ: ปิด (หน้าสั่งแบบย่อ · ไม่มีสมาชิก/คูปอง)';
+      st.style.color = this.memberSystemEnabled ? '#2E7D32' : '#C62828';
+    }
+    const on=document.getElementById('btnMemSysOn');
+    const off=document.getElementById('btnMemSysOff');
+    if(on) on.style.outline = this.memberSystemEnabled ? '3px solid #2E7D32' : 'none';
+    if(off) off.style.outline = !this.memberSystemEnabled ? '3px solid #C62828' : 'none';
+  },
+  async setMemberSystem(enabled){
+    try{
+      await shopRef.collection('settings').doc('public').set({
+        memberSystemEnabled: !!enabled,
+        memberSystemUpdatedAt: Date.now()
+      }, {merge:true});
+      this.applyMemberSystemUI(!!enabled);
+      toast(enabled
+        ? 'เปิดระบบสมาชิกแล้ว · ลูกค้าเห็นแต้ม/คูปอง'
+        : 'ปิดระบบสมาชิกแล้ว · หน้าสั่งลูกค้าจะสั้นลง');
+    }catch(e){
+      toast('อัปเดตระบบสมาชิกไม่สำเร็จ: '+(e.message||e));
     }
   },
   async deleteOrder(id){
@@ -2175,6 +2215,7 @@ const M={
     const d=snap.exists?snap.data():{};
     document.getElementById('setName').value=d.shopName||'';
     this.applyShopOpenUI(d.isOpen!==false);
+    this.applyMemberSystemUI(d.memberSystemEnabled!==false);
     document.getElementById('setAccount').value=d.accountName||'';
     document.getElementById('setPP').value=d.promptpay||'1319900156353';
     const payType=d.payType||'kshop';
