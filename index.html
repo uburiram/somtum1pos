@@ -138,7 +138,7 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
 </div></div>
 
 <div class="ov" id="mPay"><div class="md">
-  <div class="mh"><span>ชำระเงิน</span><button class="x" onclick="C.hide('mPay')">×</button></div>
+  <div class="mh"><span>ยืนยันออเดอร์</span><button class="x" onclick="C.hide('mPay')">×</button></div>
   <!-- สมาชิก / แต้ม / คูปอง (เปิด-ปิดได้จากแอดมิน) -->
   <div id="memberSystemWrap" style="margin:14px 0;padding:12px;background:#FFF8F5;border:1px solid #FFE0D6;border-radius:12px;text-align:left">
     <div id="memPanelTitle" style="font-weight:700;color:#E65100;margin-bottom:8px">👤 สมาชิก / เบอร์ติดต่อ <span id="memPanelTitleHint" style="font-weight:500;font-size:11px;color:#888">(ใส่ก่อนเพื่อคำนวณส่วนลด)</span></div>
@@ -180,31 +180,34 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
     <button type="button" class="btn btn-o btn-sm" style="width:100%;margin-top:10px" id="btnMemberReg" onclick="C.openMemberReg()">สมัครสมาชิก</button>
   </div>
 
-  <div style="text-align:center;margin-bottom:12px">
-    <div style="color:#777">ยอดหลังส่วนลด / แต้ม</div>
+  <!-- สรุปรายการก่อนยืนยัน — ไม่โชว์ QR ที่หน้านี้ (QR อยู่บนตั๋วคิวหลังยืนยัน) -->
+  <div style="margin:12px 0 8px;text-align:left">
+    <div style="font-weight:700;font-size:14px;margin-bottom:8px;color:#333">📋 รายการที่สั่ง</div>
+    <div id="payReviewList" style="background:#fff;border:1px solid #eee;border-radius:12px;padding:10px 12px;max-height:40vh;overflow-y:auto"></div>
+  </div>
+  <div style="text-align:center;margin:14px 0 10px">
+    <div id="payTotalCaption" style="color:#777">ยอดที่ต้องชำระ</div>
     <div class="huge" id="payTotal">฿0</div>
     <div id="paySubHint" style="font-size:12px;color:#888;margin-top:4px"></div>
   </div>
-  <p style="text-align:center;font-size:13px;color:#666;margin-bottom:8px">ชำระด้วย QR พร้อมเพย์</p>
-  <div style="text-align:center;margin-bottom:10px;padding:10px;background:#E3F2FD;border-radius:10px;font-size:13px;color:#1565C0">
-    สแกน QR โอนได้เลย หรือแจ้งพนักงานถ้าจะจ่ายเงินสดที่ร้าน<br>
-    <span style="font-size:12px;color:#555">ร้านมีปุ่มยืนยันรับเงินสดอยู่แล้ว · ออเดอร์เข้าครัวทันทีหลังกดยืนยัน</span>
+  <div style="margin-bottom:12px;padding:12px;background:#E8F5E9;border:1px solid #C8E6C9;border-radius:12px;font-size:13px;color:#1B5E20;text-align:left;line-height:1.55">
+    <div style="font-weight:700;margin-bottom:6px">💳 หลังกดยืนยัน — เลือกชำระได้ 2 แบบ</div>
+    <div>① <strong>โอนผ่าน QR</strong> บนหน้าตั๋วคิว (สแกนด้วยแอปธนาคาร)</div>
+    <div>② <strong>จ่ายเงินสดที่ร้าน</strong> แจ้งพนักงานได้เลย</div>
+    <div style="font-size:12px;color:#555;margin-top:8px">ไม่จำเป็นต้องโอนทันที · ออเดอร์เข้าคิวครัวหลังกดยืนยันแล้ว</div>
   </div>
-  <div id="ppZone" style="display:block;text-align:center;margin-bottom:12px">
-    <p style="font-size:13px;margin-bottom:6px">สแกนด้วยแอปธนาคาร / ถุงเงิน / วอลเล็ต</p>
+  <!-- ซ่อน QR หน้าชำระเงิน — เก็บ element ไว้ให้โค้ดตั๋วคิวใช้ต่อ -->
+  <div id="ppZone" style="display:none !important;text-align:center;margin-bottom:12px" aria-hidden="true">
     <div id="ppQR" style="display:flex;justify-content:center;margin-bottom:8px"></div>
-    <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0 auto 8px;display:inline-flex" onclick="C.savePayQR()">💾 บันทึกรูป QR ไปจ่ายในแอปธนาคาร</button>
-    <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0 auto 8px;display:inline-flex" onclick="C.openPayQRFull()">🔍 เปิดรูปเต็มจอ (LINE กดค้างบันทึก)</button>
-    <div id="ppQRHint" style="font-size:12px;color:#E65100;margin:6px 0;display:none">ใน LINE: กดค้างที่รูป QR → บันทึกรูปภาพ</div>
-    <div id="ppNum" style="font-weight:600"></div>
-    <div id="ppName" style="font-size:13px;color:#555;margin-top:4px"></div>
-    <p style="color:#1565C0;font-size:13px;margin-top:8px">โอนตามยอดให้ตรงเป๊ะ แล้วอัปโหลดสลิป (ถ้ามี) หรือรอร้านยืนยัน</p>
+    <div id="ppQRHint" style="display:none"></div>
+    <div id="ppNum"></div>
+    <div id="ppName"></div>
     <input type="file" id="slipFile" accept="image/*" style="display:none" onchange="C.onSlipSelected(event)">
-    <button type="button" class="btn btn-o btn-sm" style="width:auto;margin:8px auto 0;display:inline-flex" onclick="document.getElementById(\'slipFile\').click()">📎 แนบสลิปโอนเงิน</button>
     <div id="slipPreview" style="margin-top:8px"></div>
     <div id="slipAutoMsg" style="font-size:13px;margin-top:6px"></div>
   </div>
   <button class="btn btn-p" id="btnOrder" onclick="C.confirmOrder()">ยืนยันออเดอร์</button>
+  <p style="text-align:center;font-size:12px;color:#888;margin-top:8px">ตรวจสอบรายการและยอดให้ถูกต้องก่อนกดยืนยัน</p>
 </div></div>
 
 <div class="ov" id="mMemberReg"><div class="md">
@@ -821,24 +824,39 @@ const C={
     this.payM='PROMPTPAY';
     this.payMethod('PROMPTPAY');
     this.hide('mCart'); this.show('mPay');
+    try{ this.renderPayReview(); }catch(e){}
     try{ this.recalcPayTotal(); }catch(e){}
+  },
+  /** สรุปรายการในหน้ายืนยันออเดอร์ (ไม่โชว์ QR) */
+  renderPayReview(){
+    const el=document.getElementById('payReviewList');
+    if(!el) return;
+    const cart=this.cart||[];
+    if(!cart.length){
+      el.innerHTML='<div style="text-align:center;color:#999;padding:12px">ตะกร้าว่าง</div>';
+      return;
+    }
+    el.innerHTML=cart.map(i=>{
+      const tops=(i.toppings||[]).map(t=>esc(t.name)+(t.qty>1?(' x'+t.qty):'')).join(', ');
+      const meta=[i.spiceName, i.plara, tops, i.note?('หมายเหตุ: '+i.note):''].filter(Boolean).join(' · ');
+      return '<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px dashed #eee">'+
+        '<div style="text-align:left"><div style="font-weight:600">'+esc(i.name)+' × '+i.qty+'</div>'+
+        (meta?'<div style="font-size:12px;color:#777;margin-top:2px">'+meta+'</div>':'')+
+        '</div><div style="font-weight:600;white-space:nowrap">'+money(i.total)+'</div></div>';
+    }).join('');
   },
   payMethod(m){
     this.payM='PROMPTPAY';
     const btn=document.getElementById('btnOrder');
     if(btn){
-      if(this.orderId){ btn.disabled=true; btn.textContent='ยืนยันแล้ว · รอโอนเงิน / แนบสลิป'; }
+      if(this.orderId){ btn.disabled=true; btn.textContent='ยืนยันแล้ว · ดูตั๋วคิวเพื่อชำระ'; }
       else { btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
     }
-    // คำนวณยอดหลังส่วนลดแล้วสร้าง QR ใหม่ (เส้นทางเดียวกับ refreshPayQR)
+    // หน้ายืนยัน: คำนวณยอดอย่างเดียว ไม่สร้าง QR ที่นี่
     try{
       const p=this.recalcPayTotal();
-      if(p && typeof p.then==='function') p.then(amt=>{ try{ this.refreshPayQR(amt); }catch(e){} });
-      else try{ this.refreshPayQR(p); }catch(e){}
-    }catch(e){
-      console.warn(e);
-      try{ this.refreshPayQR(this.cartSubtotal()); }catch(e2){}
-    }
+      if(p && typeof p.then==='function') p.then(function(){});
+    }catch(e){ console.warn(e); }
   },
 
   isLineBrowser(){
@@ -1493,8 +1511,12 @@ const C={
       const payCap=document.querySelector('#mPay .huge') && document.getElementById('payTotal');
       const capEl=payCap && payCap.parentElement && payCap.parentElement.querySelector('div');
       // first child div above payTotal
-      const wrap=document.getElementById('payTotal') && document.getElementById('payTotal').previousElementSibling;
-      if(wrap && wrap.tagName==='DIV') wrap.textContent = on ? 'ยอดหลังส่วนลด / แต้ม' : 'ยอดชำระ';
+      const cap=document.getElementById('payTotalCaption');
+      if(cap) cap.textContent = on ? 'ยอดที่ต้องชำระ' : 'ยอดที่ต้องชำระ';
+      else {
+        const wrap=document.getElementById('payTotal') && document.getElementById('payTotal').previousElementSibling;
+        if(wrap && wrap.tagName==='DIV') wrap.textContent = 'ยอดที่ต้องชำระ';
+      }
     }catch(e){}
   },
   openMemberReg(){
@@ -1937,6 +1959,8 @@ const C={
     const z=document.getElementById('ppZone');
     const qr=document.getElementById('ppQR');
     if(!z) return;
+    // หน้ายืนยันออเดอร์ไม่แสดง QR — บังคับซ่อนเสมอ (QR โชว์บนตั๋วคิวหลังยืนยัน)
+    try{ z.style.display='none'; }catch(e){}
     const amount=Math.max(0, Math.round(Number(payable||0)*100)/100);
     if(amount<=0){
       z.style.display='none';
@@ -2659,10 +2683,15 @@ const C={
       // สร้าง QR จริงทุกครั้งที่ยอดยังไม่ชำระ — ไม่พึ่งหน้าชำระเงิน / cache เก่า
       const amount=Number(o.total||0);
       const needNew=!this._payQRDataUrl || this._payQRAmount!==amount;
-      qz.innerHTML='<div id="ticketPayQrBox" style="margin:8px auto"></div>'+
-        '<div style="font-size:13px;font-weight:700;color:var(--p);margin-top:4px">สแกนเพื่อชำระ ฿'+amount+'</div>'+
+      qz.innerHTML='<div style="margin:8px 0;padding:10px;background:#E8F5E9;border-radius:10px;font-size:13px;color:#1B5E20;text-align:left;line-height:1.5">'+
+        '<div style="font-weight:700;margin-bottom:4px">ชำระได้ 2 แบบ</div>'+
+        '<div>① โอนผ่าน QR ด้านล่าง</div>'+
+        '<div>② จ่ายเงินสดที่ร้าน (แจ้งพนักงาน)</div>'+
+        '</div>'+
+        '<div id="ticketPayQrBox" style="margin:8px auto"></div>'+
+        '<div style="font-size:13px;font-weight:700;color:var(--p);margin-top:4px">สแกน QR เพื่อโอน ฿'+amount+'</div>'+
         '<div style="font-size:12px;color:#E65100;margin-top:6px">'+(this.isLineBrowser()?'ใน LINE: กดค้างที่รูป → บันทึกรูป':'กดค้างที่รูปเพื่อบันทึก')+'</div>'+
-        '<div style="font-size:12px;color:#555;margin-top:4px">หรือจ่ายเงินสดที่ร้าน · พนักงานกดยืนยันรับเงินสด</div>'+
+        '<div style="font-size:12px;color:#555;margin-top:4px">ไม่บังคับโอนทันที · จ่ายเงินสดที่ร้านก็ได้</div>'+
         (hasSlip?'<div style="font-size:12px;color:#E65100;margin-top:4px">ส่งสลิปแล้ว · รอร้านตรวจ — QR ยังใช้ได้จนกว่าร้านยืนยันรับเงิน</div>':'')+
         '<button type="button" class="btn btn-o btn-sm" style="margin-top:8px;width:auto" onclick="C.openPayQRFull()">เปิดรูป QR เต็มจอ</button>'+
         '<button type="button" class="btn btn-o btn-sm" style="margin-top:8px;width:auto" onclick="C.savePayQR()">บันทึก / แชร์ QR</button>'+
