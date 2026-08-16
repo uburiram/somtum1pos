@@ -196,15 +196,15 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
     <div>② <strong>จ่ายเงินสดที่ร้าน</strong> แจ้งพนักงานได้เลย</div>
     <div style="font-size:12px;color:#555;margin-top:8px">ไม่จำเป็นต้องโอนทันที · ออเดอร์เข้าคิวครัวหลังกดยืนยันแล้ว</div>
   </div>
-  <!-- ซ่อน QR หน้าชำระเงิน — เก็บ element ไว้ให้โค้ดตั๋วคิวใช้ต่อ -->
-  <div id="ppZone" style="display:none !important;text-align:center;margin-bottom:12px" aria-hidden="true">
-    <div id="ppQR" style="display:flex;justify-content:center;margin-bottom:8px"></div>
-    <div id="ppQRHint" style="display:none"></div>
+  <!-- QR ไม่แสดงที่หน้ายืนยัน — ใช้เฉพาะหน้าตั๋วคิว · เก็บ slip input ไว้ใน DOM -->
+  <input type="file" id="slipFile" accept="image/*" style="display:none" onchange="C.onSlipSelected(event)">
+  <div id="ppZone" style="display:none" aria-hidden="true">
+    <div id="ppQR"></div>
+    <div id="ppQRHint"></div>
     <div id="ppNum"></div>
     <div id="ppName"></div>
-    <input type="file" id="slipFile" accept="image/*" style="display:none" onchange="C.onSlipSelected(event)">
-    <div id="slipPreview" style="margin-top:8px"></div>
-    <div id="slipAutoMsg" style="font-size:13px;margin-top:6px"></div>
+    <div id="slipPreview"></div>
+    <div id="slipAutoMsg"></div>
   </div>
   <button class="btn btn-p" id="btnOrder" onclick="C.confirmOrder()">ยืนยันออเดอร์</button>
   <p style="text-align:center;font-size:12px;color:#888;margin-top:8px">ตรวจสอบรายการและยอดให้ถูกต้องก่อนกดยืนยัน</p>
@@ -1943,76 +1943,24 @@ const C={
         line.textContent='';
       }
 
-      // สร้าง/อัปเดต QR ตามยอดจริง
-      try{ this.refreshPayQR(payable); }catch(e){ console.warn('QR', e); }
+      // ไม่สร้าง QR ที่หน้ายืนยัน — QR แสดงบนตั๋วคิวหลังยืนยันเท่านั้น
       return payable;
     }catch(e){
       console.error('recalcPayTotal', e);
       const sub=this.cartSubtotal();
       const pt=document.getElementById('payTotal');
       if(pt) pt.textContent='฿'+sub;
-      try{ this.refreshPayQR(sub); }catch(e2){}
       return sub;
     }
   },
   refreshPayQR(payable){
+    // ตัด QR ออกจากหน้ายืนยันออเดอร์ทั้งหมด — แสดงเฉพาะหน้าตั๋วคิวผ่าน renderPayQRInto
     const z=document.getElementById('ppZone');
+    if(z) z.style.display='none';
     const qr=document.getElementById('ppQR');
-    if(!z) return;
-    // หน้ายืนยันออเดอร์ไม่แสดง QR — บังคับซ่อนเสมอ (QR โชว์บนตั๋วคิวหลังยืนยัน)
-    try{ z.style.display='none'; }catch(e){}
-    const amount=Math.max(0, Math.round(Number(payable||0)*100)/100);
-    if(amount<=0){
-      z.style.display='none';
-      if(qr) qr.innerHTML='';
-      this._payQRDataUrl='';
-      this._payQRAmount=0;
-      return;
-    }
-    z.style.display='block';
-    // บังคับสร้างใหม่เมื่อยอดเปลี่ยน
-    if(this._payQRAmount===amount && this._payQRDataUrl && qr && qr.querySelector('img,canvas')){
-      return;
-    }
-    this._payQRDataUrl='';
-    this._payQRAmount=null;
     if(qr) qr.innerHTML='';
-    let payload=null;
-    try{ payload=this.buildPayPayload(amount); }catch(e){ console.warn(e); }
-    const label=(this.payType==='kshop'||this.payType==='merchant')
-      ? ('Thai QR (K Shop): '+(this.merchantId||''))
-      : ('พร้อมเพย์: '+(this.promptpay||'-'));
-    const pn=document.getElementById('ppNum'); if(pn) pn.textContent=label;
-    const pnm=document.getElementById('ppName');
-    if(pnm) pnm.textContent=(this.accountName?('ชื่อบัญชี: '+this.accountName+' · '):'')+('ร้าน: '+(this.shopName||''))+' · ยอดโอน ฿'+amount.toFixed(2);
-    if(!payload){
-      if(qr) qr.innerHTML='<p style="color:var(--d);font-size:13px">สร้าง QR ไม่ได้ · ตรวจตั้งค่า PromptPay/K Shop ในหน้า POS</p>';
-      return;
-    }
-    if(typeof QRCode==='undefined'){
-      if(qr) qr.innerHTML='<p style="color:#999;font-size:13px">กำลังโหลด QR…</p>';
-      return;
-    }
-    try{
-      // ใช้ div ชั่วคราวแล้วย้าย — กัน QRCode library พังเมื่อ clear ซ้ำ
-      const tmp=document.createElement('div');
-      new QRCode(tmp,{ text:String(payload), width:200, height:200 });
-      if(qr){
-        qr.innerHTML='';
-        while(tmp.firstChild) qr.appendChild(tmp.firstChild);
-      }
-      try{ this.ensurePayQRAsImage(); }catch(e){}
-      this._payQRAmount=amount;
-      try{
-        const c=qr && qr.querySelector('canvas');
-        const img=qr && qr.querySelector('img');
-        if(c) this._payQRDataUrl=c.toDataURL('image/png');
-        else if(img && img.src) this._payQRDataUrl=img.src;
-      }catch(e){}
-    }catch(e){
-      console.warn('refreshPayQR', e);
-      if(qr) qr.innerHTML='<p style="color:var(--d);font-size:13px">สร้าง QR ไม่สำเร็จ</p>';
-    }
+    // ไม่ cache จากหน้ายืนยัน เพื่อไม่ให้ตั๋วใช้ QR ยอดเก่าผิด
+    return;
   },
 
   async registerMember(){
