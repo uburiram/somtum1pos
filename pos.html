@@ -571,10 +571,8 @@ const M={
       this.audioOn=true;
       const bar=document.getElementById('audioBar');
       if(bar) bar.classList.add('hide');
-      toast('เปิดเสียงแจ้งเตือน (บี๊บ + พูด)แล้ว');
+      toast('เปิดเสียงแจ้งเตือนแล้ว');
       this.beep();
-      // ปลดล็อกเสียงพูด (ต้องมี gesture จากผู้ใช้)
-      try{ this._primeSpeech(); }catch(e){}
     });
     this.requestNotifyPermission();
   },
@@ -601,49 +599,10 @@ const M={
     }catch(e){ return null; }
   },
   speakNewOrderAlert(){
-    if(!window.speechSynthesis) return;
-    if(!this.unviewed || this.unviewed.size===0) return;
-    try{ speechSynthesis.cancel(); }catch(e){}
-    if(this._voiceLoopTimer){ clearTimeout(this._voiceLoopTimer); this._voiceLoopTimer=null; }
-    const text='ตอนนี้มีออเดอร์มาใหม่แล้ว เร็ว ๆ หน่อย ลูกค้ารออยู่';
-    const u=new SpeechSynthesisUtterance(text);
-    u.lang='th-TH';
-    u.rate=1.08;   // เร็วเล็กน้อย เร่งด่วน
-    u.pitch=1.2;   // โทนสูงขึ้นนิด ใส่อารมณ์
-    u.volume=1;
-    const v=this._thaiVoice||this._pickThaiVoice();
-    if(v) u.voice=v;
-    u.onend=()=>{
-      if(!this.unviewed || this.unviewed.size===0) return;
-      // เว้นจังหวะสั้นแล้วพูดซ้ำ จนกว่าจะกดดูออเดอร์
-      this._voiceLoopTimer=setTimeout(()=>{ this.speakNewOrderAlert(); }, 900);
-    };
-    u.onerror=()=>{
-      if(!this.unviewed || this.unviewed.size===0) return;
-      this._voiceLoopTimer=setTimeout(()=>{ this.speakNewOrderAlert(); }, 2500);
-    };
-    try{ speechSynthesis.speak(u); }catch(e){ console.warn('speak', e); }
+    // ปิดเสียงพูดแจ้งเตือน — ใช้ beep อย่างเดียว
+    return;
   },
-  async requestNotifyPermission(){
-    try{
-      if(!('Notification' in window)) return;
-      let perm=Notification.permission;
-      if(perm==='default') perm=await Notification.requestPermission();
-      this.notifyOn = perm==='granted';
-      if(this.notifyOn) toast('เปิดการแจ้งเตือนระบบแล้ว');
-    }catch(e){ console.warn(e); }
-  },
-  async pushNotify(title, body){
-    try{
-      if(!('Notification' in window) || Notification.permission!=='granted') return;
-      const reg = navigator.serviceWorker && await navigator.serviceWorker.ready.catch(()=>null);
-      if(reg && reg.showNotification){
-        await reg.showNotification(title,{ body, icon:'./icon/icon-192.png', badge:'./icon/favicon-32.png', tag:'somtum-order', renotify:true, requireInteraction:true });
-      } else {
-        new Notification(title,{ body, icon:'./icon/icon-192.png', tag:'somtum-order' });
-      }
-    }catch(e){ console.warn('notify', e); }
-  },
+
   beep(){
     if(!this.audioOn||!this.audio)return;
     try{const o=this.audio.createOscillator(),g=this.audio.createGain();o.connect(g);g.connect(this.audio.destination);o.frequency.value=880;g.gain.value=.12;o.start();o.stop(this.audio.currentTime+.2);if(navigator.vibrate)navigator.vibrate([200,60,200])}catch(e){}
@@ -679,7 +638,8 @@ const M={
               this.unviewed.add(o.id);
               try{ this.beep(); }catch(e){}
               try{ this.startAlarm(); }catch(e){}
-              toast('🔔 โต๊ะ '+(o.tableNo||'')+' สั่งเพิ่มครั้งที่ '+(o.lastAddRound||'')+'!');
+              const back=o.returnedToKitchen || o.status==='Pending';
+              toast('🔔 โต๊ะ '+(o.tableNo||'')+' สั่งเพิ่มครั้งที่ '+(o.lastAddRound||'')+(back?' · กลับเข้าครัว':'')+'!');
             }
             if(la>0) this._prevAddAt[o.id]=la;
           });
@@ -721,23 +681,15 @@ const M={
   startAlarm(){
     if(this.alarmTimer) return;
     this.beep();
-    // เสียงพูดวนจนกว่าจะกดดูออเดอร์
-    try{ this.speakNewOrderAlert(); }catch(e){}
+    // เหลือเฉพาะเสียงบี๊บ — ไม่ใช้เสียงพูด
     this.alarmTimer=setInterval(()=>{
       if(this.unviewed.size===0){ this.stopAlarm(); return; }
       this.beep();
-      // ถ้าพูดค้าง/ถูก pause ให้กระตุ้นใหม่
-      try{
-        if(window.speechSynthesis && !speechSynthesis.speaking && !speechSynthesis.pending){
-          this.speakNewOrderAlert();
-        }
-      }catch(e){}
     }, 2500);
   },
   stopAlarm(){
     if(this.alarmTimer){ clearInterval(this.alarmTimer); this.alarmTimer=null; }
     if(this._voiceLoopTimer){ clearTimeout(this._voiceLoopTimer); this._voiceLoopTimer=null; }
-    try{ if(window.speechSynthesis) speechSynthesis.cancel(); }catch(e){}
   },
   markOrderViewed(id){
     if(!id) return;
@@ -928,9 +880,11 @@ const M={
       const spice=i.spiceName?esc(i.spiceName):'';
       const note=i.note?`<div style="font-size:12px;color:#E65100;margin-top:2px">📝 ${esc(i.note)}</div>`:'';
       const plara=i.plara?`<div style="font-size:12px;color:#555">🐟 ${esc(i.plara)}</div>`:'';
-      const addL=(i.addRound>0 || i.addLabel)?(`<div style="font-size:12px;font-weight:700;color:#6A1B9A;margin-top:2px">➕ ${esc(i.addLabel||('สั่งเพิ่มครั้งที่ '+i.addRound))}</div>`):'';
+      const isNewAdd=(Number(i.addRound)>0);
+      const addL=isNewAdd?(`<div style="font-size:12px;font-weight:700;color:#C62828;margin-top:2px">🆕 ${esc(i.addLabel||('สั่งเพิ่มครั้งที่ '+i.addRound))}</div>`):'';
       const meta=[spice,tops].filter(Boolean).join(' · ');
-      return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #eee">
+      const rowBg=isNewAdd?'background:#FFF3E0;border-left:4px solid #FF9800;padding-left:8px;border-radius:6px;':'';
+      return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #eee;${rowBg}">
         <div><strong>${esc(i.name)} × ${i.qty}</strong>${addL}${meta?`<div style="font-size:12px;color:#777">${meta}</div>`:''}${plara||''}${note}</div>
         <div>${money(i.total)}</div></div>`;
     }).join('');

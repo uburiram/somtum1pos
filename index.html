@@ -2440,6 +2440,9 @@ const C={
           const addDisc=Math.min(discountAmount, subtotal);
           const newDisc=Number(existing.discountAmount||0)+addDisc;
           const newTotal=Math.max(0, newSub-newDisc);
+          // ถ้าครัวทำเสร็จแล้ว (Ready) หรือกำลังทำ — ดึงกลับเข้าครัวเมื่อมีสั่งเพิ่ม
+          const prevSt=String(existing.status||'Pending');
+          const backToKitchen = (prevSt==='Ready' || prevSt==='Cooking');
           const patch={
             items:mergedItems,
             subtotal:newSub,
@@ -2452,8 +2455,13 @@ const C={
             hasNewItems:true,
             lastAddAt:Date.now(),
             addRoundCount:addRound,
-            lastAddRound:addRound
+            lastAddRound:addRound,
+            returnedToKitchen: !!backToKitchen,
+            returnedToKitchenAt: backToKitchen ? Date.now() : (existing.returnedToKitchenAt||0)
           };
+          if(backToKitchen){
+            patch.status='Pending';
+          }
           if(contactPhone && !existing.contactPhone) patch.contactPhone=contactPhone;
           if(memberPhone && !existing.memberPhone){
             patch.memberPhone=memberPhone;
