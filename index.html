@@ -788,12 +788,22 @@ const C={
   openCart(){
     const el=document.getElementById('cartList');
     if(!el) return;
-    // มีคิวยังไม่จบ + ตะกร้าว่าง → เปิดตั๋วคิวให้เลย
+    // มีคิวยังไม่จบ + ตะกร้าว่าง → เปิดตั๋ว (เฉพาะโต๊ะเดิมหรือโหมดคิว)
     if((!this.cart || !this.cart.length) && this.orderId && this.lastOrder &&
         this.lastOrder.status!=='Cancelled' && this.lastOrder.status!=='Completed'){
-      this.renderTicket(this.lastOrder);
-      this.show('mTicket');
-      return;
+      if(this.orderMode==='table'){
+        if(Number(this.lastOrder.tableNo)!==Number(this.tableNo)){
+          try{ this.clearOrderState(); }catch(e){}
+        } else {
+          this.renderTicket(this.lastOrder);
+          this.show('mTicket');
+          return;
+        }
+      } else {
+        this.renderTicket(this.lastOrder);
+        this.show('mTicket');
+        return;
+      }
     }
     if(!this.cart.length) el.innerHTML='<div style="text-align:center;color:#999;padding:20px">ตะกร้าว่าง</div>';
     else el.innerHTML=this.cart.map((i,idx)=>{
@@ -820,12 +830,20 @@ const C={
   checkout(){
     if(!this.cart.length)return;
     try{ this.recalcPayTotal(); }catch(e){}
-    // ถ้ามีคิวยังไม่จบ อย่าเคลียร์ — เปิดตั๋วเดิม
+    // ถ้ามีคิวยังไม่จบ อย่าเคลียร์ — เปิดตั๋วเดิม (โต๊ะต้องตรงกัน)
     if(this.orderId && this.lastOrder && this.lastOrder.status!=='Cancelled' && this.lastOrder.status!=='Completed'){
-      this.renderTicket(this.lastOrder);
-      this.hide('mCart'); this.show('mTicket');
-      toast('มีคิวค้างอยู่: '+(this.lastOrder.queue||''));
-      return;
+      if(this.orderMode==='table' && Number(this.lastOrder.tableNo)!==Number(this.tableNo)){
+        try{ this.clearOrderState(); }catch(e){}
+      } else if(this.orderMode==='table' && this.cart && this.cart.length){
+        // โต๊ะเดิม + มีของในตะกร้า → ไปหน้ายืนยันเพื่อสั่งเพิ่ม
+      } else {
+        this.renderTicket(this.lastOrder);
+        this.hide('mCart'); this.show('mTicket');
+        toast(this.orderMode==='table'
+          ? ('โต๊ะ '+(this.tableNo||'')+' · '+(this.lastOrder.queue||''))
+          : ('มีคิวค้างอยู่: '+(this.lastOrder.queue||'')));
+        return;
+      }
     }
     this.clearOrderState();
     const pt=document.getElementById('payTotal');
@@ -1551,11 +1569,66 @@ const C={
     }catch(e){}
     return null;
   },
+  /** โต๊ะใครโต๊ะมัน — สแกนโต๊ะอื่นบนเครื่องเดียวกันต้องไม่โชว์ตั๋วโต๊ะเดิม */
+  bindTableSession(tableNo){
+    const n = tableNo!=null ? Math.floor(Number(tableNo)) : null;
+    const prev = this.tableNo!=null ? Math.floor(Number(this.tableNo)) : null;
+    if(n && prev && n!==prev){
+      // เปลี่ยนโต๊ะ → ตัด session ออเดอร์โต๊ะเก่าออก
+      try{ this.clearOrderState(); }catch(e){}
+      this.cart = this.cart||[];
+      try{ if(this.unsub){ this.unsub(); this.unsub=null; } }catch(e){}
+      try{ this.hide('mTicket'); }catch(e){}
+      try{ this.hide('mPay'); }catch(e){}
+      toast('โต๊ะ '+n+' · ไม่แสดงออเดอร์โต๊ะเดิม');
+    }
+    this.tableNo = n||null;
+    try{
+      if(n) sessionStorage.setItem('somtum_tableNo', String(n));
+      else sessionStorage.removeItem('somtum_tableNo');
+    }catch(e){}
+    // ถ้าเป็นโต๊ะเดิมและมี orderId ของโต๊ะนี้ใน session — คงไว้
+    try{
+      const savedT=sessionStorage.getItem('somtum_orderTable');
+      const savedId=sessionStorage.getItem('somtum_orderId');
+      if(n && savedT && String(savedT)===String(n) && savedId && !this.orderId){
+        // จะโหลดตั๋วโต๊ะเดิมด้านล่าง
+        this._pendingRestoreOrderId=savedId;
+      } else if(n && savedT && String(savedT)!==String(n)){
+        sessionStorage.removeItem('somtum_orderId');
+        sessionStorage.removeItem('somtum_orderTable');
+      }
+    }catch(e){}
+  },
+  async restoreTableOrderIfAny(){
+    const id=this._pendingRestoreOrderId;
+    this._pendingRestoreOrderId=null;
+    if(!id || !shopRef || !this.tableNo) return;
+    try{
+      const snap=await shopRef.collection('orders').doc(id).get();
+      if(!snap.exists) return;
+      const o=snap.data()||{};
+      if(o.status==='Cancelled' || o.status==='Completed') return;
+      if(Number(o.tableNo)!==Number(this.tableNo)) return;
+      this.orderId=id;
+      this.lastOrder={id, ...o};
+      // ไม่ auto เปิดตั๋ว — ให้ลูกค้ากดดูเองหรือหลังสั่งเพิ่ม
+    }catch(e){ console.warn('restore table order', e); }
+  },
+  rememberTableOrder(order){
+    try{
+      if(order && order.id && order.tableNo){
+        sessionStorage.setItem('somtum_orderId', String(order.id));
+        sessionStorage.setItem('somtum_orderTable', String(order.tableNo));
+      }
+    }catch(e){}
+  },
   applyOrderModeCustomerUI(){
     const bar=document.getElementById('tableModeBar');
-    const tableNo=this.tableNo || this.parseTableFromUrl();
-    if(tableNo) this.tableNo=tableNo;
+    const tableNo=this.parseTableFromUrl() || this.tableNo;
+    this.bindTableSession(tableNo);
     const useTable = this.orderMode==='table' && this.tableNo;
+    try{ this.restoreTableOrderIfAny(); }catch(e){}
     if(bar){
       if(this.orderMode==='table'){
         bar.style.display='block';
@@ -2353,8 +2426,15 @@ const C={
           }
         }
         if(existing){
-          // เพิ่มรายการเข้าออเดอร์เดิม
-          const mergedItems=(existing.items||[]).concat(items);
+          // เพิ่มรายการเข้าออเดอร์เดิม + ติดป้ายสั่งเพิ่มครั้งที่ N
+          const prevRound=Math.max(0, Math.floor(Number(existing.addRoundCount||0)));
+          const addRound=prevRound+1;
+          const tagged=items.map(it=>Object.assign({}, it, {
+            addRound: addRound,
+            addLabel: 'สั่งเพิ่มครั้งที่ '+addRound,
+            addedAt: Date.now()
+          }));
+          const mergedItems=(existing.items||[]).concat(tagged);
           const newSub=mergedItems.reduce((s,i)=>s+Number(i.total||0),0);
           // ส่วนลดรอบนี้คิดเฉพาะรายการใหม่ (subtotal) แล้วบวกเข้า discount เดิม
           const addDisc=Math.min(discountAmount, subtotal);
@@ -2370,7 +2450,9 @@ const C={
             pointsDisc:Number(existing.pointsDisc||0)+Number(pointsDisc||0),
             updatedAt:Date.now(),
             hasNewItems:true,
-            lastAddAt:Date.now()
+            lastAddAt:Date.now(),
+            addRoundCount:addRound,
+            lastAddRound:addRound
           };
           if(contactPhone && !existing.contactPhone) patch.contactPhone=contactPhone;
           if(memberPhone && !existing.memberPhone){
@@ -2390,8 +2472,9 @@ const C={
         // สร้างออเดอร์ใหม่ผูกโต๊ะ
         const newId=uid();
         const q='T'+String(this.tableNo).padStart(2,'0');
+        const baseItems=items.map(it=>Object.assign({}, it, { addRound:0, addLabel:'' }));
         const ord={
-          id:newId, queue:q, items, total, subtotal,
+          id:newId, queue:q, items:baseItems, total, subtotal,
           discountAmount, pointsUsed: pointsUsed||0, couponCode: couponCode||'',
           personalCouponId: personalCouponId||'',
           couponDisc: Number(couponDisc||0), pointsDisc: Number(pointsDisc||0),
@@ -2426,6 +2509,7 @@ const C={
       order=result.order;
       this.orderId=id;
       this.lastOrder={id, ...order};
+      try{ this.rememberTableOrder(this.lastOrder); }catch(e){}
       this.cart=[];
       try{ this.updFab(); }catch(e){}
       // ข้าม set order ด้านล่าง — ไป sync/ticket ต่อ
