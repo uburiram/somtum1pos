@@ -1638,6 +1638,11 @@ const C={
         try{ document.body.style.paddingTop=''; }catch(e){}
       }
     }
+    // โหมดโต๊ะ: ตัดช่องเช็คคิว/ใบเสร็จออก (ระบบคิวยังแสดงตามเดิม)
+    try{
+      const trackBar=document.querySelector('.track-bar');
+      if(trackBar) trackBar.style.display = (this.orderMode==='table') ? 'none' : 'flex';
+    }catch(e){}
     const lab=document.getElementById('tableModeLabel');
     const btn=document.getElementById('btnCallStaff');
     if(lab){
