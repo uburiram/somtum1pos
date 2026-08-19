@@ -896,7 +896,7 @@ const M={
     const navB=document.getElementById('navOrderBadge');
     if(navB){ if(n>0){navB.textContent=n;navB.classList.remove('hide')} else navB.classList.add('hide'); }
     const g=document.getElementById('orderGrid');
-    if(!list.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#888">ไม่มีออเดอร์</div>';return}
+    if(!list.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#888">ไม่มีออเดอร์</div>'; try{ this.renderTablesBoard(); }catch(e){} return}
     g.innerHTML=list.map(o=>{
       let prev=(o.items||[]).map(i=>i.name+' x'+i.qty).join(', '); if(prev.length>40) prev=prev.slice(0,40)+'…';
       const pay=o.paymentStatus==='PAID'?'<span style="background:#E8F5E9;color:#2E7D32;padding:2px 8px;border-radius:4px;font-size:12px">ชำระแล้ว</span>':'<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px">ยังไม่ชำระ</span>';
@@ -918,6 +918,8 @@ const M={
         ${this.formatEtaCountdown(o)}
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px"><strong style="color:var(--p);font-size:1.25rem">${money(o.total)}</strong><span style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${method}${pay}${slip}</span></div></div>`;
     }).join('');
+    // อัปเดตปุ่มเคลียร์โต๊ะเมื่อสถานะออเดอร์เปลี่ยน (เสร็จสมบูรณ์แล้วค่อยโชว์)
+    try{ this.renderTablesBoard(); }catch(e){}
   },
   openDetail(id){
     this.markOrderViewed(id);
@@ -1025,6 +1027,7 @@ const M={
       try{ if(this._blinkAdds) this._blinkAdds.delete(id); }catch(e){}
       try{ if(this.unviewed) this.unviewed.delete(id); }catch(e){}
       try{ if(this.unviewed && this.unviewed.size===0) this.stopAlarm(); }catch(e){}
+      try{ this.updateAlarmBadge(); }catch(e){}
     }
     await shopRef.collection('orders').doc(id).update(patch);
     // sync local
@@ -1447,14 +1450,18 @@ const M={
     box.innerHTML=list.map(t=>{
       const busy=!!t.activeOrderId;
       const call=!!t.callStaff;
+      const ord=busy ? (this.orders||[]).find(o=>o.id===t.activeOrderId) : null;
+      const ordDone=ord && (ord.status==='Completed' || ord.status==='Cancelled');
+      const stLabel=ord ? (({Pending:'รอคิวทำ',AwaitingPayment:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:'ยกเลิก'})[ord.status]||ord.status) : '';
       const bg=call?'#FFEBEE':(busy?'#FFF8E1':'#E8F5E9');
       const border=call?'#C62828':(busy?'#FFB300':'#81C784');
       return '<div style="background:'+bg+';border:2px solid '+border+';border-radius:12px;padding:12px">'+
         '<div style="font-weight:800;font-size:18px">โต๊ะ '+(t.tableNo||t.id)+'</div>'+
         '<div style="font-size:12px;margin-top:4px">'+(call?'🔔 เรียกพนักงาน':(busy?'🟢 มีออเดอร์':'ว่าง'))+'</div>'+
-        (t.activeOrderId?('<div style="font-size:11px;color:#666;margin-top:2px">ออเดอร์: '+String(t.activeOrderId).slice(0,8)+'…</div>'):'')+
+        (t.activeOrderId?('<div style="font-size:11px;color:#666;margin-top:2px">ออเดอร์: '+String(t.activeOrderId).slice(0,8)+'…'+(stLabel?' · '+stLabel:'')+'</div>'):'')+
         (call?('<button class="btn btn-p btn-sm" style="margin-top:8px;width:100%" onclick="M.ackTableCall(\''+t.id+'\')">รับทราบการเรียก</button>'):'')+
-        (busy?('<button class="btn btn-d btn-sm" style="margin-top:6px;width:100%" onclick="M.clearTable(\''+t.id+'\')">เคลียร์โต๊ะ</button>'):'')+
+        (busy && ordDone ? ('<button class="btn btn-d btn-sm" style="margin-top:6px;width:100%" onclick="M.clearTable(\''+t.id+'\')">เคลียร์โต๊ะ</button>') : '')+
+        (busy && !ordDone ? ('<div style="font-size:11px;color:#999;margin-top:6px;text-align:center">เคลียร์ได้เมื่อเสร็จสมบูรณ์</div>') : '')+
         '</div>';
     }).join('');
   },
