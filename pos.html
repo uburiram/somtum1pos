@@ -109,6 +109,7 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
   </div>
   <div class="nav">
     <button class="on" id="navOrders" onclick="M.tab('orders')">🧾 ออเดอร์ <span id="navOrderBadge" class="badge-n hide">0</span></button>
+    <button id="navTables" onclick="M.tab('tables')" class="hide">🪑 โต๊ะ <span id="navTableBadge" class="badge-n hide">0</span></button>
     <button id="navHistory" onclick="M.tab('history')">📚 ประวัติ</button>
     <button id="navShop" onclick="M.tab('shop')">🏪 จัดการร้าน</button>
     <button id="navReport" onclick="M.tab('report')">📊 รายงาน</button>
@@ -140,7 +141,19 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
     <div class="og" id="orderGrid"></div>
   </div>
 
-  <div id="panelHistory" class="hide">
+  <div id="panelTables" class="hide">
+    <div class="form-card">
+      <h3>🪑 จัดการโต๊ะ</h3>
+      <p style="font-size:13px;color:#666;margin-bottom:10px">โหมดโต๊ะ: 1 โต๊ะ = 1 ออเดอร์ · ลูกค้าหลายเครื่องสั่งรวมออเดอร์เดียวกันจนกว่าจะเคลียร์โต๊ะ</p>
+      <div id="tableCallAlert" style="display:none;margin-bottom:12px;padding:12px;background:#FFEBEE;border:2px solid #C62828;border-radius:12px">
+        <div style="font-weight:700;color:#C62828;font-size:16px">🔔 มีโต๊ะเรียกพนักงาน!</div>
+        <div id="tableCallList" style="margin-top:6px;font-size:14px"></div>
+      </div>
+      <div id="tablesBoard" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px"></div>
+    </div>
+  </div>
+  <div id="panelHistory"
+ class="hide">
     <div class="form-card">
       <h3 style="margin-bottom:8px">📚 ประวัติการสั่งซื้อ</h3><p style="font-size:12px;color:#777;margin-bottom:8px">แสดงเฉพาะออเดอร์ที่เสร็จสมบูรณ์ (ทำเสร็จแล้วและชำระเงินแล้ว)</p>
       <label class="lbl">ค้นหา (คิว / ชื่อเมนู)</label>
@@ -338,6 +351,21 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
         <div id="memberSystemStatus" style="margin-top:8px;font-size:13px;font-weight:600;color:#2E7D32">สถานะ: เปิด (ลูกค้าเห็นแต้ม/คูปอง)</div>
         <p style="font-size:12px;color:#777;margin-top:6px">ปิดแล้วหน้าสั่งของลูกค้าจะเหลือแค่เบอร์ติดต่อ ไม่แสดงแต้ม คูปอง และการสมัครสมาชิก — หน้าจอไม่รก ลูกค้าไม่สับสน</p>
       </div>
+      <div style="margin-top:14px;padding:12px;border-radius:12px;background:#E3F2FD;border:1px solid #90CAF9">
+        <div style="font-weight:700;margin-bottom:8px;color:#0D47A1">🪑 โหมดรับออเดอร์ (เลือกอย่างใดอย่างหนึ่ง)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+          <button type="button" class="btn btn-g" id="btnModeQueue" onclick="M.setOrderMode('queue')">คิว (Queue)</button>
+          <button type="button" class="btn btn-o" id="btnModeTable" onclick="M.setOrderMode('table')">โต๊ะ (Table)</button>
+        </div>
+        <div id="orderModeStatus" style="font-size:13px;font-weight:600;color:#1565C0;margin-bottom:8px">โหมดปัจจุบัน: คิว</div>
+        <div id="tableModeSettings" style="display:none">
+          <label class="lbl">จำนวนโต๊ะในร้าน</label>
+          <input id="setTableCount" type="number" min="1" max="100" value="10" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px">
+          <button class="btn btn-p btn-block" style="margin-top:8px" onclick="M.saveTableCount()">บันทึกจำนวนโต๊ะ + สร้าง QR</button>
+          <p style="font-size:12px;color:#666;margin-top:8px">ระบบจะสร้าง QR แยกแต่ละโต๊ะ · ลูกค้าสแกนแล้วสั่งเข้าโต๊ะนั้น · หลายเครื่องรวมออเดอร์เดียวกันจนกว่าจะเคลียร์โต๊ะ</p>
+          <div id="tableQrList" style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px"></div>
+        </div>
+      </div>
       <button class="btn btn-p btn-block" style="margin-top:10px" onclick="M.saveSettings()">บันทึกชื่อร้าน</button>
     </div>
     <div class="form-card">
@@ -510,6 +538,7 @@ const M={
     this.ready = false;
     this.lastActive = 0;
     this.listenOrders();
+    try{ this.listenTables(); }catch(e){}
     this.loadSettingsUI();
     // อัปเดตชื่อร้านแบบ realtime
     if (shopRef) {
@@ -520,6 +549,11 @@ const M={
           if (el) el.textContent = d.shopName || 'POS';
           try{ this.applyShopOpenUI(d.isOpen!==false); }catch(e){}
           try{ this.applyMemberSystemUI(d.memberSystemEnabled!==false); }catch(e){}
+          try{
+            this.applyOrderModeUI(d.orderMode==='table'?'table':'queue');
+            this.tableCount=Number(d.tableCount||10);
+            const tc=document.getElementById('setTableCount'); if(tc) tc.value=String(this.tableCount);
+          }catch(e){}
         }
       });
     }
@@ -1094,6 +1128,230 @@ const M={
     }catch(e){
       toast('อัปเดตระบบสมาชิกไม่สำเร็จ: '+(e.message||e));
     }
+  },
+  applyOrderModeUI(mode){
+    this.orderMode = (mode==='table') ? 'table' : 'queue';
+    const st=document.getElementById('orderModeStatus');
+    if(st){
+      st.textContent = this.orderMode==='table' ? 'โหมดปัจจุบัน: โต๊ะ' : 'โหมดปัจจุบัน: คิว';
+      st.style.color = this.orderMode==='table' ? '#6A1B9A' : '#1565C0';
+    }
+    const bq=document.getElementById('btnModeQueue');
+    const bt=document.getElementById('btnModeTable');
+    if(bq) bq.style.outline = this.orderMode==='queue' ? '3px solid #2E7D32' : 'none';
+    if(bt) bt.style.outline = this.orderMode==='table' ? '3px solid #6A1B9A' : 'none';
+    const box=document.getElementById('tableModeSettings');
+    if(box) box.style.display = this.orderMode==='table' ? 'block' : 'none';
+    const nav=document.getElementById('navTables');
+    if(nav) nav.classList.toggle('hide', this.orderMode!=='table');
+  },
+  async setOrderMode(mode){
+    mode = mode==='table' ? 'table' : 'queue';
+    try{
+      await shopRef.collection('settings').doc('public').set({
+        orderMode: mode,
+        orderModeUpdatedAt: Date.now()
+      }, {merge:true});
+      this.applyOrderModeUI(mode);
+      if(mode==='table'){
+        toast('เปิดโหมดโต๊ะ · ใช้แท็บ 「โต๊ะ」จัดการ');
+        try{ await this.ensureTables(Number(document.getElementById('setTableCount')?.value||this.tableCount||10)); }catch(e){}
+        try{ this.renderTableQrList(); }catch(e){}
+      } else {
+        toast('เปิดโหมดคิว · ลูกค้าสั่งแบบคิวเลข A001');
+      }
+    }catch(e){ toast('เปลี่ยนโหมดไม่สำเร็จ: '+(e.message||e)); }
+  },
+  async saveTableCount(){
+    let n=Math.floor(Number(document.getElementById('setTableCount')?.value||0));
+    if(!(n>=1 && n<=100)){ toast('จำนวนโต๊ะต้อง 1–100'); return; }
+    try{
+      await shopRef.collection('settings').doc('public').set({
+        orderMode:'table',
+        tableCount:n,
+        tableCountUpdatedAt:Date.now()
+      },{merge:true});
+      this.tableCount=n;
+      this.applyOrderModeUI('table');
+      await this.ensureTables(n);
+      this.renderTableQrList();
+      toast('บันทึก '+n+' โต๊ะ และสร้าง QR แล้ว');
+    }catch(e){ toast('บันทึกจำนวนโต๊ะไม่สำเร็จ: '+(e.message||e)); }
+  },
+  async ensureTables(n){
+    n=Math.max(1, Math.min(100, Math.floor(Number(n)||10)));
+    this.tableCount=n;
+    const batch=db.batch();
+    for(let i=1;i<=n;i++){
+      const id=String(i);
+      const ref=shopRef.collection('tables').doc(id);
+      batch.set(ref,{
+        tableNo:i,
+        activeOrderId:null,
+        status:'free',
+        callStaff:false,
+        callAt:0,
+        callAckAt:0,
+        updatedAt:Date.now()
+      },{merge:true});
+    }
+    await batch.commit();
+  },
+  tableOrderUrl(tableNo){
+    try{
+      const u=new URL('index.html', location.href);
+      u.searchParams.set('table', String(tableNo));
+      return u.href;
+    }catch(e){
+      return (location.origin||'')+'/index.html?table='+tableNo;
+    }
+  },
+  renderTableQrList(){
+    const box=document.getElementById('tableQrList');
+    if(!box) return;
+    const n=Math.max(1, Math.min(100, Number(this.tableCount||document.getElementById('setTableCount')?.value||10)));
+    box.innerHTML='';
+    for(let i=1;i<=n;i++){
+      const url=this.tableOrderUrl(i);
+      const card=document.createElement('div');
+      card.style.cssText='background:#fff;border:1px solid #ddd;border-radius:12px;padding:10px;text-align:center';
+      card.innerHTML='<div style="font-weight:700;margin-bottom:6px">โต๊ะ '+i+'</div><div id="tqr_'+i+'" style="display:flex;justify-content:center;min-height:120px"></div>'+
+        '<div style="font-size:10px;color:#666;word-break:break-all;margin-top:4px">'+url+'</div>'+
+        '<button type="button" class="btn btn-o btn-sm" style="margin-top:6px;width:100%" onclick="M.printTableQr('+i+')">พิมพ์/เปิด QR</button>';
+      box.appendChild(card);
+      try{
+        const el=document.getElementById('tqr_'+i);
+        if(el && typeof QRCode!=='undefined'){ el.innerHTML=''; new QRCode(el,{text:url,width:120,height:120}); }
+      }catch(e){}
+    }
+  },
+  printTableQr(tableNo){
+    const url=this.tableOrderUrl(tableNo);
+    const w=window.open('','_blank','width=360,height=480');
+    if(!w){ toast('อนุญาตป๊อปอัปเพื่อพิมพ์ QR'); return; }
+    w.document.write('<html><head><title>โต๊ะ '+tableNo+'</title></head><body style="text-align:center;font-family:sans-serif">'+
+      '<h2>โต๊ะ '+tableNo+'</h2><div id="q"></div><p style="font-size:12px;word-break:break-all">'+url+'</p>'+
+      '<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>'+
+      '<script>new QRCode(document.getElementById("q"),{text:'+JSON.stringify(url)+',width:200,height:200});setTimeout(function(){window.print()},500);<\/script>'+
+      '</body></html>');
+    w.document.close();
+  },
+  listenTables(){
+    try{ if(this._unsubTables) this._unsubTables(); }catch(e){}
+    if(!shopRef) return;
+    this._unsubTables=shopRef.collection('tables').onSnapshot(snap=>{
+      const list=[];
+      snap.forEach(d=>list.push({id:d.id, ...d.data()}));
+      list.sort((a,b)=>(a.tableNo||0)-(b.tableNo||0));
+      this.tables=list;
+      this.renderTablesBoard();
+      this.handleTableCalls(list);
+    }, e=>console.warn('tables', e));
+  },
+  renderTablesBoard(){
+    const box=document.getElementById('tablesBoard');
+    if(!box) return;
+    const list=this.tables||[];
+    if(!list.length){
+      box.innerHTML='<div style="color:#888">ยังไม่มีโต๊ะ · ไปที่ตั้งค่า → โหมดโต๊ะ → บันทึกจำนวนโต๊ะ</div>';
+      return;
+    }
+    box.innerHTML=list.map(t=>{
+      const busy=!!t.activeOrderId;
+      const call=!!t.callStaff;
+      const bg=call?'#FFEBEE':(busy?'#FFF8E1':'#E8F5E9');
+      const border=call?'#C62828':(busy?'#FFB300':'#81C784');
+      return '<div style="background:'+bg+';border:2px solid '+border+';border-radius:12px;padding:12px">'+
+        '<div style="font-weight:800;font-size:18px">โต๊ะ '+(t.tableNo||t.id)+'</div>'+
+        '<div style="font-size:12px;margin-top:4px">'+(call?'🔔 เรียกพนักงาน':(busy?'🟢 มีออเดอร์':'ว่าง'))+'</div>'+
+        (t.activeOrderId?('<div style="font-size:11px;color:#666;margin-top:2px">ออเดอร์: '+String(t.activeOrderId).slice(0,8)+'…</div>'):'')+
+        (call?('<button class="btn btn-p btn-sm" style="margin-top:8px;width:100%" onclick="M.ackTableCall(\''+t.id+'\')">รับทราบการเรียก</button>'):'')+
+        (busy?('<button class="btn btn-d btn-sm" style="margin-top:6px;width:100%" onclick="M.clearTable(\''+t.id+'\')">เคลียร์โต๊ะ</button>'):'')+
+        '</div>';
+    }).join('');
+  },
+  handleTableCalls(list){
+    const calling=(list||[]).filter(t=>t.callStaff);
+    const badge=document.getElementById('navTableBadge');
+    if(badge){
+      if(calling.length){ badge.textContent=String(calling.length); badge.classList.remove('hide'); }
+      else badge.classList.add('hide');
+    }
+    const alert=document.getElementById('tableCallAlert');
+    const callList=document.getElementById('tableCallList');
+    if(alert){
+      if(calling.length){
+        alert.style.display='block';
+        if(callList) callList.innerHTML=calling.map(t=>'โต๊ะ '+(t.tableNo||t.id)).join(' · ');
+        this.startCallAlarm();
+      } else {
+        alert.style.display='none';
+        this.stopCallAlarm();
+      }
+    } else if(calling.length){
+      this.startCallAlarm();
+    } else {
+      this.stopCallAlarm();
+    }
+  },
+  startCallAlarm(){
+    if(this._callAlarmTimer) return;
+    const beep=()=>{
+      try{
+        if(!this.audio) this.audio=new (window.AudioContext||window.webkitAudioContext)();
+        const ctx=this.audio;
+        if(ctx.state==='suspended') ctx.resume();
+        const o=ctx.createOscillator(); const g=ctx.createGain();
+        o.type='square'; o.frequency.value=880;
+        g.gain.value=0.08;
+        o.connect(g); g.connect(ctx.destination);
+        o.start(); o.stop(ctx.currentTime+0.18);
+      }catch(e){}
+    };
+    beep();
+    this._callAlarmTimer=setInterval(beep, 1200);
+  },
+  stopCallAlarm(){
+    if(this._callAlarmTimer){ clearInterval(this._callAlarmTimer); this._callAlarmTimer=null; }
+  },
+  async ackTableCall(tableId){
+    try{
+      await shopRef.collection('tables').doc(String(tableId)).set({
+        callStaff:false,
+        callAckAt:Date.now(),
+        updatedAt:Date.now()
+      },{merge:true});
+      toast('รับทราบโต๊ะ '+tableId+' แล้ว');
+    }catch(e){ toast('รับทราบไม่สำเร็จ: '+(e.message||e)); }
+  },
+  async clearTable(tableId){
+    if(!confirm('เคลียร์โต๊ะ '+tableId+' ?\nถือว่าลูกค้าจ่ายเงินและออกแล้ว · พร้อมรับออเดอร์ใหม่')) return;
+    try{
+      const tref=shopRef.collection('tables').doc(String(tableId));
+      const ts=await tref.get();
+      const td=ts.exists?ts.data():{};
+      const oid=td.activeOrderId;
+      if(oid){
+        try{
+          await shopRef.collection('orders').doc(oid).set({
+            status:'Completed',
+            paymentStatus:'PAID',
+            paidAt: Date.now(),
+            clearedAt: Date.now(),
+            updatedAt: Date.now()
+          },{merge:true});
+        }catch(e){ console.warn('complete order on clear', e); }
+      }
+      await tref.set({
+        activeOrderId:null,
+        status:'free',
+        callStaff:false,
+        callAt:0,
+        callAckAt:0,
+        updatedAt:Date.now()
+      },{merge:true});
+      toast('เคลียร์โต๊ะ '+tableId+' แล้ว');
+    }catch(e){ toast('เคลียร์โต๊ะไม่สำเร็จ: '+(e.message||e)); }
   },
   async deleteOrder(id){
     if(!confirm('ลบประวัติออเดอร์นี้ถาวร?\n(ขั้นที่ 1/2)')) return;
@@ -1803,12 +2061,12 @@ const M={
   },
 
   tab(name){
-    ['orders','history','shop','report','members','settings'].forEach(n=>{
+    ['orders','tables','history','shop','report','members','settings'].forEach(n=>{
       const el=document.getElementById('panel'+n.charAt(0).toUpperCase()+n.slice(1));
       if(el) el.classList.toggle('hide', n!==name);
     });
     document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('on'));
-    const map={orders:'navOrders',history:'navHistory',shop:'navShop',report:'navReport',members:'navMembers',settings:'navSet'};
+    const map={orders:'navOrders',tables:'navTables',history:'navHistory',shop:'navShop',report:'navReport',members:'navMembers',settings:'navSet'};
     if(map[name]) document.getElementById(map[name]).classList.add('on');
     if(name==='report') this.loadReport();
     if(name==='history') this.loadHistory();
@@ -2216,6 +2474,10 @@ const M={
     document.getElementById('setName').value=d.shopName||'';
     this.applyShopOpenUI(d.isOpen!==false);
     this.applyMemberSystemUI(d.memberSystemEnabled!==false);
+    this.applyOrderModeUI(d.orderMode==='table'?'table':'queue');
+    this.tableCount=Number(d.tableCount||10);
+    const tc=document.getElementById('setTableCount'); if(tc) tc.value=String(this.tableCount);
+    if(this.orderMode==='table'){ try{ this.renderTableQrList(); }catch(e){} }
     document.getElementById('setAccount').value=d.accountName||'';
     document.getElementById('setPP').value=d.promptpay||'1319900156353';
     const payType=d.payType||'kshop';

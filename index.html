@@ -109,6 +109,15 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
   <div style="margin-top:6px;font-size:12px;color:#777">หรือติดต่อผ่าน Line ตามเบอร์โทรได้เลยครับ</div>
 </div>
 <div class="fab" id="fab" onclick="C.openCart()"><span id="fabCount">0 รายการ</span><span id="fabTotal">฿0</span></div>
+<div id="tableModeBar" style="display:none;position:fixed;top:0;left:0;right:0;z-index:40;background:#6A1B9A;color:#fff;padding:8px 12px;font-size:13px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.15)">
+  <span id="tableModeLabel">🪑 โต๊ะ —</span>
+  <button type="button" id="btnCallStaff" onclick="C.callStaff()" style="margin-left:10px;background:#fff;color:#6A1B9A;border:none;border-radius:16px;padding:6px 12px;font-weight:700;font-size:13px">เรียกพนักงาน</button>
+</div>
+<div id="staffAckModal" class="ov" style="z-index:60"><div class="md" style="text-align:center">
+  <div style="font-size:18px;font-weight:700;color:#2E7D32;margin-bottom:10px">พนักงานรับทราบแล้ว</div>
+  <p style="font-size:14px;color:#333;line-height:1.6">กรุณารอสักครู่...<br>พนักงานกำลังมาตามที่ท่านเรียก</p>
+  <button class="btn btn-p" style="margin-top:14px" onclick="C.hide('staffAckModal')">ปิด</button>
+</div></div>
 
 <div class="ov" id="mProduct"><div class="md">
   <div class="mh"><span id="pTitle"></span><button class="x" onclick="C.hide('mProduct')">×</button></div>
@@ -383,7 +392,7 @@ async function migrateAndSeed(){
 }
 
 const C={
-  shopName:'ร้าน',promptpay:'',accountName:'',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:'',memberSystemEnabled:true,optionConfig:{spiceMode:'single',toppingMode:'multi',toppingAllowQty:true},cats:[],menus:[],spice:[],tops:[],
+  shopName:'ร้าน',promptpay:'',accountName:'',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:'',memberSystemEnabled:true,orderMode:'queue',tableNo:null,tableCount:0,optionConfig:{spiceMode:'single',toppingMode:'multi',toppingAllowQty:true},cats:[],menus:[],spice:[],tops:[],
   cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'PROMPTPAY',slipData:'',lastOrder:null,kitchenOrders:[],bestSellerIds:[],bestSellerRank:{},
 
   async init(){
@@ -405,6 +414,10 @@ const C={
       try{ db.enablePersistence({synchronizeTabs:true}).catch(function(){}); }catch(e){}
       shopRef=db.collection('shops').doc(window.SHOP_ID||'main');
       setConn('เชื่อมต่อแล้ว');
+      try{
+        this.tableNo=this.parseTableFromUrl();
+        if(this.tableNo) this.applyOrderModeCustomerUI();
+      }catch(e){}
       // seed ไม่ควรบล็อกการแสดงผลนาน
       try{ await Promise.race([migrateAndSeed(), new Promise(function(r){setTimeout(r,5000);})]); }catch(e){ console.warn('seed',e); }
       shopRef.collection('settings').doc('public').onSnapshot(s=>{
@@ -421,6 +434,9 @@ const C={
         this.setShopOpenState(d.isOpen!==false);
         // ระบบสมาชิกบนหน้าลูกค้า (default เปิด เพื่อไม่พังร้านเดิม)
         this.applyMemberSystemState(d.memberSystemEnabled!==false);
+        this.orderMode = d.orderMode==='table' ? 'table' : 'queue';
+        this.tableCount = Number(d.tableCount||0);
+        try{ this.applyOrderModeCustomerUI(); }catch(e){}
       });
       const bindCol=(name, assign)=>{
         shopRef.collection(name).onSnapshot(s=>{
@@ -1519,6 +1535,86 @@ const C={
       }
     }catch(e){}
   },
+
+  parseTableFromUrl(){
+    try{
+      const u=new URL(location.href);
+      let t=u.searchParams.get('table')||u.searchParams.get('t');
+      if(!t && location.hash){
+        const m=String(location.hash).match(/table[=:_-]?(\d+)/i);
+        if(m) t=m[1];
+      }
+      if(t!=null && t!==''){
+        const n=Math.floor(Number(t));
+        if(n>=1 && n<=100) return n;
+      }
+    }catch(e){}
+    return null;
+  },
+  applyOrderModeCustomerUI(){
+    const bar=document.getElementById('tableModeBar');
+    const tableNo=this.tableNo || this.parseTableFromUrl();
+    if(tableNo) this.tableNo=tableNo;
+    const useTable = this.orderMode==='table' && this.tableNo;
+    if(bar){
+      if(this.orderMode==='table'){
+        bar.style.display='block';
+        try{ document.body.style.paddingTop='44px'; }catch(e){}
+      } else {
+        bar.style.display='none';
+        try{ document.body.style.paddingTop=''; }catch(e){}
+      }
+    }
+    const lab=document.getElementById('tableModeLabel');
+    const btn=document.getElementById('btnCallStaff');
+    if(lab){
+      if(useTable) lab.textContent='🪑 สั่งอาหาร · โต๊ะ '+this.tableNo;
+      else if(this.orderMode==='table') lab.textContent='🪑 โหมดโต๊ะ · กรุณาสแกน QR บนโต๊ะก่อนสั่ง';
+    }
+    if(btn) btn.style.display = useTable ? 'inline-block' : 'none';
+    if(useTable){
+      try{ this.listenTableDoc(this.tableNo); }catch(e){}
+    }
+  },
+  listenTableDoc(tableNo){
+    const id=String(tableNo);
+    try{ if(this._unsubTable) this._unsubTable(); }catch(e){}
+    if(!shopRef) return;
+    this._unsubTable=shopRef.collection('tables').doc(id).onSnapshot(snap=>{
+      if(!snap.exists) return;
+      const d=snap.data()||{};
+      // พนักงานรับทราบ → แจ้งลูกค้า
+      if(d.callAckAt && this._lastCallAt && d.callAckAt>=this._lastCallAt && !d.callStaff){
+        if(this._lastAckShown!==d.callAckAt){
+          this._lastAckShown=d.callAckAt;
+          try{ this.show('staffAckModal'); }catch(e){}
+          toast('พนักงานรับทราบแล้ว · กำลังมา');
+        }
+      }
+      // โต๊ะถูกเคลียร์ขณะดูออเดอร์เดิม
+      if(!d.activeOrderId && this.orderId && this.lastOrder && this.lastOrder.tableNo==tableNo){
+        // โต๊ะว่างแล้ว — ไม่ล้างทันทีถ้ายังเปิดตั๋ว
+      }
+    }, e=>console.warn('table listen', e));
+  },
+  async callStaff(){
+    if(this.orderMode!=='table' || !this.tableNo){
+      toast('ใช้ได้เฉพาะเมื่อสแกน QR โต๊ะ');
+      return;
+    }
+    try{
+      const now=Date.now();
+      this._lastCallAt=now;
+      await shopRef.collection('tables').doc(String(this.tableNo)).set({
+        callStaff:true,
+        callAt:now,
+        callAckAt:0,
+        updatedAt:now
+      },{merge:true});
+      toast('เรียกพนักงานแล้ว · รอสักครู่');
+    }catch(e){ toast('เรียกพนักงานไม่สำเร็จ: '+(e.message||e)); }
+  },
+
   openMemberReg(){
     if(this.memberSystemEnabled===false){ toast('ระบบสมาชิกปิดอยู่'); return; }
     try{
@@ -2061,15 +2157,17 @@ const C={
   async confirmOrder(){
     this.payM='PROMPTPAY';
     if(!this.assertShopOpen()) return;
-    // มีออเดอร์แล้ว → เปิดตั๋วคิวทันที
+    // มีออเดอร์แล้ว: โหมดคิว → เปิดตั๋ว / โหมดโต๊ะ+มีของในตะกร้า → เพิ่มเข้าออเดอร์เดิม
     if(this.orderId && this.lastOrder){
       const st=this.lastOrder.status;
       if(st==='Cancelled' || st==='Completed'){
         this.clearOrderState();
+      } else if(this.orderMode==='table' && this.tableNo && this.cart && this.cart.length){
+        // อนุญาตเพิ่มเมนูเข้าโต๊ะเดิม
       } else {
         this.renderTicket(this.lastOrder);
         this.hide('mPay'); this.hide('mCart'); this.show('mTicket');
-        toast('คิวของคุณ: '+(this.lastOrder.queue||''));
+        toast(this.orderMode==='table' ? ('โต๊ะ '+(this.tableNo||'')+' · '+(this.lastOrder.queue||'')) : ('คิวของคุณ: '+(this.lastOrder.queue||'')));
         return;
       }
     }
@@ -2099,11 +2197,14 @@ const C={
     }
     if(this.orderId && this.lastOrder){
       const st=this.lastOrder.status;
-      // บล็อกเฉพาะคิวยังไม่จบ — ถ้ายกเลิก/เสร็จสมบูรณ์แล้วให้สร้างใหม่ได้
-      if(st!=='Cancelled' && st!=='Completed'){
+      if(st==='Cancelled' || st==='Completed'){
+        this.clearOrderState();
+      } else if(this.orderMode==='table' && this.tableNo && (this.cart||[]).length){
+        // โหมดโต๊ะ: ไม่ return — ไปรวมรายการเข้าออเดอร์โต๊ะเดิม
+      } else {
+        // โหมดคิว: มีคิวยังไม่จบ — ไม่สร้างซ้ำ
         return this.lastOrder;
       }
-      this.clearOrderState();
     }
     const items=(this.cart||[]).map(i=>({
       name:i.name,qty:i.qty,spiceName:i.spiceName,
@@ -2220,10 +2321,120 @@ const C={
     if(!(total>=0) || total>=200000){
       throw new Error('ยอดออเดอร์ไม่ถูกต้อง');
     }
+    const fullyCovered=total<=0 && (discountAmount>0 || pointsUsed>0);
+    const useTable = this.orderMode==='table' && this.tableNo;
+    if(this.orderMode==='table' && !this.tableNo){
+      throw new Error('โหมดโต๊ะ: กรุณาสแกน QR โต๊ะก่อนสั่ง');
+    }
+
+    let id, queue, order;
+
+    if(useTable){
+      // ===== โหมดโต๊ะ: 1 โต๊ะ = 1 ออเดอร์ · เพิ่มเมนูรวมออเดอร์เดิมจนกว่าจะเคลียร์ =====
+      const tableId=String(this.tableNo);
+      const tref=shopRef.collection('tables').doc(tableId);
+      const result=await db.runTransaction(async tx=>{
+        const ts=await tx.get(tref);
+        const td=ts.exists? (ts.data()||{}) : {};
+        let activeId=td.activeOrderId||null;
+        let existing=null;
+        if(activeId){
+          const oref=shopRef.collection('orders').doc(activeId);
+          const os=await tx.get(oref);
+          if(os.exists){
+            const od=os.data()||{};
+            if(od.status==='Cancelled' || od.status==='Completed'){
+              activeId=null;
+            } else {
+              existing={ id:activeId, ...od };
+            }
+          } else {
+            activeId=null;
+          }
+        }
+        if(existing){
+          // เพิ่มรายการเข้าออเดอร์เดิม
+          const mergedItems=(existing.items||[]).concat(items);
+          const newSub=mergedItems.reduce((s,i)=>s+Number(i.total||0),0);
+          // ส่วนลดรอบนี้คิดเฉพาะรายการใหม่ (subtotal) แล้วบวกเข้า discount เดิม
+          const addDisc=Math.min(discountAmount, subtotal);
+          const newDisc=Number(existing.discountAmount||0)+addDisc;
+          const newTotal=Math.max(0, newSub-newDisc);
+          const patch={
+            items:mergedItems,
+            subtotal:newSub,
+            total:newTotal,
+            discountAmount:newDisc,
+            pointsUsed:Number(existing.pointsUsed||0)+(pointsUsed||0),
+            couponDisc:Number(existing.couponDisc||0)+Number(couponDisc||0),
+            pointsDisc:Number(existing.pointsDisc||0)+Number(pointsDisc||0),
+            updatedAt:Date.now(),
+            hasNewItems:true,
+            lastAddAt:Date.now()
+          };
+          if(contactPhone && !existing.contactPhone) patch.contactPhone=contactPhone;
+          if(memberPhone && !existing.memberPhone){
+            patch.memberPhone=memberPhone;
+            patch.memberName=this.member?this.escName(this.member):'';
+          }
+          // กฎ Firestore: ต้องไม่เปลี่ยน status/paymentStatus
+          tx.update(shopRef.collection('orders').doc(existing.id), patch);
+          tx.set(tref,{
+            tableNo:Number(this.tableNo),
+            activeOrderId:existing.id,
+            status:'occupied',
+            updatedAt:Date.now()
+          },{merge:true});
+          return { id:existing.id, queue:existing.queue||('T'+String(this.tableNo).padStart(2,'0')), appended:true, order:{...existing, ...patch, id:existing.id} };
+        }
+        // สร้างออเดอร์ใหม่ผูกโต๊ะ
+        const newId=uid();
+        const q='T'+String(this.tableNo).padStart(2,'0');
+        const ord={
+          id:newId, queue:q, items, total, subtotal,
+          discountAmount, pointsUsed: pointsUsed||0, couponCode: couponCode||'',
+          personalCouponId: personalCouponId||'',
+          couponDisc: Number(couponDisc||0), pointsDisc: Number(pointsDisc||0),
+          memberPhone: memberPhone||'', contactPhone: contactPhone||memberPhone||'',
+          memberName: this.member?this.escName(this.member):'',
+          pointsAwarded:0, pointsEarned:0,
+          status: opts.status||'Pending',
+          paymentMethod: fullyCovered ? (pointsUsed>=discountAmount?'POINTS':'COUPON') : 'PROMPTPAY',
+          paymentStatus: fullyCovered ? 'PAID' : (opts.paymentStatus||'UNPAID'),
+          paidAmount: fullyCovered ? 0 : 0,
+          changeAmount:0,
+          paidAt: fullyCovered ? Date.now() : 0,
+          autoPaid: !!fullyCovered,
+          paidByDiscount: !!fullyCovered,
+          slipData:'', slipStatus:'NONE',
+          payRef: newId,
+          createdAt: Date.now(),
+          orderMode:'table',
+          tableNo:Number(this.tableNo)
+        };
+        tx.set(shopRef.collection('orders').doc(newId), ord);
+        tx.set(tref,{
+          tableNo:Number(this.tableNo),
+          activeOrderId:newId,
+          status:'occupied',
+          updatedAt:Date.now()
+        },{merge:true});
+        return { id:newId, queue:q, appended:false, order:ord };
+      });
+      id=result.id;
+      queue=result.queue;
+      order=result.order;
+      this.orderId=id;
+      this.lastOrder={id, ...order};
+      this.cart=[];
+      try{ this.updFab(); }catch(e){}
+      // ข้าม set order ด้านล่าง — ไป sync/ticket ต่อ
+    } else {
+    // ===== โหมดคิว (เดิม) =====
     const queueRef=shopRef.collection('settings').doc('queue');
     const today=new Date();
     const dayKey=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
-    const queue=await db.runTransaction(async tx=>{
+    queue=await db.runTransaction(async tx=>{
       const snap=await tx.get(queueRef);
       const data=snap.exists?snap.data():{};
       let qNum=1;
@@ -2234,9 +2445,8 @@ const C={
       tx.set(queueRef,{ queueCounter:qNum+1, queueDate:dayKey },{merge:true});
       return q;
     });
-    const id=uid();
-    const fullyCovered=total<=0 && (discountAmount>0 || pointsUsed>0);
-    const order={
+    id=uid();
+    order={
       id, queue, items, total, subtotal,
       discountAmount, pointsUsed: pointsUsed||0, couponCode: couponCode||'',
       personalCouponId: personalCouponId||'',
@@ -2254,9 +2464,11 @@ const C={
       paidByDiscount: !!fullyCovered,
       slipData:'', slipStatus:'NONE',
       payRef: id,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      orderMode:'queue'
     };
     await shopRef.collection('orders').doc(id).set(order);
+    }
     // sync สิทธิ์บน client หลังตัดจริงแล้ว (กันสั่งซ้ำด้วยยอดแต้ม/คูปองเก่า)
     try{
       if(this.member && memberPhone){
@@ -2288,7 +2500,7 @@ const C={
     try{ this.hide('mCart'); }catch(e){}
     try{ this.show('mTicket'); }catch(e){}
     try{ this.attachTicketQR(); }catch(e){}
-    try{ toast('คิวของคุณ: '+queue); }catch(e){}
+    try{ toast(useTable ? ('โต๊ะ '+this.tableNo+' · ออเดอร์ '+queue) : ('คิวของคุณ: '+queue)); }catch(e){}
     // แนบสลิป/ตรวจเงิน — เบื้องหลัง ไม่บล็อกหน้าคิว
     if(this.slipData){
       const slip=this.slipData;
