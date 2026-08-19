@@ -633,13 +633,24 @@ const M={
             // สั่งเพิ่มเมนูในโต๊ะเดิม
             const la=Number(o.lastAddAt||0);
             const prev=Number(this._prevAddAt[o.id]||0);
-            if(la>0 && la>prev && this.seenIds.has(o.id)){
+            // ตรวจจับเมนูเข้าใหม่ (แม้ร้านอยู่แท็บอื่น) → เตือน + กระพริบ + โชว์ครัวทันที
+            if(la>0 && la>prev && (this.seenIds.has(o.id) || !!o.hasNewItems)){
               this._blinkAdds.add(o.id);
               this.unviewed.add(o.id);
               try{ this.beep(); }catch(e){}
               try{ this.startAlarm(); }catch(e){}
-              const back=o.returnedToKitchen || o.status==='Pending';
-              toast('🔔 โต๊ะ '+(o.tableNo||'')+' สั่งเพิ่มครั้งที่ '+(o.lastAddRound||'')+(back?' · กลับเข้าครัว':'')+'!');
+              const back=!!o.returnedToKitchen || o.status==='Pending' || o.status==='Cooking';
+              toast('🔔 โต๊ะ '+(o.tableNo||'')+' สั่งเพิ่มครั้งที่ '+(o.lastAddRound||'')+(back?' · เข้าครัว':'')+'!');
+              // แสดงที่ครัวทันที — ไม่ต้องให้ร้านกดแท็บครัวเอง
+              try{
+                this.filterKey='kitchen';
+                document.querySelectorAll('.fc').forEach(x=>x.classList.remove('on'));
+                document.querySelectorAll('.fc').forEach(btn=>{
+                  if((btn.getAttribute('onclick')||'').indexOf("'kitchen'")>=0 || (btn.getAttribute('onclick')||'').indexOf('kitchen')>=0){
+                    btn.classList.add('on');
+                  }
+                });
+              }catch(e){}
             }
             if(la>0) this._prevAddAt[o.id]=la;
           });
@@ -693,20 +704,12 @@ const M={
   },
   markOrderViewed(id){
     if(!id) return;
+    // เปิดดูแล้ว → หยุดเสียงบี๊บของรายการนี้ แต่ยังไฮไลท์เมนูใหม่จนกว่าจะกด「ทำเสร็จแล้ว」
     this.unviewed.delete(id);
     this.seenIds.add(id);
-    try{ if(this._blinkAdds) this._blinkAdds.delete(id); }catch(e){}
-    // เคลียร์ธง hasNewItems บนเซิร์ฟเวอร์เมื่อร้านเปิดดูแล้ว
-    try{
-      const o=(this.orders||[]).find(x=>x.id===id);
-      if(o && o.hasNewItems && shopRef){
-        shopRef.collection('orders').doc(id).set({ hasNewItems:false, newItemsAckAt:Date.now() },{merge:true}).catch(()=>{});
-        o.hasNewItems=false;
-      }
-    }catch(e){}
+    // ไม่ลบ _blinkAdds / hasNewItems ที่นี่ — เคลียร์ตอน setStatus Ready เท่านั้น
     if(this.unviewed.size===0) this.stopAlarm();
     this.updateAlarmBadge();
-    try{ this.renderOrders(); }catch(e){}
   },
   updateAlarmBadge(){
     const n=this.unviewed?this.unviewed.size:0;
@@ -744,21 +747,42 @@ const M={
   isKitchenStatus(st){
     return ['Pending','Cooking','AwaitingPayment'].includes(st);
   },
-  /** นาทีรอแบบเดียวกับตั๋วลูกค้า: คิวก่อนหน้าในครัว + ของตัวเอง × 2 นาที/รายการส้มตำ */
+  /** นาทีครัว: คิวก่อนหน้า (ตาม kitchenSortAt) + เมนูที่ยังต้องทำของออเดอร์นี้ × 2 นาที/รายการส้มตำ */
   calcOrderEtaMinutes(order){
     if(!order || !this.isKitchenStatus(order.status)) return 0;
-    const myT=Number(order.createdAt||0);
+    const sortKey=o=>Number(o.kitchenSortAt!=null?o.kitchenSortAt:(o.createdAt||0));
+    const myT=sortKey(order);
     const myId=order.id;
     const kitchen=(this.orders||[]).filter(o=>this.isKitchenStatus(o.status) && (o.items||[]).length>0);
     const ahead=kitchen.filter(o=>{
       if(o.id===myId) return false;
-      const t=Number(o.createdAt||0);
+      const t=sortKey(o);
       if(t<myT) return true;
       if(t===myT && String(o.id)<String(myId)) return true;
       return false;
     });
     const somtumAhead=ahead.reduce((s,o)=>s+this.countSomtumQty(o),0);
-    const somtumMine=this.countSomtumQty(order);
+    // เมนูที่ต้องทำของออเดอร์นี้:
+    // - ถ้าเพิ่งสั่งเพิ่มหลังทำเสร็จ (returnedToKitchen + hasNewItems) → นับเฉพาะรอบใหม่
+    // - ถ้ายังค้างครัวอยู่ → นับทั้งออเดอร์ (เมนูที่เหลือ+ที่เพิ่ม)
+    let somtumMine=0;
+    if(order.hasNewItems && order.returnedToKitchen && Number(order.lastAddRound)>0){
+      somtumMine=(order.items||[]).reduce((s,it)=>{
+        if(Number(it.addRound)!==Number(order.lastAddRound)) return s;
+        if(!this.isSomtumItem(it)) return s;
+        return s+Number(it.qty||0);
+      },0);
+      // ถ้าไม่มีส้มตำในรอบใหม่ อย่างน้อยนับรายการรอบใหม่ × 1 นาที/ชิ้น แทน
+      if(somtumMine<=0){
+        somtumMine=(order.items||[]).reduce((s,it)=>s+(Number(it.addRound)===Number(order.lastAddRound)?Number(it.qty||0):0),0);
+      }
+    } else if(order.hasNewItems && Number(order.lastAddRound)>0){
+      // ยังอยู่ในครัวแล้วสั่งเพิ่ม → นับเมนูทั้งหมดที่ยังต้องทำ (ทั้งออเดอร์)
+      somtumMine=this.countSomtumQty(order);
+      if(somtumMine<=0) somtumMine=(order.items||[]).reduce((s,it)=>s+Number(it.qty||0),0);
+    } else {
+      somtumMine=this.countSomtumQty(order);
+    }
     return (somtumAhead+somtumMine)*2;
   },
   formatEtaCountdown(order){
@@ -768,8 +792,9 @@ const M={
     if(!this.isKitchenStatus(order.status)) return '';
     const mins=this.calcOrderEtaMinutes(order);
     if(mins<=0) return '<div class="eta-cd" style="margin-top:6px;font-size:12px;font-weight:700;color:#2E7D32">⏱ ถึงคิวแล้ว / ใกล้เสร็จ</div>';
-    // นับถอยหลังจากเวลาสั่ง + นาทีประมาณ
-    const endAt=Number(order.createdAt||Date.now())+mins*60000;
+    // นับถอยหลังจากจุดยึดเวลา (สั่งใหม่หรือสั่งเพิ่มล่าสุด) + นาทีจากเมนูที่เหลือ/คิวก่อนหน้า
+    const anchor=Number(order.etaAnchorAt||order.lastAddAt||order.createdAt||Date.now());
+    const endAt=anchor+mins*60000;
     const leftMs=endAt-Date.now();
     if(leftMs<=0) return '<div class="eta-cd" style="margin-top:6px;font-size:12px;font-weight:700;color:#C62828">⏱ เลยกำหนดแล้ว · เร่งทำ</div>';
     const leftMin=Math.ceil(leftMs/60000);
@@ -863,6 +888,7 @@ const M={
         : '<span style="background:#E8EAF6;color:#3949AB;padding:2px 6px;border-radius:4px;font-size:11px">พร้อมเพย์</span>';
       const slip=o.slipStatus==='PENDING_REVIEW'?' <span style="background:#FFF3E0;color:#E65100;padding:2px 6px;border-radius:4px;font-size:11px">รอตรวจสลิป</span>':(o.slipStatus==='APPROVED'||o.slipStatus==='AUTO_APPROVED'?' <span style="background:#E8F5E9;color:#2E7D32;padding:2px 6px;border-radius:4px;font-size:11px">สลิปผ่าน</span>':'');
       const isNew=this.unviewed&&this.unviewed.has(o.id);
+      // กระพริบจนกว่าจะกดทำเสร็จแล้ว (hasNewItems เคลียร์ตอน Ready เท่านั้น)
       const isAdd=!!o.hasNewItems || (this._blinkAdds && this._blinkAdds.has(o.id));
       const tableTag=o.tableNo?(`<span style="background:#F3E5F5;color:#6A1B9A;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">โต๊ะ ${o.tableNo}</span> `):'';
       const addTag=isAdd?(' <span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">สั่งเพิ่ม!</span>'):'';
@@ -971,9 +997,12 @@ const M={
       patch.statusLocked=true;
     }
     if(status==='Ready'){
-      // ทำเสร็จแล้ว → ยกเลิกไฮไลท์เมนูเพิ่ม (เหลือแค่ป้ายครั้งที่)
+      // ทำเสร็จแล้วเท่านั้น → ยกเลิกไฮไลท์/กระพริบ (เหลือป้าย「สั่งเพิ่มครั้งที่ N」)
+      // เปิดดูออเดอร์อย่างเดียวจะไม่เคลียร์ — เคลียร์ตรงนี้เท่านั้น
       patch.hasNewItems=false;
+      patch.returnedToKitchen=false;
       patch.newItemsAckAt=Date.now();
+      try{ if(this._blinkAdds) this._blinkAdds.delete(id); }catch(e){}
     }
     await shopRef.collection('orders').doc(id).update(patch);
     // sync local

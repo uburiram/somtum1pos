@@ -2456,6 +2456,7 @@ const C={
             updatedAt:Date.now(),
             hasNewItems:true,
             lastAddAt:Date.now(),
+            etaAnchorAt:Date.now(), // เริ่มจับเวลาใหม่เมื่อมีเมนูเข้า
             addRoundCount:addRound,
             lastAddRound:addRound,
             returnedToKitchen: !!wasFinished,
@@ -2507,6 +2508,7 @@ const C={
           payRef: newId,
           createdAt: Date.now(),
           kitchenSortAt: Date.now(),
+          etaAnchorAt: Date.now(),
           orderMode:'table',
           tableNo:Number(this.tableNo)
         };
@@ -2565,6 +2567,7 @@ const C={
       payRef: id,
       createdAt: Date.now(),
       kitchenSortAt: Date.now(),
+      etaAnchorAt: Date.now(),
       orderMode:'queue'
     };
     await shopRef.collection('orders').doc(id).set(order);
@@ -2719,20 +2722,32 @@ const C={
     if(!myOrder || !this.isKitchenStatus(myOrder.status)){
       return {ahead:0, minutes:0, inKitchen:false};
     }
-    const myT=Number(myOrder.createdAt||0);
+    const sortKey=o=>Number(o.kitchenSortAt!=null?o.kitchenSortAt:(o.createdAt||0));
+    const myT=sortKey(myOrder);
     const myId=myOrder.id;
     const kitchen=(kitchenOrders||[]).filter(o=>this.isKitchenStatus(o.status));
-    // คิวก่อนหน้า: สร้างก่อน และยังอยู่ในครัว
     const ahead=kitchen.filter(o=>{
       if(o.id===myId) return false;
-      const t=Number(o.createdAt||0);
+      const t=sortKey(o);
       if(t<myT) return true;
       if(t===myT && String(o.id)<String(myId)) return true;
       return false;
     });
-    // เวลารอ: รายการส้มตำในคิวก่อนหน้า + ของตัวเอง (ยังไม่เสร็จ)
     const somtumAhead=ahead.reduce((s,o)=>s+this.countSomtumQty(o),0);
-    const somtumMine=this.countSomtumQty(myOrder);
+    // เมนูที่ยังต้องทำ: ถ้ากลับครัวหลังทำเสร็จแล้วสั่งเพิ่ม → นับเฉพาะรอบใหม่
+    let somtumMine=0;
+    if(myOrder.hasNewItems && myOrder.returnedToKitchen && Number(myOrder.lastAddRound)>0){
+      somtumMine=(myOrder.items||[]).reduce((s,it)=>{
+        if(Number(it.addRound)!==Number(myOrder.lastAddRound)) return s;
+        if(!this.isSomtumItem(it)) return s;
+        return s+Number(it.qty||0);
+      },0);
+      if(somtumMine<=0){
+        somtumMine=(myOrder.items||[]).reduce((s,it)=>s+(Number(it.addRound)===Number(myOrder.lastAddRound)?Number(it.qty||0):0),0);
+      }
+    } else {
+      somtumMine=this.countSomtumQty(myOrder);
+    }
     const minutes=(somtumAhead+somtumMine)*2;
     return {ahead:ahead.length, minutes, inKitchen:true, somtumAhead, somtumMine};
   },
