@@ -831,11 +831,17 @@ const M={
     else if(this.filterKey==='allActive') list=list.filter(o=>o.status!=='Completed' && o.status!=='Cancelled');
     else if(this.filterKey==='unpaid') list=list.filter(o=>o.status!=='Completed' && o.status!=='Cancelled' && o.paymentStatus!=='PAID');
     else if(this.filterKey==='paid') list=list.filter(o=>o.status!=='Completed' && o.status!=='Cancelled' && o.paymentStatus==='PAID');
-    // เรียง: คิวก่อน→หลัง (เก่าบน ใหม่ล่าง) ยกเว้นประวัติเสร็จสมบูรณ์/ยกเลิก
+    // เรียงครัว: ใช้ kitchenSortAt (ออเดอร์กลับครัวหลังสั่งเพิ่มไปท้ายคิว)
+    // ออเดอร์ที่ยังทำไม่เสร็จคงลำดับเดิม · ประวัติเรียงใหม่→เก่า
     if(this.filterKey==='completed'||this.filterKey==='cancelled'){
       list=list.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
     } else {
-      list=list.slice().sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+      list=list.slice().sort((a,b)=>{
+        const ka=Number(a.kitchenSortAt!=null?a.kitchenSortAt:(a.createdAt||0));
+        const kb=Number(b.kitchenSortAt!=null?b.kitchenSortAt:(b.createdAt||0));
+        if(ka!==kb) return ka-kb;
+        return Number(a.createdAt||0)-Number(b.createdAt||0);
+      });
     }
     const active=this.orders.filter(o=>o.status!=='Completed'&&o.status!=='Cancelled');
     document.getElementById('sPending').textContent=active.filter(o=>['Pending','AwaitingPayment'].includes(o.status)).length;
@@ -880,8 +886,10 @@ const M={
       const spice=i.spiceName?esc(i.spiceName):'';
       const note=i.note?`<div style="font-size:12px;color:#E65100;margin-top:2px">📝 ${esc(i.note)}</div>`:'';
       const plara=i.plara?`<div style="font-size:12px;color:#555">🐟 ${esc(i.plara)}</div>`:'';
-      const isNewAdd=(Number(i.addRound)>0);
-      const addL=isNewAdd?(`<div style="font-size:12px;font-weight:700;color:#C62828;margin-top:2px">🆕 ${esc(i.addLabel||('สั่งเพิ่มครั้งที่ '+i.addRound))}</div>`):'';
+      const isAddLabel=(Number(i.addRound)>0);
+      // ไฮไลท์เฉพาะรอบล่าสุดที่ยังไม่ทำเสร็จ (hasNewItems)
+      const isNewAdd=!!o.hasNewItems && isAddLabel && Number(i.addRound)===Number(o.lastAddRound||0);
+      const addL=isAddLabel?(`<div style="font-size:12px;font-weight:700;color:${isNewAdd?'#C62828':'#6A1B9A'};margin-top:2px">${isNewAdd?'🆕 ':''}${esc(i.addLabel||('สั่งเพิ่มครั้งที่ '+i.addRound))}</div>`):'';
       const meta=[spice,tops].filter(Boolean).join(' · ');
       const rowBg=isNewAdd?'background:#FFF3E0;border-left:4px solid #FF9800;padding-left:8px;border-radius:6px;':'';
       return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #eee;${rowBg}">
@@ -961,6 +969,11 @@ const M={
     if(status==='Completed'){
       patch.completedAt=Date.now();
       patch.statusLocked=true;
+    }
+    if(status==='Ready'){
+      // ทำเสร็จแล้ว → ยกเลิกไฮไลท์เมนูเพิ่ม (เหลือแค่ป้ายครั้งที่)
+      patch.hasNewItems=false;
+      patch.newItemsAckAt=Date.now();
     }
     await shopRef.collection('orders').doc(id).update(patch);
     // sync local
@@ -1183,96 +1196,180 @@ const M={
     await batch.commit();
   },
   tableOrderUrl(tableNo){
+    // URL ลูกค้าแบบ absolute — กันสแกนไม่ได้จาก path ผิด / file://
     try{
-      const u=new URL('index.html', location.href);
+      const base = (location.origin && location.origin !== 'null')
+        ? location.origin + location.pathname.replace(/[^/]*$/, '')
+        : '';
+      let path = base + 'index.html';
+      // ถ้าเปิดจาก pos.html ในโฟลเดอร์เดียวกัน
+      if(!base){
+        const u=new URL('index.html', location.href);
+        path = u.href.split('?')[0];
+      }
+      const u=new URL(path, location.href);
       u.searchParams.set('table', String(tableNo));
+      // ลบ hash ที่อาจทำให้แอปงง
+      u.hash = '';
       return u.href;
     }catch(e){
-      return (location.origin||'')+'/index.html?table='+tableNo;
+      const origin=(location&&location.origin&&location.origin!=='null')?location.origin:'';
+      return origin+'/index.html?table='+tableNo;
     }
   },
+  /** สร้างรูป QR มีกรอบ + ข้อความโต๊ะ (สำหรับพิมพ์/บันทึก) */
+  buildTableQrCard(tableNo, size){
+    size = size || 280;
+    const pageUrl = this.tableOrderUrl(tableNo);
+    const canvas = document.createElement('canvas');
+    const pad = 24;
+    const qrSize = size;
+    const headerH = 72;
+    const footerH = 56;
+    canvas.width = qrSize + pad * 2;
+    canvas.height = headerH + qrSize + footerH + pad;
+    const ctx = canvas.getContext('2d');
+    // พื้นหลัง
+    ctx.fillStyle = '#FFF8F5';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // กรอบ
+    ctx.strokeStyle = '#E65100';
+    ctx.lineWidth = 6;
+    const r = 18;
+    const x = 8, y = 8, w = canvas.width - 16, h = canvas.height - 16;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.stroke();
+    // หัวข้อ
+    ctx.fillStyle = '#BF360C';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('โต๊ะ ' + tableNo, canvas.width / 2, 40);
+    ctx.font = '16px sans-serif';
+    ctx.fillStyle = '#555';
+    ctx.fillText('สแกน QR Code เพื่อสั่งอาหาร', canvas.width / 2, 64);
+    // วาด QR จาก element ชั่วคราว
+    const tmp = document.createElement('div');
+    tmp.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(tmp);
+    try{
+      if(typeof QRCode === 'undefined') throw new Error('no QRCode lib');
+      new QRCode(tmp, { text: String(pageUrl), width: qrSize, height: qrSize, correctLevel: QRCode.CorrectLevel.M });
+      const srcCanvas = tmp.querySelector('canvas');
+      const srcImg = tmp.querySelector('img');
+      let drawn = false;
+      if(srcCanvas){
+        ctx.drawImage(srcCanvas, pad, headerH, qrSize, qrSize);
+        drawn = true;
+      } else if(srcImg && srcImg.src){
+        // sync path often has canvas; if only img, skip async
+      }
+      if(!drawn && srcCanvas){
+        ctx.drawImage(srcCanvas, pad, headerH, qrSize, qrSize);
+      }
+    }catch(e){ console.warn('buildTableQrCard', e); }
+    try{ tmp.remove(); }catch(e){}
+    // เท้า
+    ctx.fillStyle = '#666';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('ร้าน: ' + (this.shopName || document.getElementById('shopTitle')?.textContent || ''), canvas.width / 2, headerH + qrSize + 28);
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#999';
+    const short = pageUrl.length > 42 ? pageUrl.slice(0, 40) + '…' : pageUrl;
+    ctx.fillText(short, canvas.width / 2, headerH + qrSize + 46);
+    return canvas.toDataURL('image/png');
+  },
   renderTableQrList(){
-    const box=document.getElementById('tableQrList');
+    const box = document.getElementById('tableQrList');
     if(!box) return;
-    const n=Math.max(1, Math.min(100, Number(this.tableCount||document.getElementById('setTableCount')?.value||10)));
-    box.innerHTML='<div style="grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">'+
+    const n = Math.max(1, Math.min(100, Number(this.tableCount || document.getElementById('setTableCount')?.value || 10)));
+    box.innerHTML = '<div style="grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">'+
       '<button type="button" class="btn btn-p btn-sm" style="width:auto" onclick="M.printAllTableQr()">🖨️ พิมพ์ QR ทุกโต๊ะ</button>'+
       '<button type="button" class="btn btn-o btn-sm" style="width:auto" onclick="M.downloadAllTableQr()">💾 บันทึกรูป QR ทุกโต๊ะ</button>'+
       '</div>';
-    for(let i=1;i<=n;i++){
-      const url=this.tableOrderUrl(i);
-      const card=document.createElement('div');
-      card.style.cssText='background:#fff;border:1px solid #ddd;border-radius:12px;padding:10px;text-align:center';
-      card.innerHTML='<div style="font-weight:700;margin-bottom:6px">โต๊ะ '+i+'</div><div id="tqr_'+i+'" style="display:flex;justify-content:center;min-height:120px"></div>'+
-        '<div style="font-size:10px;color:#666;word-break:break-all;margin-top:4px">'+url+'</div>'+
-        '<button type="button" class="btn btn-o btn-sm" style="margin-top:6px;width:100%" onclick="M.downloadTableQr('+i+')">💾 บันทึกรูป</button>'+
+    for(let i = 1; i <= n; i++){
+      const url = this.tableOrderUrl(i);
+      const card = document.createElement('div');
+      card.style.cssText = 'background:#fff;border:1px solid #ddd;border-radius:12px;padding:10px;text-align:center';
+      card.innerHTML = '<div style="font-weight:700;margin-bottom:6px;color:#BF360C">โต๊ะ '+i+'</div>'+
+        '<div id="tqr_'+i+'" style="display:flex;justify-content:center;min-height:140px;padding:8px;background:#FFF8F5;border:2px solid #FFCCBC;border-radius:12px"></div>'+
+        '<div style="font-size:12px;color:#555;margin-top:6px">สแกนเพื่อสั่งอาหาร</div>'+
+        '<div style="font-size:10px;color:#888;word-break:break-all;margin-top:4px">'+url+'</div>'+
+        '<button type="button" class="btn btn-o btn-sm" style="margin-top:6px;width:100%" onclick="M.downloadTableQr('+i+')">💾 บันทึกรูป (มีชื่อโต๊ะ)</button>'+
         '<button type="button" class="btn btn-o btn-sm" style="margin-top:4px;width:100%" onclick="M.printTableQr('+i+')">🖨️ พิมพ์</button>';
       box.appendChild(card);
       try{
-        const el=document.getElementById('tqr_'+i);
-        if(el && typeof QRCode!=='undefined'){ el.innerHTML=''; new QRCode(el,{text:url,width:140,height:140}); }
+        const el = document.getElementById('tqr_'+i);
+        if(el && typeof QRCode !== 'undefined'){
+          el.innerHTML = '';
+          new QRCode(el, { text: url, width: 140, height: 140, correctLevel: QRCode.CorrectLevel.M });
+        }
       }catch(e){}
     }
   },
   _tableQrDataUrl(tableNo){
-    const el=document.getElementById('tqr_'+tableNo);
+    // ใช้การ์ดมีกรอบ+ชื่อโต๊ะเป็นหลัก
+    try{
+      const data = this.buildTableQrCard(tableNo, 260);
+      if(data && data.length > 100) return data;
+    }catch(e){}
+    const el = document.getElementById('tqr_'+tableNo);
     if(!el) return '';
-    const c=el.querySelector('canvas');
+    const c = el.querySelector('canvas');
     if(c){ try{ return c.toDataURL('image/png'); }catch(e){} }
-    const img=el.querySelector('img');
+    const img = el.querySelector('img');
     if(img && img.src) return img.src;
     return '';
   },
   downloadTableQr(tableNo){
-    const url=this._tableQrDataUrl(tableNo);
-    if(!url){ toast('ยังสร้าง QR ไม่เสร็จ · รอสักครู่แล้วลองใหม่'); return; }
-    const a=document.createElement('a');
-    a.href=url;
-    a.download='table-'+tableNo+'-qr.png';
+    const url = this._tableQrDataUrl(tableNo);
+    if(!url){ toast('สร้าง QR ไม่สำเร็จ · ตรวจว่าเปิดผ่าน HTTPS/โดเมนจริง'); return; }
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'โต๊ะ-'+tableNo+'-QR-สั่งอาหาร.png';
     document.body.appendChild(a);
     a.click();
     a.remove();
-    toast('บันทึก QR โต๊ะ '+tableNo);
+    toast('บันทึก QR โต๊ะ '+tableNo+' แล้ว');
   },
   async downloadAllTableQr(){
-    const n=Math.max(1, Math.min(100, Number(this.tableCount||10)));
+    const n = Math.max(1, Math.min(100, Number(this.tableCount || 10)));
     toast('กำลังบันทึก '+n+' รูป…');
-    for(let i=1;i<=n;i++){
+    for(let i = 1; i <= n; i++){
       try{ this.downloadTableQr(i); }catch(e){}
-      await new Promise(r=>setTimeout(r,150));
+      await new Promise(r => setTimeout(r, 200));
     }
   },
   printTableQr(tableNo){
-    const data=this._tableQrDataUrl(tableNo);
-    const pageUrl=this.tableOrderUrl(tableNo);
-    const w=window.open('','_blank','width=400,height=520');
+    const data = this._tableQrDataUrl(tableNo);
+    const pageUrl = this.tableOrderUrl(tableNo);
+    const w = window.open('', '_blank', 'width=420,height=560');
     if(!w){ toast('อนุญาตป๊อปอัปเพื่อพิมพ์ QR'); return; }
-    const img=data?('<img src="'+data+'" style="width:220px;height:220px">'):('<div id="q"></div>');
-    w.document.write('<html><head><title>โต๊ะ '+tableNo+'</title></head><body style="text-align:center;font-family:sans-serif;padding:20px">'+
-      '<h2 style="margin:0 0 12px">โต๊ะ '+tableNo+'</h2>'+img+
-      '<p style="font-size:12px;word-break:break-all;margin-top:12px">'+pageUrl+'</p>'+
-      (data?'':'<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\\/script><script>new QRCode(document.getElementById("q"),{text:'+JSON.stringify(pageUrl)+',width:200,height:200});<\\/script>')+
-      '<script>setTimeout(function(){window.print()},400);<\\/script></body></html>');
+    w.document.write('<html><head><title>โต๊ะ '+tableNo+'</title></head><body style="text-align:center;font-family:sans-serif;padding:16px">'+
+      (data ? '<img src="'+data+'" style="max-width:100%">' : '<h2>โต๊ะ '+tableNo+'</h2><div id="q"></div>')+
+      '<p style="font-size:12px;word-break:break-all">'+pageUrl+'</p>'+
+      '<script>setTimeout(function(){window.print()},400);<\/script></body></html>');
     w.document.close();
   },
   printAllTableQr(){
-    const n=Math.max(1, Math.min(100, Number(this.tableCount||10)));
-    const w=window.open('','_blank');
+    const n = Math.max(1, Math.min(100, Number(this.tableCount || 10)));
+    const w = window.open('', '_blank');
     if(!w){ toast('อนุญาตป๊อปอัปเพื่อพิมพ์'); return; }
-    let html='<html><head><title>QR ทุกโต๊ะ</title><style>'+
+    let html = '<html><head><title>QR ทุกโต๊ะ</title><style>'+
       'body{font-family:sans-serif} .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}'+
-      '.card{border:1px solid #ccc;border-radius:12px;padding:12px;text-align:center;break-inside:avoid}'+
+      '.card{border:1px solid #ccc;border-radius:12px;padding:8px;text-align:center;break-inside:avoid}'+
       '@media print{.card{break-inside:avoid}}'+
       '</style></head><body><h1 style="text-align:center">QR สั่งอาหารตามโต๊ะ</h1><div class="grid">';
-    for(let i=1;i<=n;i++){
-      const data=this._tableQrDataUrl(i);
-      const pageUrl=this.tableOrderUrl(i);
-      html+='<div class="card"><h2 style="margin:0 0 8px">โต๊ะ '+i+'</h2>';
-      if(data) html+='<img src="'+data+'" style="width:180px;height:180px">';
-      else html+='<div style="height:180px;background:#eee">QR</div>';
-      html+='<div style="font-size:10px;word-break:break-all;margin-top:6px">'+pageUrl+'</div></div>';
+    for(let i = 1; i <= n; i++){
+      const data = this._tableQrDataUrl(i);
+      html += '<div class="card">'+(data ? '<img src="'+data+'" style="width:100%;max-width:280px">' : '<h2>โต๊ะ '+i+'</h2>')+'</div>';
     }
-    html+='</div><script>setTimeout(function(){window.print()},500);<\\/script></body></html>';
+    html += '</div><script>setTimeout(function(){window.print()},600);<\/script></body></html>';
     w.document.write(html);
     w.document.close();
   },

@@ -2440,9 +2440,11 @@ const C={
           const addDisc=Math.min(discountAmount, subtotal);
           const newDisc=Number(existing.discountAmount||0)+addDisc;
           const newTotal=Math.max(0, newSub-newDisc);
-          // ถ้าครัวทำเสร็จแล้ว (Ready) หรือกำลังทำ — ดึงกลับเข้าครัวเมื่อมีสั่งเพิ่ม
+          // Ready (ออกจากครัวแล้ว) → กลับครัว + ไปท้ายคิว
+          // Cooking/Pending (ยังค้างครัว) → อยู่คิวเดิม ไม่เลื่อน kitchenSortAt
           const prevSt=String(existing.status||'Pending');
-          const backToKitchen = (prevSt==='Ready' || prevSt==='Cooking');
+          const wasFinished = (prevSt==='Ready');
+          const stillInKitchen = (prevSt==='Pending' || prevSt==='Cooking' || prevSt==='AwaitingPayment');
           const patch={
             items:mergedItems,
             subtotal:newSub,
@@ -2456,11 +2458,15 @@ const C={
             lastAddAt:Date.now(),
             addRoundCount:addRound,
             lastAddRound:addRound,
-            returnedToKitchen: !!backToKitchen,
-            returnedToKitchenAt: backToKitchen ? Date.now() : (existing.returnedToKitchenAt||0)
+            returnedToKitchen: !!wasFinished,
+            returnedToKitchenAt: wasFinished ? Date.now() : (existing.returnedToKitchenAt||0)
           };
-          if(backToKitchen){
+          if(wasFinished){
             patch.status='Pending';
+            patch.kitchenSortAt=Date.now(); // ท้ายคิว
+          } else if(stillInKitchen){
+            // คง kitchenSortAt เดิม (หรือใช้ createdAt ถ้ายังไม่มี)
+            if(existing.kitchenSortAt==null) patch.kitchenSortAt=Number(existing.createdAt||Date.now());
           }
           if(contactPhone && !existing.contactPhone) patch.contactPhone=contactPhone;
           if(memberPhone && !existing.memberPhone){
@@ -2500,6 +2506,7 @@ const C={
           slipData:'', slipStatus:'NONE',
           payRef: newId,
           createdAt: Date.now(),
+          kitchenSortAt: Date.now(),
           orderMode:'table',
           tableNo:Number(this.tableNo)
         };
@@ -2557,6 +2564,7 @@ const C={
       slipData:'', slipStatus:'NONE',
       payRef: id,
       createdAt: Date.now(),
+      kitchenSortAt: Date.now(),
       orderMode:'queue'
     };
     await shopRef.collection('orders').doc(id).set(order);
