@@ -619,50 +619,59 @@ const M={
         if(this.ready){
           this._prevAddAt=this._prevAddAt||{};
           this._blinkAdds=this._blinkAdds||new Set();
+          let newOrderCount=0;
+          let newAddCount=0;
           activeOrders.forEach(o=>{
-            // ออเดอร์ใหม่รอครัว / รอชำระ
-            if((o.status==='Pending'||o.status==='AwaitingPayment') && !this.seenIds.has(o.id)){
-              this.unviewed.add(o.id);
+            // (1) ออเดอร์ใหม่จริง ๆ — id ที่ยังไม่เคยเห็น
+            if(!this.seenIds.has(o.id)){
+              this.seenIds.add(o.id);
+              // แจ้งเฉพาะที่เข้าครัว / รอทำ
+              if(o.status==='Pending'||o.status==='AwaitingPayment'||o.status==='Cooking'){
+                this.unviewed.add(o.id);
+                this._blinkAdds.add(o.id);
+                newOrderCount++;
+              }
             }
-            // เพิ่งชำระเงิน → แจ้งร้านอีกครั้ง
-            if(o.paymentStatus==='PAID' && (o.status==='Pending'||o.status==='Cooking') && this.seenIds.has(o.id) && !(this.seenPaid&&this.seenPaid.has(o.id))){
-              this.seenPaid=this.seenPaid||new Set();
-              this.seenPaid.add(o.id);
-              this.unviewed.add(o.id);
-            }
-            // สั่งเพิ่มเมนูในโต๊ะเดิม
+            // (2) มีเมนูเพิ่มในออเดอร์เดิม — lastAddAt เพิ่มขึ้นจากค่าที่จำไว้เท่านั้น
             const la=Number(o.lastAddAt||0);
-            const prev=Number(this._prevAddAt[o.id]||0);
-            // ตรวจจับเมนูเข้าใหม่ (แม้ร้านอยู่แท็บอื่น) → เตือน + กระพริบ + โชว์ครัวทันที
-            if(la>0 && la>prev && (this.seenIds.has(o.id) || !!o.hasNewItems)){
+            const prev=this._prevAddAt[o.id];
+            if(la>0 && prev!=null && la>Number(prev)){
               this._blinkAdds.add(o.id);
               this.unviewed.add(o.id);
-              try{ this.beep(); }catch(e){}
-              try{ this.startAlarm(); }catch(e){}
+              newAddCount++;
               const back=!!o.returnedToKitchen || o.status==='Pending' || o.status==='Cooking';
-              toast('🔔 โต๊ะ '+(o.tableNo||'')+' สั่งเพิ่มครั้งที่ '+(o.lastAddRound||'')+(back?' · เข้าครัว':'')+'!');
-              // แสดงที่ครัวทันที — ไม่ต้องให้ร้านกดแท็บครัวเอง
+              toast('🔔 โต๊ะ '+(o.tableNo||o.queue||'')+' สั่งเพิ่มครั้งที่ '+(o.lastAddRound||'')+(back?' · เข้าครัว':''));
               try{
                 this.filterKey='kitchen';
                 document.querySelectorAll('.fc').forEach(x=>x.classList.remove('on'));
                 document.querySelectorAll('.fc').forEach(btn=>{
-                  if((btn.getAttribute('onclick')||'').indexOf("'kitchen'")>=0 || (btn.getAttribute('onclick')||'').indexOf('kitchen')>=0){
-                    btn.classList.add('on');
-                  }
+                  if((btn.getAttribute('onclick')||'').indexOf('kitchen')>=0) btn.classList.add('on');
                 });
               }catch(e){}
             }
+            // จำ lastAddAt ทุกครั้ง (ครั้งแรกแค่ seed ไม่แจ้ง)
             if(la>0) this._prevAddAt[o.id]=la;
+            else if(this._prevAddAt[o.id]==null) this._prevAddAt[o.id]=0;
           });
-          if(this.unviewed.size>0){
-            this.startAlarm();
-            toast('🔔 มีออเดอร์ใหม่ / อัปเดต '+this.unviewed.size+' รายการ');
-            this.pushNotify('ออเดอร์ใหม่ — ส้มตำนายหนึ่ง', 'มี '+this.unviewed.size+' รายการรอจัดการ');
+          // แจ้งเตือนเฉพาะเมื่อมีของใหม่ในรอบ snapshot นี้เท่านั้น — ไม่ยิงซ้ำทุกออเดอร์
+          if(newOrderCount>0 || newAddCount>0){
+            try{ this.beep(); }catch(e){}
+            try{ this.startAlarm(); }catch(e){}
+            if(newOrderCount>0){
+              toast('🔔 ออเดอร์ใหม่ '+newOrderCount+' รายการ');
+              try{ this.pushNotify('ออเดอร์ใหม่ — ส้มตำนายหนึ่ง', 'มี '+newOrderCount+' ออเดอร์ใหม่'); }catch(e){}
+            }
           }
         } else {
+          // โหลดครั้งแรก: seed อย่างเดียว ไม่กระพริบ/ไม่เสียง
           this.seenIds=new Set(this.orders.map(o=>o.id));
           this.seenPaid=new Set(this.orders.filter(o=>o.paymentStatus==='PAID').map(o=>o.id));
           this.unviewed=new Set();
+          this._blinkAdds=new Set();
+          this._prevAddAt={};
+          (this.orders||[]).forEach(o=>{
+            this._prevAddAt[o.id]=Number(o.lastAddAt||0);
+          });
           this.ready=true;
         }
         this.lastActive=active; this.renderOrders(); this.startEtaTicker();
@@ -677,6 +686,9 @@ const M={
             this.seenIds=new Set(this.orders.map(o=>o.id));
             this.seenPaid=new Set(this.orders.filter(o=>o.paymentStatus==='PAID').map(o=>o.id));
             this.unviewed=new Set();
+            this._blinkAdds=new Set();
+            this._prevAddAt={};
+            (this.orders||[]).forEach(o=>{ this._prevAddAt[o.id]=Number(o.lastAddAt||0); });
             this.ready=true;
           }
           this.lastActive=activeOrders.length; this.renderOrders();
@@ -704,12 +716,17 @@ const M={
   },
   markOrderViewed(id){
     if(!id) return;
-    // เปิดดูแล้ว → หยุดเสียงบี๊บของรายการนี้ แต่ยังไฮไลท์เมนูใหม่จนกว่าจะกด「ทำเสร็จแล้ว」
     this.unviewed.delete(id);
     this.seenIds.add(id);
-    // ไม่ลบ _blinkAdds / hasNewItems ที่นี่ — เคลียร์ตอน setStatus Ready เท่านั้น
+    const o=(this.orders||[]).find(x=>x.id===id);
+    // ออเดอร์ใหม่ธรรมดา (ไม่มีเมนูเพิ่มค้าง) → เปิดดูแล้วหยุดกระพริบ
+    // ถ้ามี hasNewItems ยังกระพริบต่อจนกดทำเสร็จแล้ว
+    if(o && !o.hasNewItems){
+      try{ if(this._blinkAdds) this._blinkAdds.delete(id); }catch(e){}
+    }
     if(this.unviewed.size===0) this.stopAlarm();
     this.updateAlarmBadge();
+    try{ this.renderOrders(); }catch(e){}
   },
   updateAlarmBadge(){
     const n=this.unviewed?this.unviewed.size:0;
@@ -887,12 +904,11 @@ const M={
         ? '<span style="background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:4px;font-size:11px">เงินสด</span>'
         : '<span style="background:#E8EAF6;color:#3949AB;padding:2px 6px;border-radius:4px;font-size:11px">พร้อมเพย์</span>';
       const slip=o.slipStatus==='PENDING_REVIEW'?' <span style="background:#FFF3E0;color:#E65100;padding:2px 6px;border-radius:4px;font-size:11px">รอตรวจสลิป</span>':(o.slipStatus==='APPROVED'||o.slipStatus==='AUTO_APPROVED'?' <span style="background:#E8F5E9;color:#2E7D32;padding:2px 6px;border-radius:4px;font-size:11px">สลิปผ่าน</span>':'');
-      const isNew=this.unviewed&&this.unviewed.has(o.id);
-      // กระพริบจนกว่าจะกดทำเสร็จแล้ว (hasNewItems เคลียร์ตอน Ready เท่านั้น)
-      const isAdd=!!o.hasNewItems || (this._blinkAdds && this._blinkAdds.has(o.id));
+      // กระพริบเฉพาะที่อยู่ใน _blinkAdds = ออเดอร์ใหม่ หรือเพิ่งมีเมนูเพิ่ม (ไม่กระพริบทุกใบ)
+      const isAlert=!!(this._blinkAdds && this._blinkAdds.has(o.id));
       const tableTag=o.tableNo?(`<span style="background:#F3E5F5;color:#6A1B9A;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">โต๊ะ ${o.tableNo}</span> `):'';
-      const addTag=isAdd?(' <span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">สั่งเพิ่ม!</span>'):'';
-      return `<div class="oc ${esc(o.status||'')} ${isAdd?'oc-blink':''}" style="${isNew||isAdd?'box-shadow:0 0 0 3px #F44336;':''}" onclick="M.openDetail('${esc(o.id)}')">
+      const addTag=(isAlert && o.hasNewItems)?(' <span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">สั่งเพิ่ม!</span>'):(isAlert?' <span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">ใหม่</span>':'');
+      return `<div class="oc ${esc(o.status||'')} ${isAlert?'oc-blink':''}" style="${isAlert?'box-shadow:0 0 0 3px #F44336;':''}" onclick="M.openDetail('${esc(o.id)}')">
         <div style="margin-bottom:4px">${tableTag}${addTag}</div>
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px"><div class="q">${esc(o.queue)}</div>
         <div style="text-align:right"><div style="color:#888;font-size:12px">${o.createdAt?new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}</div>
