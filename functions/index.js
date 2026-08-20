@@ -101,20 +101,22 @@ exports.verifySlip = functions.region(REGION).https.onRequest(async (req, res) =
     }
 
     const buf = dataUrlToBuffer(slipData);
-    const result = await verifyWithEasySlip(buf, order.total);
+    // ยอดที่ต้องตรงในสลิป = ส่วนต่าง (ถ้า needsRepay) ไม่งั้นยอดเต็มบิล
+    const billTotal = Number(order.total || 0);
+    const already = Number(order.paidAmount || 0);
+    const expectAmt = order.needsRepay
+      ? Math.max(0, Number(order.repayAmount != null ? order.repayAmount : (billTotal - already)))
+      : billTotal;
+    const result = await verifyWithEasySlip(buf, expectAmt);
 
     if (result.ok) {
-      const expectAmt = Number(order.total || 0);
-      const already = Number(order.paidAmount || 0);
-      const paidNow = result.paid != null ? Number(result.paid) : expectAmt;
-      const totalPaid = order.needsRepay
-        ? Math.max(expectAmt, already + (isNaN(paidNow) ? expectAmt : paidNow))
-        : expectAmt;
+      // paidAmount = ยอดที่ครอบคลุมบิล (billTotal) ไม่ใช่เงินที่ยื่น/ยอดสลิป
+      // กันส่วนต่างผิดเมื่อสั่งเพิ่มหลังรับเงินสดที่มีทอน
       await ref.update({
         slipData: String(slipData).slice(0, 200000), // ตรงกับ Firestore rules hasImageSlip (<=200000)
         slipStatus: 'APPROVED',
         paymentStatus: 'PAID',
-        paidAmount: totalPaid,
+        paidAmount: billTotal,
         paidAt: Date.now(),
         paymentMethod: order.paymentMethod || 'PROMPTPAY',
         status: order.status === 'AwaitingPayment' ? 'Pending' : (order.status || 'Pending'),
