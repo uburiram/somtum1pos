@@ -1836,18 +1836,30 @@ const M={
   async payCash(id){
     const o=this.orders.find(x=>x.id===id); if(!o) return;
     const cashEl=document.getElementById('cashIn');
-    const paid=Number(cashEl && cashEl.value);
+    // tendered = เงินสดที่ลูกค้ายื่น (อาจมากกว่ายอดบิล → มีทอน)
+    const tendered=Number(cashEl && cashEl.value);
     const already=Number(o.paidAmount||0);
+    const billTotal=Number(o.total||0);
     const isPartial=!!(o.needsRepay || (o.paymentStatus!=='PAID' && already>0));
-    const due=Math.max(0, Number(o.total||0) - (isPartial?already:0));
-    const need = isPartial ? due : Number(o.total||0);
-    if(isNaN(paid)||paid<need){toast('เงินไม่พอ (ต้องอย่างน้อย ฿'+need+')');return}
-    // ยอดชำระสะสม = ของเดิม + ที่รับรอบนี้ (หรือรับเต็ม)
-    const totalPaid = isPartial ? (already + paid) : paid;
+    // ยอดที่ต้องเก็บรอบนี้: ส่วนต่าง (ถ้ามี) หรือยอดเต็มบิล
+    const need = isPartial
+      ? Math.max(0, Number(o.repayAmount!=null ? o.repayAmount : (billTotal - already)))
+      : billTotal;
+    if(isNaN(tendered) || tendered < need){
+      toast('เงินไม่พอ (ต้องอย่างน้อย ฿'+need+')');
+      return;
+    }
+    // สำคัญ: paidAmount = ยอดที่ครอบคลุมบิล (ไม่ใช่เงินที่ยื่น)
+    // เมื่อรับครบ (tendered >= need) บิลถือว่าชำระเต็ม → paidAmount = billTotal
+    // changeAmount = เงินทอนจากเงินที่ยื่น
+    // ตัวอย่าง: บิล 90 รับ 100 → paidAmount=90, change=10
+    // แล้วสั่งเพิ่ม 100 → total=190, already=90, due=100 (ถูกต้อง ไม่ใช่ 90)
+    const newPaidAmount = billTotal;
+    const changeAmount = Math.max(0, tendered - need);
     await this.markPaid(id,{
       paymentMethod:'CASH',
-      paidAmount: totalPaid,
-      changeAmount: isPartial ? Math.max(0, paid-need) : Math.max(0, paid-Number(o.total||0)),
+      paidAmount: newPaidAmount,
+      changeAmount: changeAmount,
       needsRepay:false,
       repayAmount:0
     });

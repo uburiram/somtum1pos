@@ -1096,19 +1096,21 @@ const C={
     }
 
     const already=Number(order.paidAmount||0);
+    const billTotal=Number(order.total||0);
     const due=order.needsRepay
-      ? Math.max(0, Number(order.repayAmount!=null?order.repayAmount:Number(order.total||0)-already))
-      : Number(order.total||0);
+      ? Math.max(0, Number(order.repayAmount!=null?order.repayAmount:billTotal-already))
+      : billTotal;
     const slipPaid=meta.amount!=null?Number(meta.amount):due;
-    // สะสมยอดชำระ: ของเดิม + ยอดรอบนี้ (หรือยอดเต็มถ้าไม่ใช่ส่วนต่าง)
-    const totalPaid=order.needsRepay ? (already + (isNaN(slipPaid)?due:slipPaid)) : (isNaN(slipPaid)?Number(order.total||0):slipPaid);
+    // เมื่อตรวจสลิปผ่าน (ยอดตรง due) → บิลชำระครบ
+    // paidAmount ต้อง = ยอดบิลที่ครอบคลุม (billTotal) ไม่ใช่เงินที่ยื่น/ยอดสลิปดิบ
+    // กันปัญหา: รับเงินสด 100 ทอน 10 แล้ว paidAmount กลายเป็น 100 → สั่งเพิ่มส่วนต่างผิด
     const patch={
       slipData:(dataUrl||'').slice(0,200000),
       slipStatus:'AUTO_APPROVED',
       paymentStatus:'PAID',
       paymentMethod:'PROMPTPAY',
       paidAt:Date.now(),
-      paidAmount: Math.max(Number(order.total||0), totalPaid),
+      paidAmount: billTotal,
       slipVerifyNote: (meta.msg||'ตรวจอัตโนมัติผ่าน')+' · '+timeCheck.msg,
       autoPaid:true,
       slipCheckedAt:Date.now(),
@@ -1116,7 +1118,7 @@ const C={
       repayAmount:0
     };
     if(slipTs) patch.slipTransAt=slipTs;
-    if(isNaN(patch.paidAmount)) patch.paidAmount=Number(order.total||0);
+    if(isNaN(patch.paidAmount) || patch.paidAmount<0) patch.paidAmount=billTotal;
     await shopRef.collection('orders').doc(orderId).update(patch);
     try{
       const snap=await shopRef.collection('orders').doc(orderId).get();
@@ -2369,12 +2371,18 @@ const C={
             // คง kitchenSortAt เดิม (หรือใช้ createdAt ถ้ายังไม่มี)
             if(existing.kitchenSortAt==null) patch.kitchenSortAt=Number(existing.createdAt||Date.now());
           }
-          // สั่งเพิ่มทับออเดอร์ที่ชำระแล้ว → เปิดค้างชำระเฉพาะส่วนต่าง (เก็บยอดที่จ่ายแล้วไว้)
+          // สั่งเพิ่มทับออเดอร์ที่ชำระแล้ว → เปิดค้างชำระเฉพาะส่วนต่าง
+          // สำคัญ: ยอดที่ครอบคลุมแล้ว = total ตอนชำระครบ (existing.total)
+          // ห้ามใช้ paidAmount โดยตรง เพราะระบบเก่าอาจเก็บ paidAmount = เงินที่ยื่น (รวมทอน)
+          // ตัวอย่าง: บิล 90 รับเงินสด 100 ทอน 10 → paidAmount เก่าอาจเป็น 100
+          // สั่งเพิ่ม 100 → total ใหม่ 190 · ส่วนต่างต้องเป็น 100 ไม่ใช่ 90
           if(String(existing.paymentStatus||'')==='PAID' && !fullyCovered){
-            const alreadyPaid = Number(existing.paidAmount!=null ? existing.paidAmount : (existing.total||0));
-            const due = Math.max(0, newTotal - alreadyPaid);
+            const coveredAtPay = Number(existing.total||0);
+            const rawPaid = Number(existing.paidAmount!=null ? existing.paidAmount : coveredAtPay);
+            // ใช้ยอดที่ครอบคลุมจริง (ไม่เกิน total ตอนชำระ) — กันข้อมูลทอนปน
+            const alreadyPaid = Math.min(Math.max(0, rawPaid), coveredAtPay) || coveredAtPay;
+            const due = Math.max(0, Math.round((newTotal - alreadyPaid)*100)/100);
             patch.paymentStatus = due>0 ? 'UNPAID' : 'PAID';
-            // คง paidAmount เดิมไว้ — ร้านเก็บเฉพาะส่วนต่าง
             patch.paidAmount = alreadyPaid;
             patch.changeAmount = 0;
             patch.autoPaid = false;
