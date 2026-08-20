@@ -1,5 +1,7 @@
 /**
  * Firebase — pos1-4d72a
+ * แก้แล้ว: FUNCTIONS_BASE ต้องเป็น URL เท่านั้น (ว่าง = ไม่เรียก CF)
+ * SHOP_OPS_SECRET ใช้เฉพาะเครื่องร้าน — อย่า commit ค่าจริงขึ้น public repo ถ้าไม่จำเป็น
  */
 window.FIREBASE_CONFIG = {
   apiKey: "AIzaSyC4aJKI-HbwWhA6AcZqOS5Wx8ShKvCWN8U",
@@ -24,17 +26,19 @@ window.FIREBASE_VAPID_KEY = "";
 window.FIREBASE_APPCHECK_SITE_KEY = "";
 
 /**
- * หลัง deploy Cloud Functions เช่น
+ * หลัง deploy Cloud Functions ใส่ URL จริงเท่านั้น เช่น
  * https://asia-southeast1-pos1-4d72a.cloudfunctions.net
+ * ว่าง หรือไม่ขึ้นต้นด้วย http = ไม่เรียก CF (ใช้ client + rules แทน)
  */
-window.FUNCTIONS_BASE = "SomtumNaiNeung-2026-Xk9mQ2pL7wR4";
+window.FUNCTIONS_BASE = "";
 
 /**
  * ความลับร้านสำหรับ markOrderPaid (ต้องตรงกับ
  * firebase functions:config:set shop.secret="...")
- * ใส่เฉพาะบนเครื่องร้าน / ตอน deploy ไม่ต้องแชร์สาธารณะ
+ * ใส่เฉพาะบนเครื่องร้าน — อย่าแชร์สาธารณะ
+ * ว่าง = ร้านยืนยันชำระผ่าน client update (rules อนุญาต canMarkPaid)
  */
-window.SHOP_OPS_SECRET = "SomtumNaiNeung-2026-Xk9mQ2pL7wR4";
+window.SHOP_OPS_SECRET = "";
 
 /** เลิกใช้ EasySlip ฝั่ง client — ใส่ key ใน Functions config แทน */
 window.EASYSLIP_API_KEY = "";
