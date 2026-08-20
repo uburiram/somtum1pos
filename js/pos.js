@@ -175,6 +175,29 @@ const M={
     if(!this.audioOn||!this.audio)return;
     try{const o=this.audio.createOscillator(),g=this.audio.createGain();o.connect(g);g.connect(this.audio.destination);o.frequency.value=880;g.gain.value=.12;o.start();o.stop(this.audio.currentTime+.2);if(navigator.vibrate)navigator.vibrate([200,60,200])}catch(e){}
   },
+  /** ขอสิทธิ์แจ้งเตือนบนมือถือ (Web Notification) */
+  requestNotifyPermission(){
+    try{
+      if(typeof Notification==='undefined') return;
+      if(Notification.permission==='granted' || Notification.permission==='denied') return;
+      Notification.requestPermission().catch(function(){});
+    }catch(e){}
+  },
+  /** แจ้งเตือนออเดอร์ใหม่ — ใช้เมื่อแท็บอยู่พื้นหลัง */
+  pushNotify(title, body){
+    try{
+      if(typeof Notification==='undefined') return;
+      if(Notification.permission!=='granted') return;
+      const n=new Notification(title||'ออเดอร์ใหม่', {
+        body: body||'มีออเดอร์เข้ามาในระบบ',
+        icon: './icon/icon-192.png',
+        badge: './icon/favicon-32.png',
+        tag: 'somtum-order',
+        renotify: true
+      });
+      n.onclick=function(){ try{ window.focus(); n.close(); }catch(e){} };
+    }catch(e){}
+  },
   filter(f,el){this.filterKey=f;document.querySelectorAll('.fc').forEach(x=>x.classList.remove('on'));el.classList.add('on');this.renderOrders()},
   listenOrders(){
     if(this.unsub) this.unsub();
