@@ -129,6 +129,16 @@ function fileToDataUrl(file,maxSide=480,quality=.55){
 }
 
 async function migrateAndSeed(){
+  // แก้ชื่อบัญชีสะกดผิดในข้อมูลเก่า (นราทร → นรากร)
+  try{
+    const pub=await shopRef.collection('settings').doc('public').get();
+    if(pub.exists){
+      const an=String((pub.data()||{}).accountName||'');
+      if(an.includes('นราทร')){
+        await shopRef.collection('settings').doc('public').set({accountName:an.replace(/นราทร/g,'นรากร')},{merge:true});
+      }
+    }
+  }catch(e){ console.warn('fix accountName', e); }
   try{
     const q=await shopRef.collection('settings').doc('queue').get();
     if(!q.exists){
@@ -150,7 +160,7 @@ async function migrateAndSeed(){
     [['s1','ไม่เผ็ด',1],['s2','เผ็ดน้อย',2],['s3','เผ็ดกลาง',3],['s4','เผ็ดมาก',4]].forEach(([id,name,order])=>batch.set(shopRef.collection('spiceLevels').doc(id),{id,name,isActive:true,order}));
     [['t1','ไข่ดาว',10],['t2','ไข่ต้ม',10],['t3','เพิ่มปู',20],['t4','หมูกรอบ',15]].forEach(([id,name,price],i)=>batch.set(shopRef.collection('toppings').doc(id),{id,name,price,isActive:true,order:i+1}));
     batch.set(shopRef.collection('settings').doc('public'),{
-      shopName:'ส้มตำนายหนึ่ง', isOpen:true, memberSystemEnabled:true, promptpay:'1319900156353', accountName:'นาย นราทร วงค์แก่นท้าว',
+      shopName:'ส้มตำนายหนึ่ง', isOpen:true, memberSystemEnabled:true, promptpay:'1319900156353', accountName:'นาย นรากร วงค์แก่นท้าว',
       payType:'kshop', merchantId:'EMPKB000002198793001', kshopPayload:window.KSHOP_QR_PAYLOAD||''
     },{merge:true});
     await batch.commit();
@@ -814,12 +824,15 @@ const C={
     const sp=document.getElementById('slipPreview');
     const sm=document.getElementById('slipAutoMsg');
     try{
-      let dataUrl=await fileToDataUrl(file,720,.55);
-      // กันเอกสาร Firestore เกิน ~1MB
-      if(dataUrl && dataUrl.length > 900000){
-        dataUrl=await fileToDataUrl(file,560,.45);
+      let dataUrl=await fileToDataUrl(file,640,.5);
+      // กฎ Firestore: slipData <= 200000 ตัวอักษร
+      if(dataUrl && dataUrl.length > 200000){
+        dataUrl=await fileToDataUrl(file,480,.4);
       }
-      if(dataUrl && dataUrl.length > 900000){
+      if(dataUrl && dataUrl.length > 200000){
+        dataUrl=await fileToDataUrl(file,360,.35);
+      }
+      if(dataUrl && dataUrl.length > 200000){
         toast('รูปสลิปใหญ่เกินไป ลองถ่ายใหม่หรือครอปรูป');
         return;
       }
@@ -919,7 +932,7 @@ const C={
 
     // 1) Cloud Function (ถ้าตั้ง FUNCTIONS_BASE)
     const base=(window.FUNCTIONS_BASE||'').replace(/\/$/,'');
-    if(base){
+    if(base && /^https?:\/\//i.test(base)){
       try{
         const r=await fetch(base+'/verifySlip',{
           method:'POST',
@@ -933,7 +946,7 @@ const C={
         }
         if(j.ok===false && j.needManual){
           await shopRef.collection('orders').doc(orderId).update({
-            slipData:dataUrl, slipStatus:'PENDING_REVIEW',
+            slipData:(dataUrl||'').slice(0,200000), slipStatus:'PENDING_REVIEW',
             slipVerifyNote:j.msg||'ยอดไม่ตรงหรือสลิปไม่ผ่าน · รอร้านตรวจ'
           });
           setMsg('<span style="color:#E65100">'+(j.msg||'สลิปต้องให้ร้านตรวจสอบ')+'</span>');
@@ -954,7 +967,7 @@ const C={
       }
       // ไม่ผ่าน → รอร้าน
       await shopRef.collection('orders').doc(orderId).update({
-        slipData:dataUrl, slipStatus:'PENDING_REVIEW',
+        slipData:(dataUrl||'').slice(0,200000), slipStatus:'PENDING_REVIEW',
         slipVerifyNote:easy.msg||'ตรวจอัตโนมัติไม่ผ่าน'
       });
       setMsg('<span style="color:#E65100">'+(easy.msg||'รอร้านตรวจสอบสลิป')+'</span>');
@@ -976,7 +989,7 @@ const C={
           return;
         }
         await shopRef.collection('orders').doc(orderId).update({
-          slipData:dataUrl, slipStatus:'PENDING_REVIEW',
+          slipData:(dataUrl||'').slice(0,200000), slipStatus:'PENDING_REVIEW',
           slipVerifyNote:'ยอดในสลิป ฿'+paid+' ไม่ตรงออเดอร์ ฿'+amount
         });
         setMsg('<span style="color:#E65100">ยอดในสลิปไม่ตรง (฿'+paid+' / ออเดอร์ ฿'+amount+') · รอร้านตรวจ</span>');
@@ -1000,7 +1013,7 @@ const C={
 
     // 4) fallback: รอร้านตรวจมือ
     await shopRef.collection('orders').doc(orderId).update({
-      slipData:dataUrl, slipStatus:'PENDING_REVIEW'
+      slipData:(dataUrl||'').slice(0,200000), slipStatus:'PENDING_REVIEW'
     });
     setMsg('<span style="color:#2E7D32">✓ บันทึกสลิปแล้ว</span>');
     this._applyLocalSlip(orderId, dataUrl, 'PENDING_REVIEW');
@@ -1049,7 +1062,7 @@ const C={
     }
 
     const patch={
-      slipData:dataUrl,
+      slipData:(dataUrl||'').slice(0,200000),
       slipStatus:'AUTO_APPROVED',
       paymentStatus:'PAID',
       paymentMethod:'PROMPTPAY',

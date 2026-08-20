@@ -80,11 +80,20 @@ const M={
         await shopRef.collection('settings').doc('public').set({
           shopName:'ส้มตำนายหนึ่ง',
           promptpay:'1319900156353',
-          accountName:'นาย นราทร วงค์แก่นท้าว',
+          accountName:'นาย นรากร วงค์แก่นท้าว',
           payType:'kshop',
           merchantId:'EMPKB000002198793001',
           kshopPayload:window.KSHOP_QR_PAYLOAD||''
         },{merge:true});
+      } else {
+        // แก้ชื่อบัญชีที่สะกดผิดในข้อมูลเก่า (นราทร → นรากร) อัตโนมัติครั้งเดียว
+        const pd = pub.data() || {};
+        const an = String(pd.accountName || '');
+        if (an.includes('นราทร')) {
+          await shopRef.collection('settings').doc('public').set({
+            accountName: an.replace(/นราทร/g, 'นรากร')
+          }, {merge:true});
+        }
       }
       const sec=await shopRef.collection('settings').doc('secure').get();
       if(!sec.exists){
@@ -97,9 +106,9 @@ const M={
       const catSnap=await shopRef.collection('categories').limit(1).get();
       if(catSnap.empty){
         const batch=db.batch();
-        [['c1','เมนูส้มตำ',1],['c2','เมนูยำ',2],['c3','เมนูของทอด',3],['c4','เมนูทานเล่น',4],['c5','เครื่องดื่ม',5]]
+        [['c1','เมนูส้มตำ',1],['c2','เมนูยำ',2],['c3','เมนูของทอด',3],['c4','เมนูกินคู่ส้มตำ',4],['c5','เครื่องดื่ม',5]]
           .forEach(([id,name,order])=>batch.set(shopRef.collection('categories').doc(id),{id,name,isActive:true,order}));
-        const menus=[['m1','c1','ตำปูปลาร้า',40],['m2','c1','ตำไทย',40],['m3','c1','ตำป่า',45],['m4','c1','ตำแตง',40],['m5','c2','ยำวุ้นเส้น',50],['m6','c3','ไก่ทอด',50],['m7','c3','ปีกไก่ทอด',40],['m8','c4','ไข่ต้ม',10],['m9','c5','น้ำเปล่า',10],['m10','c5','น้ำอัดลม',15]];
+        const menus=[['m1','c1','ตำปูปลาร้า',40],['m2','c1','ตำไทย',40],['m3','c1','ตำป่า',45],['m4','c1','ตำแตง',40],['m5','c2','ยำวุ้นเส้น',50],['m6','c3','ไก่ทอด',50],['m7','c3','ปีกไก่ทอด',40],['m8','c4','ไข่ต้ม',10],['m9','c4','ไข่ดาว',15],['m10','c5','น้ำเปล่า',10],['m11','c5','น้ำอัดลม',15]];
         menus.forEach(([id,catId,name,price])=>batch.set(shopRef.collection('menus').doc(id),{id,catId,name,price,isActive:true,isOut:false,imageUrl:'',imageData:''}));
         [['s1','ไม่เผ็ด',1],['s2','เผ็ดน้อย',2],['s3','เผ็ดกลาง',3],['s4','เผ็ดมาก',4]].forEach(([id,name,order])=>batch.set(shopRef.collection('spiceLevels').doc(id),{id,name,isActive:true,order}));
         [['t1','ไข่ดาว',10],['t2','ไข่ต้ม',10],['t3','เพิ่มปู',20],['t4','หมูกรอบ',15]].forEach(([id,name,price],i)=>batch.set(shopRef.collection('toppings').doc(id),{id,name,price,isActive:true,order:i+1}));
@@ -1728,7 +1737,7 @@ const M={
     const base=(window.FUNCTIONS_BASE||'').replace(/\/$/,'');
     const secret=window.SHOP_OPS_SECRET||'';
     let updatedViaFn=false;
-    if(base && secret){
+    if(base && /^https?:\/\//i.test(base) && secret){
       try{
         const r=await fetch(base+'/markOrderPaid',{
           method:'POST',
@@ -2329,7 +2338,7 @@ const M={
     this.tableCount=Number(d.tableCount||10);
     const tc=document.getElementById('setTableCount'); if(tc) tc.value=String(this.tableCount);
     if(this.orderMode==='table'){ try{ this.renderTableQrList(); }catch(e){} }
-    document.getElementById('setAccount').value=d.accountName||'';
+    document.getElementById('setAccount').value=d.accountName||'นาย นรากร วงค์แก่นท้าว';
     document.getElementById('setPP').value=d.promptpay||'1319900156353';
     const payType=d.payType||'kshop';
     const pt=document.getElementById('setPayType'); if(pt) pt.value=payType;
