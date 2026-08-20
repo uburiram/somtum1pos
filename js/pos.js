@@ -202,6 +202,8 @@ const M={
         }
       });
     }
+    // ลงทะเบียน FCM เพื่อแจ้งเตือนแม้หน้าจอดับ / ยุบแอพ
+    try{ this.registerFCM(); }catch(e){ console.warn('FCM enter', e); }
   },
   logout(){
     sessionStorage.removeItem('pinUntil');
@@ -217,6 +219,7 @@ const M={
       this.beep();
     });
     this.requestNotifyPermission();
+    try{ this.registerFCM(); }catch(e){ console.warn('FCM enableAudio', e); }
   },
   _primeSpeech(){
     if(!window.speechSynthesis) return;
@@ -267,11 +270,95 @@ const M={
         icon: './icon/icon-192.png',
         badge: './icon/favicon-32.png',
         tag: 'somtum-order',
-        renotify: true
+        renotify: true,
+        requireInteraction: true
       });
       n.onclick=function(){ try{ window.focus(); n.close(); }catch(e){} };
     }catch(e){}
   },
+
+  /**
+   * ลงทะเบียน FCM Token → บันทึกลง Firestore
+   * ทำให้ Cloud Function onOrderCreate ส่งแจ้งเตือนได้แม้หน้าจอดับ / ยุบแอพ
+   */
+  async registerFCM(){
+    try{
+      if(typeof firebase === 'undefined' || !firebase.messaging){
+        console.warn('firebase.messaging ไม่พร้อม');
+        return;
+      }
+      const vapid = (window.FIREBASE_VAPID_KEY || '').trim();
+      if(!vapid || vapid.length < 20){
+        console.warn('ยังไม่มี VAPID Key ใน firebase-config.js');
+        return;
+      }
+
+      // ขอสิทธิ์แจ้งเตือน
+      if(typeof Notification !== 'undefined'){
+        if(Notification.permission === 'default'){
+          await Notification.requestPermission();
+        }
+        if(Notification.permission !== 'granted'){
+          toast('กรุณาอนุญาตการแจ้งเตือน เพื่อรับออเดอร์เมื่อหน้าจอดับ');
+          return;
+        }
+      }
+
+      const messaging = firebase.messaging();
+
+      // ลงทะเบียน / ใช้ Service Worker สำหรับ FCM
+      let reg = null;
+      if('serviceWorker' in navigator){
+        try{
+          // ใช้ firebase-messaging-sw.js เป็นหลัก (อยู่ root)
+          reg = await navigator.serviceWorker.register('./firebase-messaging-sw.js', { scope: './' });
+          await navigator.serviceWorker.ready;
+        }catch(swErr){
+          console.warn('ลงทะเบียน firebase-messaging-sw ไม่สำเร็จ ลอง sw หลัก', swErr);
+          try{
+            reg = await navigator.serviceWorker.getRegistration() ||
+                  await navigator.serviceWorker.register('./sw.js', { scope: './' });
+          }catch(e2){}
+        }
+      }
+
+      const token = await messaging.getToken({
+        vapidKey: vapid,
+        serviceWorkerRegistration: reg || undefined
+      });
+
+      if(!token){
+        console.warn('ได้ FCM token ว่าง');
+        return;
+      }
+
+      // บันทึก token ลง Firestore ให้ Cloud Function ใช้ส่ง
+      const shopId = window.SHOP_ID || 'main';
+      await db.collection('shops').doc(shopId).collection('fcmTokens').doc(token).set({
+        token: token,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        ua: (navigator.userAgent || '').slice(0, 300),
+        platform: 'android-pwa'
+      }, { merge: true });
+
+      console.log('FCM token ลงทะเบียนสำเร็จ');
+      toast('เปิดแจ้งเตือนพื้นหลังแล้ว ✓');
+
+      // รับข้อความตอนแอพเปิดอยู่ (foreground)
+      messaging.onMessage(function(payload){
+        const title = (payload.notification && payload.notification.title) || 'ออเดอร์ใหม่ — ส้มตำนายหนึ่ง';
+        const body = (payload.notification && payload.notification.body) || 'มีออเดอร์เข้ามาในระบบ';
+        try{ M.beep(); }catch(e){}
+        try{ M.pushNotify(title, body); }catch(e){}
+        try{ if(typeof M.startAlarm === 'function') M.startAlarm(); }catch(e){}
+      });
+    }catch(e){
+      console.error('registerFCM error', e);
+      // ไม่ toast error ทุกครั้ง เพื่อไม่รบกวน
+    }
+  },
+
   filter(f,el){this.filterKey=f;document.querySelectorAll('.fc').forEach(x=>x.classList.remove('on'));el.classList.add('on');this.renderOrders()},
   listenOrders(){
     if(this.unsub) this.unsub();
