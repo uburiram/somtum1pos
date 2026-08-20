@@ -978,7 +978,7 @@ const C={
           setMsg('<span style="color:#2E7D32">✓ บันทึกสลิปแล้ว</span>');
           return;
         }
-        if(j.ok===false && j.needManual){
+        if(j.ok===false && (j.needManual || j.pendingManual)){
           await shopRef.collection('orders').doc(orderId).update({
             slipData:(dataUrl||'').slice(0,200000), slipStatus:'PENDING_REVIEW',
             slipVerifyNote:j.msg||'ยอดไม่ตรงหรือสลิปไม่ผ่าน · รอร้านตรวจ'
