@@ -1233,6 +1233,7 @@ const C={
     if(this.payM!=='PROMPTPAY') return;
     if(this.orderId) return;
     if(!this.cart || !this.cart.length) return;
+    if(!this.assertShopOpen()) return;
     const btn=document.getElementById('btnOrder');
     if(btn){ btn.disabled=true; btn.textContent='กำลังสร้างออเดอร์…'; }
     try{
@@ -1243,7 +1244,7 @@ const C={
       if(btn){ btn.disabled=true; btn.textContent='ยืนยันแล้ว · รอโอนเงิน / แนบสลิป'; }
     }catch(e){
       console.error(e);
-      toast('สร้างออเดอร์ไม่สำเร็จ: '+(e.message||e));
+      toast(this._orderErrMsg(e));
       if(btn){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
     }
   },
@@ -2050,11 +2051,24 @@ const C={
       if(btn){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
     }catch(e){
       console.error(e);
-      toast('ส่งไม่สำเร็จ: '+(e.message||e));
+      toast(this._orderErrMsg(e));
       if(btn){ btn.disabled=false; btn.textContent='ยืนยันออเดอร์'; }
     }
   },
+
+  _orderErrMsg(e){
+    const m=String((e&&e.message)||e||'');
+    if(/permission|PERMISSION|insufficient/i.test(m)) return 'ไม่มีสิทธิ์บันทึกออเดอร์ (Firestore rules) — แจ้งร้านตรวจ rules';
+    if(/อยู่นอกเวลาทำการ/.test(m)) return m;
+    if(/ตะกร้าว่าง/.test(m)) return m;
+    if(/โหมดโต๊ะ/.test(m)) return m;
+    if(/กำลังสร้างออเดอร์/.test(m)) return m;
+    return 'สร้างออเดอร์ไม่สำเร็จ: '+m;
+  },
   async createOrderInternal(opts){
+    if(this.isOpen===false){
+      throw new Error('อยู่นอกเวลาทำการ · ขออภัยในความไม่สะดวก');
+    }
     // กันกดซ้ำ / race สร้างออเดอร์คู่
     if(this._creatingOrder){
       throw new Error('กำลังสร้างออเดอร์ กรุณารอสักครู่');

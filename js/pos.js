@@ -686,9 +686,9 @@ const M={
     if(order && !order.benefitsRefunded){
       try{ await this.refundMemberBenefits(order); }catch(e){ console.warn('refund', e); }
     }
+    // ไม่แตะ paymentStatus/paidAmount — rules ห้ามเปลี่ยนการเงินตอน soft cancel
     await shopRef.collection('orders').doc(id).update({
       status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
-      paymentStatus:'UNPAID', paidAmount:0, changeAmount:0,
       benefitsRefunded: true
     });
     toast('ยกเลิกโดยร้านแล้ว');
@@ -1750,7 +1750,17 @@ const M={
       }catch(e){ console.warn('markOrderPaid CF', e); }
     }
     if(!updatedViaFn){
-      await shopRef.collection('orders').doc(id).update(payload);
+      try{
+        await shopRef.collection('orders').doc(id).update(payload);
+      }catch(e){
+        const m=String(e&&e.message||e);
+        if(/permission|PERMISSION|insufficient/i.test(m)){
+          toast('ยืนยันชำระไม่สำเร็จ (สิทธิ์ Firestore) — ตรวจ rules หรือตั้ง Cloud Function');
+        } else {
+          toast('ยืนยันชำระไม่สำเร็จ: '+m);
+        }
+        throw e;
+      }
     }
     // รีโหลดจาก Firestore เป็นแหล่งจริง
     const snap=await shopRef.collection('orders').doc(id).get();
