@@ -3,6 +3,48 @@ const money=n=>'฿'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:
 const toast=msg=>{const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';clearTimeout(t._x);t._x=setTimeout(()=>t.style.display='none',2800)};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 async function sha256(text){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(text)));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+
+/**
+ * คำนวณยอดที่ครอบคลุมแล้ว + ส่วนต่างที่ต้องเก็บ
+ * แก้ bug เก่า: paidAmount เคยถูกเซ็ตเป็นเงินที่ยื่น (รวมทอน) แทนยอดบิล
+ * ซ่อมข้อมูลเก่าด้วย addRound: รวมรายการก่อนรอบล่าสุด = ยอดที่ควรชำระแล้ว
+ * ตัวอย่าง T10: รอบก่อนหน้า 90 + สั่งเพิ่ม 100 → total 190, due = 100 (ไม่ใช่ 90)
+ */
+function calcPaymentCover(order){
+  const o=order||{};
+  const billTotal=Math.max(0, Number(o.total||0));
+  const rawPaid=Math.max(0, Number(o.paidAmount||0));
+  const items=Array.isArray(o.items)?o.items:[];
+  const rounds=items.map(i=>Math.max(0, Math.floor(Number(i.addRound||0))));
+  const maxRound=rounds.length?Math.max.apply(null, rounds):0;
+  let covered=rawPaid;
+  if(String(o.paymentStatus||'')==='PAID' && !o.needsRepay){
+    covered=billTotal;
+  } else if(o.needsRepay || (String(o.paymentStatus||'')!=='PAID' && rawPaid>0)){
+    if(maxRound>0){
+      const prevSum=items
+        .filter(i=>Math.max(0, Math.floor(Number(i.addRound||0))) < maxRound)
+        .reduce((s,i)=>s+Number(i.total||0), 0);
+      if(prevSum>0){
+        const itemsSum=items.reduce((s,i)=>s+Number(i.total||0), 0);
+        const disc=Math.max(0, Number(o.discountAmount||0));
+        if(itemsSum>0 && disc>0 && billTotal<=itemsSum){
+          covered=Math.max(0, Math.round((prevSum - disc*(prevSum/itemsSum))*100)/100);
+        } else {
+          covered=prevSum;
+        }
+      } else {
+        covered=Math.min(rawPaid, billTotal);
+      }
+    } else {
+      covered=Math.min(rawPaid, billTotal);
+    }
+  }
+  covered=Math.max(0, Math.min(covered, billTotal));
+  const due=Math.max(0, Math.round((billTotal - covered)*100)/100);
+  return { covered, due, billTotal, rawPaid, maxRound };
+}
+
 function fileToDataUrl(file,maxSide=480,quality=.55){
   // Thumbnail สำหรับมือถือ — ลดขนาดเพื่อไม่ให้ document Firestore ใกล้ 1MB
   return new Promise((resolve,reject)=>{
@@ -523,9 +565,10 @@ const M={
     if(!list.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#888">ไม่มีออเดอร์</div>'; try{ this.renderTablesBoard(); }catch(e){} return}
     g.innerHTML=list.map(o=>{
       let prev=(o.items||[]).map(i=>i.name+' x'+i.qty).join(', '); if(prev.length>40) prev=prev.slice(0,40)+'…';
-      const alreadyPaid=Number(o.paidAmount||0);
-      const isPartial=o.paymentStatus!=='PAID' && (o.needsRepay || alreadyPaid>0);
-      const due=isPartial?Math.max(0, Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-alreadyPaid)):0;
+      const cov=calcPaymentCover(o);
+      const alreadyPaid=cov.covered;
+      const isPartial=o.paymentStatus!=='PAID' && (o.needsRepay || alreadyPaid>0 || cov.due>0);
+      const due=isPartial?cov.due:0;
       const pay=o.paymentStatus==='PAID'?'<span style="background:#E8F5E9;color:#2E7D32;padding:2px 8px;border-radius:4px;font-size:12px">ชำระแล้ว</span>':(isPartial?('<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:4px;font-size:12px">ค้างส่วนต่าง ฿'+due+'</span>'):'<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px">ยังไม่ชำระ</span>');
       const method = (o.paymentMethod==='CASH')
         ? '<span style="background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:4px;font-size:11px">เงินสด</span>'
@@ -551,6 +594,22 @@ const M={
   openDetail(id){
     this.markOrderViewed(id);
     const o=this.orders.find(x=>x.id===id); if(!o) return;
+    // ซ่อมส่วนต่างจากข้อมูลเก่า (paidAmount รวมทอน) ด้วย addRound
+    const cov=calcPaymentCover(o);
+    if(o.needsRepay || (o.paymentStatus!=='PAID' && cov.due>0 && Number(o.paidAmount||0)>0)){
+      if(Math.abs(Number(o.repayAmount||0) - cov.due) > 0.5 || Math.abs(Number(o.paidAmount||0) - cov.covered) > 0.5){
+        // เขียนค่าที่ถูกต้องกลับ Firestore เงียบ ๆ (ลูกค้าจะอัปเดตตาม snapshot)
+        shopRef.collection('orders').doc(id).update({
+          paidAmount: cov.covered,
+          repayAmount: cov.due,
+          needsRepay: cov.due>0,
+          paymentStatus: cov.due>0 ? 'UNPAID' : 'PAID'
+        }).then(()=>{
+          o.paidAmount=cov.covered; o.repayAmount=cov.due; o.needsRepay=cov.due>0;
+          if(cov.due>0) o.paymentStatus='UNPAID';
+        }).catch(function(){});
+      }
+    }
     const locked = o.status==='Completed' || o.status==='Cancelled';
     const items=(o.items||[]).map(i=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty} (${money(t.total||t.price*t.qty)})`).join(', ');
@@ -600,10 +659,10 @@ const M={
       </div>
       <div style="text-align:center;margin-bottom:12px"><div style="color:#777">ยอดรวม</div>
         <div style="font-size:2rem;font-weight:700;color:var(--p)">${money(o.total)}</div>
-        <div style="margin-top:6px">${o.paymentMethod==='CASH'?'<span style="background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">เงินสด</span>':'<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">พร้อมเพย์</span>'}${o.paymentStatus==='PAID'?'<span style="color:var(--g);font-weight:700">✓ ชำระแล้ว</span>':((o.needsRepay||Number(o.paidAmount||0)>0)?'<span style="color:#E65100;font-weight:700">ค้างส่วนต่าง ฿'+Math.max(0,Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-Number(o.paidAmount||0)))+'</span>':'<span style="color:var(--d);font-weight:700">ยังไม่ชำระ</span>')} · <span style="font-weight:600">${o.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์ / QR'}</span></div>
-        ${(o.paymentStatus!=='PAID' && (o.needsRepay || Number(o.paidAmount||0)>0))?`<div style="margin-top:10px;padding:12px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:10px;text-align:center">
-          <div style="font-size:13px;color:#E65100;font-weight:700">มีรายการเพิ่ม · เก็บส่วนต่าง <span style="font-size:1.25rem">฿${Math.max(0,Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-Number(o.paidAmount||0)))}</span></div>
-          <div style="font-size:13px;color:#555;margin-top:6px">จ่ายแล้ว <strong style="color:#2E7D32">฿${Number(o.paidAmount||0)}</strong> · รวมบิล <strong>฿${Number(o.total||0)}</strong></div>
+        <div style="margin-top:6px">${o.paymentMethod==='CASH'?'<span style="background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">เงินสด</span>':'<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">พร้อมเพย์</span>'}${o.paymentStatus==='PAID'?'<span style="color:var(--g);font-weight:700">✓ ชำระแล้ว</span>':(cov.due>0?'<span style="color:#E65100;font-weight:700">ค้างส่วนต่าง ฿'+cov.due+'</span>':'<span style="color:var(--d);font-weight:700">ยังไม่ชำระ</span>')} · <span style="font-weight:600">${o.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์ / QR'}</span></div>
+        ${(o.paymentStatus!=='PAID' && cov.due>0)?`<div style="margin-top:10px;padding:12px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:10px;text-align:center">
+          <div style="font-size:13px;color:#E65100;font-weight:700">มีรายการเพิ่ม · เก็บส่วนต่าง <span style="font-size:1.25rem">฿${cov.due}</span></div>
+          <div style="font-size:13px;color:#555;margin-top:6px">จ่ายแล้ว <strong style="color:#2E7D32">฿${cov.covered}</strong> · รวมบิล <strong>฿${cov.billTotal}</strong></div>
         </div>`:''}
       </div>
       ${items}${slipBlock}
@@ -611,8 +670,8 @@ const M={
       <div style="font-size:12px;color:#666;margin-top:6px;text-align:center">ขั้นตอนปัจจุบัน: <strong>${({AwaitingPayment:'รอคิวทำ',Pending:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:(o.cancelledBy==='customer'?'ยกเลิกโดยลูกค้า':(o.cancelledBy==='shop'?'ยกเลิกโดยร้าน':'ยกเลิก'))})[o.status]||o.status}</strong></div>
       ${!locked?`<button class="btn btn-d btn-block" style="margin-top:10px" onclick="M.cancelOrder('${esc(o.id)}')">ยกเลิกออเดอร์</button>`:''}
       ${!locked && o.paymentStatus!=='PAID'?`<div style="margin-top:12px">
-        ${(o.needsRepay||Number(o.paidAmount||0)>0)?`<div style="margin-bottom:8px;padding:10px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:8px;font-size:13px;color:#E65100;text-align:center">เก็บส่วนต่าง <strong style="font-size:1.15rem">฿${Math.max(0,Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-Number(o.paidAmount||0)))}</strong><div style="font-size:12px;color:#555;margin-top:4px">จ่ายแล้ว ฿${Number(o.paidAmount||0)} / รวมบิล ฿${Number(o.total||0)}</div></div>`:''}
-        <label class="lbl">รับเงินสด ${(o.needsRepay||Number(o.paidAmount||0)>0)?'(ส่วนต่าง)':''}</label><input type="number" id="cashIn" placeholder="จำนวนที่รับ" inputmode="decimal" value="${(o.needsRepay||Number(o.paidAmount||0)>0)?Math.max(0,Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-Number(o.paidAmount||0))):''}">
+        ${cov.due>0?`<div style="margin-bottom:8px;padding:10px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:8px;font-size:13px;color:#E65100;text-align:center">เก็บส่วนต่าง <strong style="font-size:1.15rem">฿${cov.due}</strong><div style="font-size:12px;color:#555;margin-top:4px">จ่ายแล้ว ฿${cov.covered} / รวมบิล ฿${cov.billTotal}</div></div>`:''}
+        <label class="lbl">รับเงินสด ${cov.due>0?'(ส่วนต่าง)':''}</label><input type="number" id="cashIn" placeholder="จำนวนที่รับ" inputmode="decimal" value="${cov.due>0?cov.due:''}">
         <button class="btn btn-g btn-block" style="margin-top:8px" onclick="M.payCash('${esc(o.id)}')">ยืนยันรับเงินสด</button>
         <button class="btn btn-i btn-block" style="margin-top:8px" onclick="M.payPP('${esc(o.id)}')">ยืนยันรับโอนแล้ว</button>
       </div>`:''}`;
@@ -1838,22 +1897,18 @@ const M={
     const cashEl=document.getElementById('cashIn');
     // tendered = เงินสดที่ลูกค้ายื่น (อาจมากกว่ายอดบิล → มีทอน)
     const tendered=Number(cashEl && cashEl.value);
-    const already=Number(o.paidAmount||0);
-    const billTotal=Number(o.total||0);
-    const isPartial=!!(o.needsRepay || (o.paymentStatus!=='PAID' && already>0));
-    // ยอดที่ต้องเก็บรอบนี้: ส่วนต่าง (ถ้ามี) หรือยอดเต็มบิล
-    const need = isPartial
-      ? Math.max(0, Number(o.repayAmount!=null ? o.repayAmount : (billTotal - already)))
-      : billTotal;
+    const cov=calcPaymentCover(o);
+    const billTotal=cov.billTotal;
+    const isPartial=!!(o.needsRepay || (o.paymentStatus!=='PAID' && cov.covered>0) || cov.due>0);
+    // ยอดที่ต้องเก็บรอบนี้: ใช้ calcPaymentCover (ซ่อมข้อมูลเก่าที่ paidAmount รวมทอน)
+    const need = isPartial ? cov.due : billTotal;
     if(isNaN(tendered) || tendered < need){
       toast('เงินไม่พอ (ต้องอย่างน้อย ฿'+need+')');
       return;
     }
-    // สำคัญ: paidAmount = ยอดที่ครอบคลุมบิล (ไม่ใช่เงินที่ยื่น)
-    // เมื่อรับครบ (tendered >= need) บิลถือว่าชำระเต็ม → paidAmount = billTotal
-    // changeAmount = เงินทอนจากเงินที่ยื่น
+    // paidAmount = ยอดที่ครอบคลุมบิล (ไม่ใช่เงินที่ยื่น)
     // ตัวอย่าง: บิล 90 รับ 100 → paidAmount=90, change=10
-    // แล้วสั่งเพิ่ม 100 → total=190, already=90, due=100 (ถูกต้อง ไม่ใช่ 90)
+    // สั่งเพิ่ม 100 → total=190, covered=90, due=100
     const newPaidAmount = billTotal;
     const changeAmount = Math.max(0, tendered - need);
     await this.markPaid(id,{

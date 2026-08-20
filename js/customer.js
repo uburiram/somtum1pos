@@ -5,6 +5,45 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const showErr=msg=>{const e=document.getElementById('errBanner');e.textContent=msg;e.classList.add('on')};
 async function sha256(text){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(text)));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
 
+/**
+ * คำนวณยอดที่ครอบคลุมแล้ว + ส่วนต่าง (ซ่อมข้อมูลเก่าที่ paidAmount รวมทอน)
+ * ใช้ addRound: รวมรายการก่อนรอบล่าสุด = ยอดที่ควรชำระแล้ว
+ */
+function calcPaymentCover(order){
+  const o=order||{};
+  const billTotal=Math.max(0, Number(o.total||0));
+  const rawPaid=Math.max(0, Number(o.paidAmount||0));
+  const items=Array.isArray(o.items)?o.items:[];
+  const rounds=items.map(i=>Math.max(0, Math.floor(Number(i.addRound||0))));
+  const maxRound=rounds.length?Math.max.apply(null, rounds):0;
+  let covered=rawPaid;
+  if(String(o.paymentStatus||'')==='PAID' && !o.needsRepay){
+    covered=billTotal;
+  } else if(o.needsRepay || (String(o.paymentStatus||'')!=='PAID' && rawPaid>0)){
+    if(maxRound>0){
+      const prevSum=items
+        .filter(i=>Math.max(0, Math.floor(Number(i.addRound||0))) < maxRound)
+        .reduce((s,i)=>s+Number(i.total||0), 0);
+      if(prevSum>0){
+        const itemsSum=items.reduce((s,i)=>s+Number(i.total||0), 0);
+        const disc=Math.max(0, Number(o.discountAmount||0));
+        if(itemsSum>0 && disc>0 && billTotal<=itemsSum){
+          covered=Math.max(0, Math.round((prevSum - disc*(prevSum/itemsSum))*100)/100);
+        } else {
+          covered=prevSum;
+        }
+      } else {
+        covered=Math.min(rawPaid, billTotal);
+      }
+    } else {
+      covered=Math.min(rawPaid, billTotal);
+    }
+  }
+  covered=Math.max(0, Math.min(covered, billTotal));
+  const due=Math.max(0, Math.round((billTotal - covered)*100)/100);
+  return { covered, due, billTotal, rawPaid, maxRound };
+}
+
 const PP={
   /* EMV PromptPay ถูกต้อง: เบอร์มือถือ=tag01, บัตรประชาชน/TAX 13หลัก=tag02 */
   crc(p){let c=0xFFFF;for(let i=0;i<p.length;i++){c^=p.charCodeAt(i)<<8;for(let j=0;j<8;j++)c=c&0x8000?((c<<1)^0x1021)&0xFFFF:(c<<1)&0xFFFF}return c.toString(16).toUpperCase().padStart(4,'0')},
@@ -958,11 +997,10 @@ const C={
     setMsg('กำลังบันทึกสลิป…');
     const orderSnap=await shopRef.collection('orders').doc(orderId).get();
     const order=orderSnap.exists?{id:orderId,...orderSnap.data()}: (this.lastOrder||{});
-    // ยอดที่ต้องตรวจในสลิป = ส่วนต่างเมื่อ needsRepay ไม่งั้นยอดเต็ม
-    const alreadyPaid=Number(order.paidAmount||0);
-    const amount=order.needsRepay
-      ? Math.max(0, Number(order.repayAmount!=null?order.repayAmount:Number(order.total||0)-alreadyPaid))
-      : Number(order.total||0);
+    // ยอดที่ต้องตรวจในสลิป = ส่วนต่างที่คำนวณใหม่ (ซ่อม paidAmount เก่าที่รวมทอน)
+    const cvSlip=calcPaymentCover(order);
+    const alreadyPaid=cvSlip.covered;
+    const amount=cvSlip.due>0 ? cvSlip.due : cvSlip.billTotal;
 
     // 1) Cloud Function (ถ้าตั้ง FUNCTIONS_BASE)
     const base=(window.FUNCTIONS_BASE||'').replace(/\/$/,'');
@@ -2819,7 +2857,7 @@ const C={
         <div style="border-top:1px dashed #ccc;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700">
           <span>รวม</span><span style="color:var(--p)">${money(o.total)}</span>
         </div>
-        <div style="margin-top:6px;font-size:13px">ชำระ: ${paid?(o.paymentMethod==='CASH'?'เงินสด (ที่ร้าน)':'พร้อมเพย์'):(o.needsRepay?('มีรายการเพิ่ม · รอชำระส่วนต่าง ฿'+Number(o.repayAmount!=null?o.repayAmount:Math.max(0,Number(o.total||0)-Number(o.paidAmount||0)))):'รอชำระ (QR / เงินสดที่ร้าน)')} · ${paid?'ชำระแล้ว':'ยังไม่ชำระ'}</div>
+        <div style="margin-top:6px;font-size:13px">ชำระ: ${paid?(o.paymentMethod==='CASH'?'เงินสด (ที่ร้าน)':'พร้อมเพย์'):(function(){const cv=calcPaymentCover(o);return cv.due>0?('มีรายการเพิ่ม · รอชำระส่วนต่าง ฿'+cv.due):'รอชำระ (QR / เงินสดที่ร้าน)';})()} · ${paid?'ชำระแล้ว':'ยังไม่ชำระ'}</div>
         ${o.slipStatus&&o.slipStatus!=='NONE'?`<div style="font-size:12px;color:#555">สลิป: ${esc(o.slipStatus)}</div>`:''}
       </div>
       <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;
@@ -2885,14 +2923,13 @@ const C={
     }
         if(waitPay){
       qz.style.display='block';
-      // ยอดบน QR = ส่วนต่างเมื่อ needsRepay ไม่งั้นใช้ total
-      const alreadyPaid=Number(o.paidAmount||0);
-      const amount=o.needsRepay
-        ? Math.max(0, Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-alreadyPaid))
-        : Number(o.total||0);
+      // ยอดบน QR = ส่วนต่างที่คำนวณใหม่ (ซ่อมข้อมูลเก่าที่ paidAmount รวมทอน)
+      const cv=calcPaymentCover(o);
+      const alreadyPaid=cv.covered;
+      const amount=cv.due>0 ? cv.due : Number(o.total||0);
       const needNew=!this._payQRDataUrl || this._payQRAmount!==amount;
-      const payHint=o.needsRepay
-        ? ('<div style="margin-bottom:6px;padding:8px;background:#FFF8E1;border-radius:8px;color:#E65100;font-size:12px">มีรายการเพิ่ม · โอนเฉพาะส่วนต่าง <strong>฿'+amount+'</strong><div style="color:#888;margin-top:2px">จ่ายแล้ว ฿'+alreadyPaid+' / รวมบิล ฿'+Number(o.total||0)+'</div></div>')
+      const payHint=cv.due>0
+        ? ('<div style="margin-bottom:6px;padding:8px;background:#FFF8E1;border-radius:8px;color:#E65100;font-size:12px">มีรายการเพิ่ม · โอนเฉพาะส่วนต่าง <strong>฿'+amount+'</strong><div style="color:#888;margin-top:2px">จ่ายแล้ว ฿'+alreadyPaid+' / รวมบิล ฿'+cv.billTotal+'</div></div>')
         : '';
       qz.innerHTML=payHint+'<div style="margin:8px 0;padding:10px;background:#E8F5E9;border-radius:10px;font-size:13px;color:#1B5E20;text-align:left;line-height:1.5">'+
         '<div style="font-weight:700;margin-bottom:4px">ชำระได้ 2 แบบ</div>'+
