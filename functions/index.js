@@ -104,15 +104,22 @@ exports.verifySlip = functions.region(REGION).https.onRequest(async (req, res) =
     const result = await verifyWithEasySlip(buf, order.total);
 
     if (result.ok) {
+      const already = Number(order.paidAmount || 0);
+      const paidNow = result.paid != null ? Number(result.paid) : expectAmt;
+      const totalPaid = order.needsRepay
+        ? Math.max(Number(order.total || 0), already + (isNaN(paidNow) ? expectAmt : paidNow))
+        : (Number(order.total) || 0);
       await ref.update({
         slipData: slipData.slice(0, 900000), // กันเอกสารใหญ่เกิน
         slipStatus: 'APPROVED',
         paymentStatus: 'PAID',
-        paidAmount: Number(order.total) || 0,
+        paidAmount: totalPaid,
         paidAt: Date.now(),
         paymentMethod: order.paymentMethod || 'PROMPTPAY',
         status: order.status === 'AwaitingPayment' ? 'Pending' : (order.status || 'Pending'),
-        slipAuto: true
+        slipAuto: true,
+        needsRepay: false,
+        repayAmount: 0
       });
       return res.json({ ok: true, msg: result.reason, autoPaid: true });
     }
@@ -229,6 +236,8 @@ exports.markOrderPaid = functions.region(REGION).https.onRequest(async (req, res
       paidAmount: patch.paidAmount != null ? Number(patch.paidAmount) : Number(order.total || 0),
       changeAmount: Number(patch.changeAmount || 0),
       paymentMethod: patch.paymentMethod || order.paymentMethod || 'CASH',
+      needsRepay: false,
+      repayAmount: 0,
       updatedAt: Date.now()
     };
     if (order.status === 'AwaitingPayment') update.status = 'Pending';
