@@ -928,7 +928,11 @@ const C={
     setMsg('กำลังบันทึกสลิป…');
     const orderSnap=await shopRef.collection('orders').doc(orderId).get();
     const order=orderSnap.exists?{id:orderId,...orderSnap.data()}: (this.lastOrder||{});
-    const amount=Number(order.total||0);
+    // ยอดที่ต้องตรวจในสลิป = ส่วนต่างเมื่อ needsRepay ไม่งั้นยอดเต็ม
+    const alreadyPaid=Number(order.paidAmount||0);
+    const amount=order.needsRepay
+      ? Math.max(0, Number(order.repayAmount!=null?order.repayAmount:Number(order.total||0)-alreadyPaid))
+      : Number(order.total||0);
 
     // 1) Cloud Function (ถ้าตั้ง FUNCTIONS_BASE)
     const base=(window.FUNCTIONS_BASE||'').replace(/\/$/,'');
@@ -1061,16 +1065,25 @@ const C={
       return {ok:false, needManual:true, msg:note};
     }
 
+    const already=Number(order.paidAmount||0);
+    const due=order.needsRepay
+      ? Math.max(0, Number(order.repayAmount!=null?order.repayAmount:Number(order.total||0)-already))
+      : Number(order.total||0);
+    const slipPaid=meta.amount!=null?Number(meta.amount):due;
+    // สะสมยอดชำระ: ของเดิม + ยอดรอบนี้ (หรือยอดเต็มถ้าไม่ใช่ส่วนต่าง)
+    const totalPaid=order.needsRepay ? (already + (isNaN(slipPaid)?due:slipPaid)) : (isNaN(slipPaid)?Number(order.total||0):slipPaid);
     const patch={
       slipData:(dataUrl||'').slice(0,200000),
       slipStatus:'AUTO_APPROVED',
       paymentStatus:'PAID',
       paymentMethod:'PROMPTPAY',
       paidAt:Date.now(),
-      paidAmount: meta.amount!=null?Number(meta.amount):Number(order.total||0),
+      paidAmount: Math.max(Number(order.total||0), totalPaid),
       slipVerifyNote: (meta.msg||'ตรวจอัตโนมัติผ่าน')+' · '+timeCheck.msg,
       autoPaid:true,
-      slipCheckedAt:Date.now()
+      slipCheckedAt:Date.now(),
+      needsRepay:false,
+      repayAmount:0
     };
     if(slipTs) patch.slipTransAt=slipTs;
     if(isNaN(patch.paidAmount)) patch.paidAmount=Number(order.total||0);
@@ -2790,10 +2803,16 @@ const C={
     }
         if(waitPay){
       qz.style.display='block';
-      // สร้าง QR จริงทุกครั้งที่ยอดยังไม่ชำระ — ไม่พึ่งหน้าชำระเงิน / cache เก่า
-      const amount=Number(o.total||0);
+      // ยอดบน QR = ส่วนต่างเมื่อ needsRepay ไม่งั้นใช้ total
+      const alreadyPaid=Number(o.paidAmount||0);
+      const amount=o.needsRepay
+        ? Math.max(0, Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-alreadyPaid))
+        : Number(o.total||0);
       const needNew=!this._payQRDataUrl || this._payQRAmount!==amount;
-      qz.innerHTML='<div style="margin:8px 0;padding:10px;background:#E8F5E9;border-radius:10px;font-size:13px;color:#1B5E20;text-align:left;line-height:1.5">'+
+      const payHint=o.needsRepay
+        ? ('<div style="margin-bottom:6px;padding:8px;background:#FFF8E1;border-radius:8px;color:#E65100;font-size:12px">มีรายการเพิ่ม · โอนเฉพาะส่วนต่าง <strong>฿'+amount+'</strong><div style="color:#888;margin-top:2px">จ่ายแล้ว ฿'+alreadyPaid+' / รวมบิล ฿'+Number(o.total||0)+'</div></div>')
+        : '';
+      qz.innerHTML=payHint+'<div style="margin:8px 0;padding:10px;background:#E8F5E9;border-radius:10px;font-size:13px;color:#1B5E20;text-align:left;line-height:1.5">'+
         '<div style="font-weight:700;margin-bottom:4px">ชำระได้ 2 แบบ</div>'+
         '<div>① โอนผ่าน QR ด้านล่าง</div>'+
         '<div>② จ่ายเงินสดที่ร้าน (แจ้งพนักงาน)</div>'+

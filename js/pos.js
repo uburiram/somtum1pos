@@ -523,7 +523,8 @@ const M={
     if(!list.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#888">ไม่มีออเดอร์</div>'; try{ this.renderTablesBoard(); }catch(e){} return}
     g.innerHTML=list.map(o=>{
       let prev=(o.items||[]).map(i=>i.name+' x'+i.qty).join(', '); if(prev.length>40) prev=prev.slice(0,40)+'…';
-      const pay=o.paymentStatus==='PAID'?'<span style="background:#E8F5E9;color:#2E7D32;padding:2px 8px;border-radius:4px;font-size:12px">ชำระแล้ว</span>':'<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px">ยังไม่ชำระ</span>';
+      const due=o.needsRepay?Math.max(0,Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-Number(o.paidAmount||0))):0;
+      const pay=o.paymentStatus==='PAID'?'<span style="background:#E8F5E9;color:#2E7D32;padding:2px 8px;border-radius:4px;font-size:12px">ชำระแล้ว</span>':(o.needsRepay?('<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:4px;font-size:12px">ค้างส่วนต่าง ฿'+due+'</span>'):'<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px">ยังไม่ชำระ</span>');
       const method = (o.paymentMethod==='CASH')
         ? '<span style="background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:4px;font-size:11px">เงินสด</span>'
         : '<span style="background:#E8EAF6;color:#3949AB;padding:2px 6px;border-radius:4px;font-size:11px">พร้อมเพย์</span>';
