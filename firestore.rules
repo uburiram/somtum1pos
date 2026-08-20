@@ -34,11 +34,16 @@ service cloud.firestore {
       let statusOk = request.resource.data.status == resource.data.status
         || (request.resource.data.status == 'Pending'
             && resource.data.status in ['Pending', 'Cooking', 'Ready', 'AwaitingPayment']);
+      // อนุญาต PAID → UNPAID เมื่อสั่งเพิ่ม (ยอดเพิ่มต้องชำระส่วนต่าง)
+      let payOk = request.resource.data.paymentStatus == resource.data.paymentStatus
+        || (resource.data.paymentStatus == 'PAID'
+            && request.resource.data.paymentStatus == 'UNPAID'
+            && request.resource.data.items.size() > resource.data.items.size());
       return request.resource.data.id == resource.data.id
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.queue == resource.data.queue
         && statusOk
-        && request.resource.data.paymentStatus == resource.data.paymentStatus
+        && payOk
         && resource.data.status in ['Pending', 'Cooking', 'Ready', 'AwaitingPayment']
         && request.resource.data.items is list
         && request.resource.data.items.size() > 0
