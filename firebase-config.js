@@ -16,7 +16,7 @@ window.FIREBASE_CONFIG = {
 window.SHOP_ID = "main";
 
 /** Web Push key จาก Firebase Console → Cloud Messaging → Web Push certificates */
-window.FIREBASE_VAPID_KEY = "";
+window.FIREBASE_VAPID_KEY = "BIlfzHZGSXZKPtZjy0MnjQDgp8t1-lQTvHzzas0rFwWLocwIAOkJXm9_mcLQKVYqbaGEaZBuGg_oZyi5CYqnyq4";
 
 /**
  * App Check (reCAPTCHA v3) — แนะนำเปิด
