@@ -175,6 +175,12 @@ const C={
       if(!firebase.apps || !firebase.apps.length){
         firebase.initializeApp(window.FIREBASE_CONFIG);
       }
+      try{
+        if(window.FIREBASE_APPCHECK_SITE_KEY && firebase.appCheck){
+          const appCheck=firebase.appCheck();
+          appCheck.activate(window.FIREBASE_APPCHECK_SITE_KEY, true);
+        }
+      }catch(e){ console.warn('AppCheck', e); }
       db=firebase.firestore();
       // อย่า await persistence — บนมือถือมักค้าง ทำให้หน้าค้างที่กำลังเชื่อมต่อ
       try{ db.enablePersistence({synchronizeTabs:true}).catch(function(){}); }catch(e){}

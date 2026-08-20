@@ -49,6 +49,12 @@ const M={
     if(!c.apiKey||String(c.apiKey).includes('PASTE')){document.getElementById('cfgBanner').classList.add('on');return}
     try{
       if(!firebase.apps || !firebase.apps.length) firebase.initializeApp(c);
+      try{
+        if(window.FIREBASE_APPCHECK_SITE_KEY && firebase.appCheck){
+          const appCheck=firebase.appCheck();
+          appCheck.activate(window.FIREBASE_APPCHECK_SITE_KEY, true);
+        }
+      }catch(e){ console.warn('AppCheck', e); }
       db=firebase.firestore();
       try{ db.enablePersistence({synchronizeTabs:true}).catch(function(){}); }catch(e){}
       shopRef=db.collection('shops').doc(window.SHOP_ID||'main');
@@ -1382,8 +1388,8 @@ const M={
     phone=this.normPhone(phone);
     if(!confirm('ลบสมาชิก '+phone+' ?')) return;
     try{
-      await shopRef.collection('members').doc(phone).delete();
-      toast('ลบสมาชิกแล้ว');
+      await shopRef.collection('members').doc(phone).update({ isActive:false, disabled:true, updatedAt:Date.now() });
+      toast('ปิดสมาชิกแล้ว (ไม่ลบถาวร)');
       this.loadMembersPanel();
     }catch(e){ toast('ลบไม่สำเร็จ: '+(e.message||e)); }
   },
@@ -1457,8 +1463,8 @@ const M={
     code=String(code||'').toUpperCase();
     if(!confirm('ลบคูปองรวม '+code+' ถาวร?')) return;
     try{
-      await shopRef.collection('coupons').doc(code).delete();
-      toast('ลบคูปองแล้ว');
+      await shopRef.collection('coupons').doc(code).update({ isActive:false, disabled:true, updatedAt:Date.now() });
+      toast('ปิดคูปองแล้ว (ไม่ลบถาวร)');
       this.loadCoupons();
       try{ document.getElementById('cpCode').readOnly=false; document.getElementById('cpCode').value=''; }catch(e){}
     }catch(e){ toast('ลบไม่สำเร็จ: '+(e.message||e)); }
@@ -1718,7 +1724,25 @@ const M={
     }
     // ถ้าครัวทำเสร็จแล้ว (Ready) + จ่ายแล้ว ร้านกดเสร็จสมบูรณ์เอง
     // ไม่ auto-complete เพื่อให้ร้านตรวจสลิป/ยืนยันก่อน
-    await shopRef.collection('orders').doc(id).update(payload);
+    // 1) Cloud Function + secret (ปลอดภัยกว่า) ถ้าตั้งค่าแล้ว
+    const base=(window.FUNCTIONS_BASE||'').replace(/\/$/,'');
+    const secret=window.SHOP_OPS_SECRET||'';
+    let updatedViaFn=false;
+    if(base && secret){
+      try{
+        const r=await fetch(base+'/markOrderPaid',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','X-Shop-Secret':secret},
+          body:JSON.stringify({ shopId: window.SHOP_ID||'main', orderId:id, patch:payload })
+        });
+        const j=await r.json().catch(()=>({}));
+        if(r.ok && j.ok) updatedViaFn=true;
+        else console.warn('markOrderPaid CF', j);
+      }catch(e){ console.warn('markOrderPaid CF', e); }
+    }
+    if(!updatedViaFn){
+      await shopRef.collection('orders').doc(id).update(payload);
+    }
     // รีโหลดจาก Firestore เป็นแหล่งจริง
     const snap=await shopRef.collection('orders').doc(id).get();
     const full={id, ...(snap.data()||{})};
@@ -2078,10 +2102,9 @@ const M={
   async closeMenu(id){ if(!confirm('ปิดการขายเมนูนี้? (เปิดใหม่ได้ภายหลัง)'))return; await shopRef.collection('menus').doc(id).update({isActive:false}); toast('ปิดเมนูแล้ว'); this.loadCatalogMenus(); },
   async reopenMenu(id){ await shopRef.collection('menus').doc(id).update({isActive:true}); toast('เปิดขายเมนูแล้ว'); this.loadCatalogMenus(); },
   async deleteMenu(id){
-    if(!confirm('ลบเมนูถาวร?\n(ขั้น 1/2)')) return;
-    if(!confirm('ยืนยันอีกครั้ง ข้อมูลเมนูนี้จะหาย\n(ขั้น 2/2)')) return;
-    await shopRef.collection('menus').doc(id).delete();
-    toast('ลบเมนูถาวรแล้ว'); this.loadCatalogMenus();
+    if(!confirm('ปิดการขายเมนูนี้? (ไม่ลบถาวร — เปิดใหม่ได้)')) return;
+    await shopRef.collection('menus').doc(id).update({ isActive:false, updatedAt:Date.now() });
+    toast('ปิดเมนูแล้ว'); this.loadCatalogMenus();
   },
 
   subCatalog(tab){ this.shopTab(tab==='cat'?'cat':tab==='top'?'top':'spice'); },
@@ -2187,10 +2210,9 @@ const M={
   async closeCat(id){ if(!confirm('ปิดหมวดนี้? (เปิดใหม่ได้)'))return; await shopRef.collection('categories').doc(id).update({isActive:false}); toast('ปิดหมวดแล้ว'); this.renderCatAdmin(); },
   async reopenCat(id){ await shopRef.collection('categories').doc(id).update({isActive:true}); toast('เปิดหมวดแล้ว'); this.renderCatAdmin(); },
   async deleteCat(id){
-    if(!confirm('ลบหมวดถาวร?\n(ขั้น 1/2)')) return;
-    if(!confirm('ยืนยันลบถาวร ขั้น 2/2')) return;
-    await shopRef.collection('categories').doc(id).delete();
-    toast('ลบหมวดแล้ว'); this.renderCatAdmin();
+    if(!confirm('ปิดหมวดนี้? (ไม่ลบถาวร)')) return;
+    await shopRef.collection('categories').doc(id).update({ isActive:false, updatedAt:Date.now() });
+    toast('ปิดหมวดแล้ว'); this.renderCatAdmin();
   },
 
   async renderTopAdmin(){
@@ -2234,10 +2256,9 @@ const M={
   async closeTop(id){ if(!confirm('ปิดท็อปปิ้งนี้?'))return; await shopRef.collection('toppings').doc(id).update({isActive:false}); toast('ปิดแล้ว'); this.renderTopAdmin(); },
   async reopenTop(id){ await shopRef.collection('toppings').doc(id).update({isActive:true}); toast('เปิดแล้ว'); this.renderTopAdmin(); },
   async deleteTop(id){
-    if(!confirm('ลบท็อปปิ้งถาวร?\n(ขั้น 1/2)')) return;
-    if(!confirm('ยืนยันลบถาวร ขั้น 2/2')) return;
-    await shopRef.collection('toppings').doc(id).delete();
-    toast('ลบแล้ว'); this.renderTopAdmin();
+    if(!confirm('ปิดท็อปปิ้งนี้? (ไม่ลบถาวร)')) return;
+    await shopRef.collection('toppings').doc(id).update({ isActive:false, updatedAt:Date.now() });
+    toast('ปิดท็อปปิ้งแล้ว'); this.renderTopAdmin();
   },
 
   async renderSpiceAdmin(){
@@ -2279,10 +2300,9 @@ const M={
   async closeSpice(id){ if(!confirm('ปิดรายการนี้?'))return; await shopRef.collection('spiceLevels').doc(id).update({isActive:false}); toast('ปิดแล้ว'); this.renderSpiceAdmin(); },
   async reopenSpice(id){ await shopRef.collection('spiceLevels').doc(id).update({isActive:true}); toast('เปิดแล้ว'); this.renderSpiceAdmin(); },
   async deleteSpice(id){
-    if(!confirm('ลบระดับเผ็ดถาวร?\n(ขั้น 1/2)')) return;
-    if(!confirm('ยืนยันลบถาวร ขั้น 2/2')) return;
-    await shopRef.collection('spiceLevels').doc(id).delete();
-    toast('ลบแล้ว'); this.renderSpiceAdmin();
+    if(!confirm('ปิดระดับเผ็ดนี้? (ไม่ลบถาวร)')) return;
+    await shopRef.collection('spiceLevels').doc(id).update({ isActive:false, updatedAt:Date.now() });
+    toast('ปิดระดับเผ็ดแล้ว'); this.renderSpiceAdmin();
   },
 
   loadOptionConfigUI(){
