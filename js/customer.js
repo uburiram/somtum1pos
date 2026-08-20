@@ -94,18 +94,34 @@ function checkConfig(){
   return true;
 }
 
-function fileToDataUrl(file,maxSide=800,quality=.62){
+function fileToDataUrl(file,maxSide=480,quality=.55){
+  // Thumbnail / สลิปบนมือถือ — จำกัดขนาดไม่ให้ document Firestore โตเกินจำเป็น
   return new Promise((resolve,reject)=>{
     if(!file)return resolve('');
-    if(file.size>6*1024*1024)return reject(new Error('ไฟล์ใหญ่เกิน 6MB'));
+    if(file.size>5*1024*1024)return reject(new Error('ไฟล์ใหญ่เกิน 5MB'));
     const img=new Image(); const url=URL.createObjectURL(file);
     img.onload=()=>{
-      let w=img.width,h=img.height; const s=Math.min(1,maxSide/Math.max(w,h));
-      w=Math.round(w*s);h=Math.round(h*s);
-      const c=document.createElement('canvas');c.width=w;c.height=h;
-      c.getContext('2d').drawImage(img,0,0,w,h);
-      URL.revokeObjectURL(url);
-      resolve(c.toDataURL('image/jpeg',quality));
+      try{
+        let w=img.width,h=img.height; const s=Math.min(1,maxSide/Math.max(w,h));
+        w=Math.max(1,Math.round(w*s)); h=Math.max(1,Math.round(h*s));
+        const c=document.createElement('canvas');c.width=w;c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h); URL.revokeObjectURL(url);
+        let q=quality;
+        let data=c.toDataURL('image/jpeg',q);
+        const maxChars=140000; // ~100KB+ binary หลัง decode พอสำหรับสลิปอ่านได้
+        let side=maxSide;
+        while(data.length>maxChars && (q>0.35 || side>280)){
+          if(q>0.35) q=Math.max(0.35, q-0.1);
+          else {
+            side=Math.max(280, Math.round(side*0.75));
+            const s2=Math.min(1,side/Math.max(img.width,img.height));
+            const w2=Math.max(1,Math.round(img.width*s2)), h2=Math.max(1,Math.round(img.height*s2));
+            c.width=w2; c.height=h2; c.getContext('2d').drawImage(img,0,0,w2,h2);
+          }
+          data=c.toDataURL('image/jpeg',q);
+        }
+        resolve(data);
+      }catch(e){ URL.revokeObjectURL(url); reject(e); }
     };
     img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('อ่านรูปไม่สำเร็จ'))};
     img.src=url;
@@ -792,10 +808,10 @@ const C={
     const sp=document.getElementById('slipPreview');
     const sm=document.getElementById('slipAutoMsg');
     try{
-      let dataUrl=await fileToDataUrl(file,800,.62);
+      let dataUrl=await fileToDataUrl(file,720,.55);
       // กันเอกสาร Firestore เกิน ~1MB
       if(dataUrl && dataUrl.length > 900000){
-        dataUrl=await fileToDataUrl(file,640,.5);
+        dataUrl=await fileToDataUrl(file,560,.45);
       }
       if(dataUrl && dataUrl.length > 900000){
         toast('รูปสลิปใหญ่เกินไป ลองถ่ายใหม่หรือครอปรูป');

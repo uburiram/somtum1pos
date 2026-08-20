@@ -3,17 +3,34 @@ const money=n=>'฿'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:
 const toast=msg=>{const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';clearTimeout(t._x);t._x=setTimeout(()=>t.style.display='none',2800)};
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 async function sha256(text){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(text)));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
-function fileToDataUrl(file,maxSide=800,quality=.7){
+function fileToDataUrl(file,maxSide=480,quality=.55){
+  // Thumbnail สำหรับมือถือ — ลดขนาดเพื่อไม่ให้ document Firestore ใกล้ 1MB
   return new Promise((resolve,reject)=>{
     if(!file)return resolve('');
     if(file.size>5*1024*1024)return reject(new Error('ไฟล์ใหญ่เกิน 5MB'));
     const img=new Image(); const url=URL.createObjectURL(file);
     img.onload=()=>{
-      let w=img.width,h=img.height; const s=Math.min(1,maxSide/Math.max(w,h));
-      w=Math.round(w*s);h=Math.round(h*s);
-      const c=document.createElement('canvas');c.width=w;c.height=h;
-      c.getContext('2d').drawImage(img,0,0,w,h); URL.revokeObjectURL(url);
-      resolve(c.toDataURL('image/jpeg',quality));
+      try{
+        let w=img.width,h=img.height; const s=Math.min(1,maxSide/Math.max(w,h));
+        w=Math.max(1,Math.round(w*s)); h=Math.max(1,Math.round(h*s));
+        const c=document.createElement('canvas');c.width=w;c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h); URL.revokeObjectURL(url);
+        let q=quality;
+        let data=c.toDataURL('image/jpeg',q);
+        // ถ้ายังใหญ่เกิน ~120KB (base64) ลดคุณภาพ/ขนาดซ้ำ
+        const maxChars=120000;
+        let side=maxSide;
+        while(data.length>maxChars && (q>0.35 || side>240)){
+          if(q>0.35) q=Math.max(0.35, q-0.1);
+          else { side=Math.max(240, Math.round(side*0.75));
+            const s2=Math.min(1,side/Math.max(img.width,img.height));
+            const w2=Math.max(1,Math.round(img.width*s2)), h2=Math.max(1,Math.round(img.height*s2));
+            c.width=w2; c.height=h2; c.getContext('2d').drawImage(img,0,0,w2,h2);
+          }
+          data=c.toDataURL('image/jpeg',q);
+        }
+        resolve(data);
+      }catch(e){ URL.revokeObjectURL(url); reject(e); }
     };
     img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('อ่านรูปไม่สำเร็จ'))};
     img.src=url;
@@ -1188,7 +1205,8 @@ const M={
     return true;
   },
   async deleteCollectionInBatches(colRef, batchSize){
-    batchSize = batchSize || 400;
+    // Firestore จำกัด 500 writes/batch — ใช้ 400 เผื่อปลอดภัย
+    batchSize = Math.min(400, Math.max(1, batchSize || 400));
     let total=0;
     while(true){
       const snap=await colRef.limit(batchSize).get();
@@ -1201,44 +1219,60 @@ const M={
     }
     return total;
   },
+  /** ยกเลิกออเดอร์ที่ยังไม่จบทั้งหมด ทีละชุด (ไม่เกิน 400/batch) จนหมด */
+  async cancelAllActiveOrdersInChunks(){
+    const chunkSize=400;
+    let cancelled=0;
+    // วนจนกว่าจะไม่เหลือออเดอร์ที่ไม่ใช่ Completed/Cancelled
+    for(let guard=0; guard<200; guard++){ // กัน infinite loop: สูงสุด ~80,000 รายการ
+      const snap=await shopRef.collection('orders').limit(chunkSize).get();
+      if(snap.empty) break;
+      const pending=snap.docs.filter(d=>{
+        const st=(d.data()||{}).status;
+        return st!=='Completed' && st!=='Cancelled';
+      });
+      if(!pending.length){
+        // หน้านี้ไม่มี active แล้ว แต่ยังอาจมีหน้าถัดไป — ลบ terminal ไปเรื่อย ๆ นอกฟังก์ชันนี้
+        // ถ้าทั้งหน้าเป็น terminal หมด ออกได้ (delete จะเคลียร์ต่อ)
+        const anyActiveLeft=await shopRef.collection('orders')
+          .where('status','in',['Pending','Cooking','Ready','AwaitingPayment']).limit(1).get();
+        if(anyActiveLeft.empty) break;
+        // มี active นอกหน้านี้ — อัปเดตทีละ chunk จาก query
+        const more=await shopRef.collection('orders')
+          .where('status','in',['Pending','Cooking','Ready','AwaitingPayment']).limit(chunkSize).get();
+        if(more.empty) break;
+        const batch=db.batch();
+        more.docs.forEach(d=>batch.update(d.ref,{
+          status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
+          cancelReason:'รีเซ็ตประวัติโดยร้าน'
+        }));
+        await batch.commit();
+        cancelled += more.size;
+        continue;
+      }
+      // อัปเดตทีละไม่เกิน 400
+      for(let i=0;i<pending.length;i+=chunkSize){
+        const chunk=pending.slice(i, i+chunkSize);
+        const batch=db.batch();
+        chunk.forEach(d=>batch.update(d.ref,{
+          status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
+          cancelReason:'รีเซ็ตประวัติโดยร้าน'
+        }));
+        await batch.commit();
+        cancelled += chunk.length;
+      }
+    }
+    return cancelled;
+  },
   async resetAllHistoryAndQueue(){
     if(!confirm('รีเซ็ตประวัติทั้งหมดและเริ่มรันคิวใหม่จาก A001?\n\n• ลบออเดอร์ทั้งหมด (รวมที่ยังไม่เสร็จ)\n• ลบใบเสร็จทั้งหมด\n• เลขคิวเริ่มที่ 1 ใหม่\n\nกู้คืนไม่ได้')) return;
     if(!confirm('ยืนยันอีกครั้ง: ข้อมูลจะถูกลบถาวร')) return;
     if(!(await this.verifyAdminPin('ใส่ PIN ร้านเพื่อยืนยันการรีเซ็ต'))) return;
     try{
       toast('กำลังรีเซ็ต…');
-      // กฎ Firestore: ลบได้เฉพาะ Completed/Cancelled → ยกเลิกออเดอร์ที่ยังไม่จบก่อน
+      // กฎ Firestore: ลบได้เฉพาะ Completed/Cancelled → ยกเลิกออเดอร์ที่ยังไม่จบก่อน (chunk 400)
       try{
-        const active=await shopRef.collection('orders').limit(400).get();
-        const batchSize=400;
-        let pending=active.docs.filter(d=>{
-          const st=(d.data()||{}).status;
-          return st!=='Completed' && st!=='Cancelled';
-        });
-        while(pending.length){
-          const chunk=pending.slice(0,200);
-          pending=pending.slice(200);
-          const batch=db.batch();
-          chunk.forEach(d=>batch.update(d.ref,{
-            status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
-            cancelReason:'รีเซ็ตประวัติโดยร้าน'
-          }));
-          await batch.commit();
-        }
-        // ดึงอีกรอบถ้ายังมี
-        const more=await shopRef.collection('orders').limit(400).get();
-        const still=more.docs.filter(d=>{
-          const st=(d.data()||{}).status;
-          return st!=='Completed' && st!=='Cancelled';
-        });
-        if(still.length){
-          const batch=db.batch();
-          still.forEach(d=>batch.update(d.ref,{
-            status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
-            cancelReason:'รีเซ็ตประวัติโดยร้าน'
-          }));
-          await batch.commit();
-        }
+        await this.cancelAllActiveOrdersInChunks();
       }catch(e){ console.warn('pre-cancel', e); }
       const nOrders = await this.deleteCollectionInBatches(shopRef.collection('orders'), 400);
       const nReceipts = await this.deleteCollectionInBatches(shopRef.collection('receipts'), 400);
@@ -1971,7 +2005,7 @@ const M={
     document.getElementById('menuFile').onchange=async (e)=>{
       const f=e.target.files[0]; if(!f) return;
       try{
-        this.pendingImageData=await fileToDataUrl(f,800,.7);
+        this.pendingImageData=await fileToDataUrl(f,480,.55);
         document.getElementById('menuPreview').innerHTML=`<img src="${this.pendingImageData}" style="max-width:160px;border-radius:8px">`;
         toast('พร้อมบันทึกรูป');
       }catch(err){ toast(err.message); }
