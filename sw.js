@@ -1,10 +1,16 @@
 /* Somtum POS PWA Service Worker */
-const CACHE = 'somtum-pwa-v66';
+const CACHE = 'somtum-pwa-v67';
 const ASSETS = [
   './',
   './index.html',
   './pos.html',
   './firebase-config.js',
+  './css/customer.css',
+  './css/pos.css',
+  './js/customer.js',
+  './js/customer-sw.js',
+  './js/pos.js',
+  './js/pos-pwa.js',
   './manifest.webmanifest',
   './icon/favicon-32.png',
   './icon/icon-192.png',
