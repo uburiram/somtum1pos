@@ -543,7 +543,8 @@ const C={
     const fab=document.getElementById('fab');
     if(!fab) return;
     const hasActive=!!(this.orderId && this.lastOrder &&
-      this.lastOrder.status!=='Cancelled' && this.lastOrder.status!=='Completed');
+      this.lastOrder.status!=='Cancelled' && this.lastOrder.status!=='Completed' &&
+      (this.orderMode!=='table' || Number(this.lastOrder.tableNo)===Number(this.tableNo)));
     if(c){
       fab.style.display='flex';
       const fc=document.getElementById('fabCount'); if(fc) fc.textContent=c+' รายการ';
@@ -571,12 +572,22 @@ const C={
   openCart(){
     const el=document.getElementById('cartList');
     if(!el) return;
-    // มีคิวยังไม่จบ + ตะกร้าว่าง → เปิดตั๋ว (เฉพาะโต๊ะเดิมหรือโหมดคิว)
+    // มีคิวยังไม่จบ + ตะกร้าว่าง → เปิดตั๋ว (เฉพาะโต๊ะที่สแกนหรือโหมดคิว)
     if((!this.cart || !this.cart.length) && this.orderId && this.lastOrder &&
         this.lastOrder.status!=='Cancelled' && this.lastOrder.status!=='Completed'){
       if(this.orderMode==='table'){
         if(Number(this.lastOrder.tableNo)!==Number(this.tableNo)){
           try{ this.clearOrderState(); }catch(e){}
+          // โหลดตั๋วของโต๊ะที่สแกนอยู่
+          this.restoreTableOrderIfAny().then(()=>{
+            if(this.lastOrder && Number(this.lastOrder.tableNo)===Number(this.tableNo)){
+              this.renderTicket(this.lastOrder);
+              this.show('mTicket');
+            } else {
+              toast('โต๊ะ '+(this.tableNo||'')+' ยังไม่มีออเดอร์');
+            }
+          }).catch(()=>{});
+          return;
         } else {
           this.renderTicket(this.lastOrder);
           this.show('mTicket');
@@ -587,6 +598,24 @@ const C={
         this.show('mTicket');
         return;
       }
+    }
+    // โหมดโต๊ะ + ตะกร้าว่าง + ยังไม่มี order ใน memory → ลองโหลดจากโต๊ะ
+    if((!this.cart || !this.cart.length) && this.orderMode==='table' && this.tableNo && !this.orderId){
+      this.restoreTableOrderIfAny().then(()=>{
+        if(this.lastOrder && Number(this.lastOrder.tableNo)===Number(this.tableNo)
+            && this.lastOrder.status!=='Cancelled' && this.lastOrder.status!=='Completed'){
+          this.renderTicket(this.lastOrder);
+          this.show('mTicket');
+        } else {
+          el.innerHTML='<div style="text-align:center;color:#999;padding:20px">ตะกร้าว่าง</div>';
+          document.getElementById('cartSum').textContent=money(0);
+          this.show('mCart');
+        }
+      }).catch(()=>{
+        el.innerHTML='<div style="text-align:center;color:#999;padding:20px">ตะกร้าว่าง</div>';
+        this.show('mCart');
+      });
+      return;
     }
     if(!this.cart.length) el.innerHTML='<div style="text-align:center;color:#999;padding:20px">ตะกร้าว่าง</div>';
     else el.innerHTML=this.cart.map((i,idx)=>{
@@ -1369,41 +1398,67 @@ const C={
     }catch(e){}
     return null;
   },
-  /** โต๊ะใครโต๊ะมัน — สแกนโต๊ะอื่นบนเครื่องเดียวกันต้องไม่โชว์ตั๋วโต๊ะเดิม */
+  /** โต๊ะใครโต๊ะมัน — สแกนโต๊ะอื่นบนเครื่องเดียวกันต้องโชว์เฉพาะตั๋วโต๊ะนั้น */
   bindTableSession(tableNo){
     const n = tableNo!=null ? Math.floor(Number(tableNo)) : null;
-    const prev = this.tableNo!=null ? Math.floor(Number(this.tableNo)) : null;
-    if(n && prev && n!==prev){
-      // เปลี่ยนโต๊ะ → ตัด session ออเดอร์โต๊ะเก่าออก
-      try{ this.clearOrderState(); }catch(e){}
-      this.cart = this.cart||[];
+    let prevSession=null;
+    try{ prevSession=sessionStorage.getItem('somtum_tableNo'); }catch(e){}
+    const prevSess = prevSession!=null && prevSession!=='' ? Math.floor(Number(prevSession)) : null;
+    const prevMem = this.tableNo!=null ? Math.floor(Number(this.tableNo)) : null;
+    const switched = !!(n && ((prevSess && prevSess!==n) || (prevMem && prevMem!==n)));
+    if(switched){
+      // เปลี่ยนโต๊ะ → ตัด session ออเดอร์โต๊ะเก่าออกทั้งหมด
       try{ if(this.unsub){ this.unsub(); this.unsub=null; } }catch(e){}
       try{ this.hide('mTicket'); }catch(e){}
       try{ this.hide('mPay'); }catch(e){}
-      toast('โต๊ะ '+n+' · ไม่แสดงออเดอร์โต๊ะเดิม');
+      this.orderId=null;
+      this.lastOrder=null;
+      this.slipData='';
+      this._pendingRestoreOrderId=null;
+      // ไม่ล้างตะกร้า — ลูกค้าอาจพกเมนูไปโต๊ะอื่นได้ แต่ตั๋วต้องเป็นโต๊ะที่สแกน
+      try{ sessionStorage.removeItem('somtum_orderId'); sessionStorage.removeItem('somtum_orderTable'); }catch(e){}
+      toast('โต๊ะ '+n);
     }
     this.tableNo = n||null;
     try{
       if(n) sessionStorage.setItem('somtum_tableNo', String(n));
       else sessionStorage.removeItem('somtum_tableNo');
     }catch(e){}
-    // ถ้าเป็นโต๊ะเดิมและมี orderId ของโต๊ะนี้ใน session — คงไว้
+    // คิว restore เฉพาะ orderId ที่ผูกโต๊ะนี้
     try{
-      const savedT=sessionStorage.getItem('somtum_orderTable');
-      const savedId=sessionStorage.getItem('somtum_orderId');
-      if(n && savedT && String(savedT)===String(n) && savedId && !this.orderId){
-        // จะโหลดตั๋วโต๊ะเดิมด้านล่าง
-        this._pendingRestoreOrderId=savedId;
-      } else if(n && savedT && String(savedT)!==String(n)){
-        sessionStorage.removeItem('somtum_orderId');
-        sessionStorage.removeItem('somtum_orderTable');
+      if(n){
+        const savedT=sessionStorage.getItem('somtum_orderTable');
+        const savedId=sessionStorage.getItem('somtum_orderId');
+        if(savedT && String(savedT)===String(n) && savedId){
+          this._pendingRestoreOrderId=savedId;
+        } else if(savedT && String(savedT)!==String(n)){
+          sessionStorage.removeItem('somtum_orderId');
+          sessionStorage.removeItem('somtum_orderTable');
+          this._pendingRestoreOrderId=null;
+        }
       }
     }catch(e){}
   },
   async restoreTableOrderIfAny(){
-    const id=this._pendingRestoreOrderId;
+    if(!shopRef || !this.tableNo) return;
+    let id=this._pendingRestoreOrderId;
     this._pendingRestoreOrderId=null;
-    if(!id || !shopRef || !this.tableNo) return;
+    // แหล่งจริงของโต๊ะ = tables/{tableNo}.activeOrderId (ไม่พึ่ง localStorage โต๊ะอื่น)
+    try{
+      const ts=await shopRef.collection('tables').doc(String(this.tableNo)).get();
+      if(ts.exists){
+        const activeId=(ts.data()||{}).activeOrderId||null;
+        if(activeId) id=activeId;
+        else id=null; // โต๊ะว่าง — ไม่กู้ตั๋วเก่า
+      }
+    }catch(e){ console.warn('table activeOrder', e); }
+    if(!id){
+      // โต๊ะว่าง → เคลียร์ state ถ้ายังค้างออเดอร์โต๊ะอื่น
+      if(this.lastOrder && Number(this.lastOrder.tableNo)!==Number(this.tableNo)){
+        this.orderId=null; this.lastOrder=null;
+      }
+      return;
+    }
     try{
       const snap=await shopRef.collection('orders').doc(id).get();
       if(!snap.exists) return;
@@ -1412,7 +1467,15 @@ const C={
       if(Number(o.tableNo)!==Number(this.tableNo)) return;
       this.orderId=id;
       this.lastOrder={id, ...o};
-      // ไม่ auto เปิดตั๋ว — ให้ลูกค้ากดดูเองหรือหลังสั่งเพิ่ม
+      try{ this.rememberTableOrder(this.lastOrder); }catch(e){}
+      try{ this.watchOrder(id); }catch(e){}
+      // เปิดตั๋วโต๊ะนี้ให้เจ้ามือดูยอดได้ทันที
+      try{
+        this.renderTicket(this.lastOrder);
+        if(!(this.cart && this.cart.length)){
+          this.show('mTicket');
+        }
+      }catch(e){}
     }catch(e){ console.warn('restore table order', e); }
   },
   rememberTableOrder(order){
@@ -1510,6 +1573,20 @@ const C={
     return true;
   },
   async restoreLastOrder(){
+    // โหมดโต๊ะ: ไม่กู้จาก localStorage ทั้งเครื่อง — ใช้ tables/{n}.activeOrderId ผ่าน restoreTableOrderIfAny แล้ว
+    if(this.orderMode==='table' && this.tableNo){
+      // ถ้ามี lastOrder ของโต๊ะอื่นค้างอยู่ → เคลียร์
+      if(this.lastOrder && Number(this.lastOrder.tableNo)!==Number(this.tableNo)){
+        try{ if(this.unsub){ this.unsub(); this.unsub=null; } }catch(e){}
+        this.orderId=null;
+        this.lastOrder=null;
+      }
+      // ถ้ายังไม่มีออเดอร์ของโต๊ะนี้ → โหลดจาก Firestore โต๊ะอีกครั้ง
+      if(!this.orderId || !this.lastOrder){
+        try{ await this.restoreTableOrderIfAny(); }catch(e){}
+      }
+      return;
+    }
     let saved=null;
     try{ saved=JSON.parse(localStorage.getItem('somtum_last_order')||'null'); }catch(e){ saved=null; }
     if(!saved || !saved.id) return;
@@ -1517,6 +1594,14 @@ const C={
     if(saved.status==='Cancelled' || saved.status==='Completed'){
       try{ localStorage.removeItem('somtum_last_order'); }catch(e){}
       return;
+    }
+    // กัน localStorage จากโหมดโต๊ะทับโหมดคิวผิดโต๊ะ
+    if(saved.orderMode==='table' || saved.tableNo!=null){
+      // โหมดคิวปัจจุบันแต่ saved เป็นโต๊ะ → ไม่กู้
+      if(this.orderMode!=='table'){
+        try{ localStorage.removeItem('somtum_last_order'); }catch(e){}
+        return;
+      }
     }
     try{
       const snap=await shopRef.collection('orders').doc(saved.id).get();
@@ -1532,29 +1617,7 @@ const C={
       this.orderId=o.id;
       this.lastOrder=o;
       try{ localStorage.setItem('somtum_last_order', JSON.stringify(o)); }catch(e){}
-      // ติดตาม realtime ต่อ
-      try{ if(this.unsub) this.unsub(); }catch(e){}
-      this.unsub=shopRef.collection('orders').doc(o.id).onSnapshot(snap2=>{
-        if(!snap2.exists) return;
-        if(this.orderId && this.orderId!==snap2.id) return;
-        const d=snap2.data(); if(!d) return;
-        const prevPay=this.lastOrder && this.lastOrder.paymentStatus;
-        const prevSt=this.lastOrder && this.lastOrder.status;
-        this.lastOrder={id:snap2.id, ...d};
-        try{ localStorage.setItem('somtum_last_order', JSON.stringify(this.lastOrder)); }catch(e){}
-        // อัปเดตตั๋วถ้าเปิดอยู่
-        const modal=document.getElementById('mTicket');
-        if(modal && modal.classList.contains('on')){
-          try{ this.renderTicket(this.lastOrder); }catch(e){}
-        }
-        if(prevPay!=='PAID' && d.paymentStatus==='PAID'){
-          toast('ชำระเงินสำเร็จ');
-          try{ this.writeReceipt(this.lastOrder); }catch(e){}
-        }
-        if(prevSt && prevSt!=='Ready' && prevSt!=='Completed' && d.status==='Ready'){
-          try{ this.notifyOrderReady(this.lastOrder); }catch(e){}
-        }
-      });
+      try{ this.attachOrderWatcher(o.id); }catch(e){}
       // แสดงตั๋วคิวหลังรีเฟรช (ถ้าตะกร้าว่าง — ไม่รบกวนตอนกำลังเลือกเมนู)
       try{
         this.renderTicket(o);
@@ -2465,24 +2528,28 @@ const C={
       this.slipData='';
       setTimeout(()=>{ try{ this.uploadSlipToOrder(id, slip).catch(e=>console.warn('bg slip',e)); }catch(e){} }, 150);
     }
-    try{ if(this.unsub) this.unsub(); }catch(e){}
-    this.unsub=shopRef.collection('orders').doc(id).onSnapshot(snap=>{
-      if(!snap.exists) return;
-      if(this.orderId && this.orderId!==snap.id) return;
-      const o=snap.data(); if(!o) return;
-      const prevPay=this.lastOrder && this.lastOrder.paymentStatus;
-      const prevSt=this.lastOrder && this.lastOrder.status;
-      this.lastOrder={id:snap.id,...o};
-      this._lastKnownStatus=o.status;
-      this.renderTicket(this.lastOrder);
-      if(prevPay!=='PAID' && o.paymentStatus==='PAID'){
-        toast('ชำระเงินสำเร็จ');
-        try{ C.writeReceipt({id:snap.id,...o}); }catch(e){}
-      }
-      if(prevSt && prevSt!=='Ready' && prevSt!=='Completed' && o.status==='Ready'){
-        this.notifyOrderReady({id:snap.id,...o});
-      }
-    });
+    try{ this.attachOrderWatcher(id); }catch(e){
+      try{ if(this.unsub) this.unsub(); }catch(e2){}
+      this.unsub=shopRef.collection('orders').doc(id).onSnapshot(snap=>{
+        if(!snap.exists) return;
+        if(this.orderId && this.orderId!==snap.id) return;
+        const o=snap.data(); if(!o) return;
+        if(this.orderMode==='table' && this.tableNo!=null && o.tableNo!=null
+            && Number(o.tableNo)!==Number(this.tableNo)) return;
+        const prevPay=this.lastOrder && this.lastOrder.paymentStatus;
+        const prevSt=this.lastOrder && this.lastOrder.status;
+        this.lastOrder={id:snap.id,...o};
+        this._lastKnownStatus=o.status;
+        this.renderTicket(this.lastOrder);
+        if(prevPay!=='PAID' && o.paymentStatus==='PAID'){
+          toast('ชำระเงินสำเร็จ');
+          try{ C.writeReceipt({id:snap.id,...o}); }catch(e3){}
+        }
+        if(prevSt && prevSt!=='Ready' && prevSt!=='Completed' && o.status==='Ready'){
+          this.notifyOrderReady({id:snap.id,...o});
+        }
+      });
+    }
     this.startPayWatch(id);
     try{ this.ensureNotifyPermission(); }catch(e){}
     this._pendingBenefits=null;
