@@ -27,14 +27,14 @@ window.FIREBASE_APPCHECK_SITE_KEY = "";
  * หลัง deploy Cloud Functions เช่น
  * https://asia-southeast1-pos1-4d72a.cloudfunctions.net
  */
-window.FUNCTIONS_BASE = "";
+window.FUNCTIONS_BASE = "SomtumNaiNeung-2026-Xk9mQ2pL7wR4";
 
 /**
  * ความลับร้านสำหรับ markOrderPaid (ต้องตรงกับ
  * firebase functions:config:set shop.secret="...")
  * ใส่เฉพาะบนเครื่องร้าน / ตอน deploy ไม่ต้องแชร์สาธารณะ
  */
-window.SHOP_OPS_SECRET = "";
+window.SHOP_OPS_SECRET = "SomtumNaiNeung-2026-Xk9mQ2pL7wR4";
 
 /** เลิกใช้ EasySlip ฝั่ง client — ใส่ key ใน Functions config แทน */
 window.EASYSLIP_API_KEY = "";
