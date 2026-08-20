@@ -52,12 +52,77 @@ service cloud.firestore {
       return resource.data.status == 'Completed' || resource.data.status == 'Cancelled';
     }
 
-    // ---- Schema helpers (กันข้อมูลขยะเมื่อยังไม่มี Auth) ----
+    function hasImageSlip(data) {
+      return data is string
+        && data.size() > 40
+        && data.size() <= 200000
+        && data.matches('data:image/.*');
+    }
+
+    // ลูกค้าแนบสลิป: ห้ามเปลี่ยน paymentStatus / ห้าม Completed
+    function canAttachSlip() {
+      return coreFieldsIntact()
+        && request.resource.data.paymentStatus == resource.data.paymentStatus
+        && request.resource.data.paymentStatus != 'PAID'
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.status != 'Completed'
+        && hasImageSlip(request.resource.data.slipData)
+        && request.resource.data.slipStatus in ['PENDING_REVIEW', 'NONE', 'REJECTED', 'AUTO_APPROVED'];
+    }
+
+    // ครัวเปลี่ยนสถานะ: ห้ามแตะการเงิน
+    function canKitchenStatus() {
+      return coreFieldsIntact()
+        && request.resource.data.paymentStatus == resource.data.paymentStatus
+        && request.resource.data.status in ['Pending', 'AwaitingPayment', 'Cooking', 'Ready', 'Cancelled']
+        && resource.data.status in ['Pending', 'AwaitingPayment', 'Cooking', 'Ready', 'Cancelled'];
+    }
+
+    // ตั้ง PAID: ต้องมี paidAt + (เงินสด หรือมีสลิปภาพ หรือโอนที่เคยมีสลิป)
+    function canMarkPaid() {
+      let d = request.resource.data;
+      return coreFieldsIntact()
+        && resource.data.paymentStatus == 'UNPAID'
+        && d.paymentStatus == 'PAID'
+        && d.paidAt is number
+        && d.paidAt > 0
+        && (
+          d.paymentMethod == 'CASH'
+          || d.paymentMethod == 'POINTS'
+          || d.paymentMethod == 'COUPON'
+          || d.paymentMethod in ['PROMPTPAY', 'QR', 'KSHOP']
+          || hasImageSlip(d.slipData)
+          || hasImageSlip(resource.data.slipData)
+        );
+    }
+
+    // เสร็จสมบูรณ์: ต้อง PAID แล้ว
+    function canComplete() {
+      return coreFieldsIntact()
+        && request.resource.data.status == 'Completed'
+        && request.resource.data.paymentStatus == 'PAID'
+        && resource.data.paymentStatus == 'PAID'
+        && resource.data.status in ['Pending', 'Cooking', 'Ready', 'AwaitingPayment'];
+    }
+
+    // อัปเดตทั่วไปที่การเงินไม่เปลี่ยน (ยกเลิก, โน้ต, ฯลฯ)
+    function canSoftUpdate() {
+      return coreFieldsIntact()
+        && request.resource.data.paymentStatus == resource.data.paymentStatus
+        && !(request.resource.data.status == 'Completed' && resource.data.paymentStatus != 'PAID');
+    }
+
+    function canUpdateOrder() {
+      return canAppendTableItems()
+        || canAttachSlip()
+        || canMarkPaid()
+        || canComplete()
+        || canKitchenStatus()
+        || canSoftUpdate();
+    }
+
     function strMax(field, maxLen) {
       return field is string && field.size() <= maxLen;
-    }
-    function optStrMax(field, maxLen) {
-      return !(field is string) || field.size() <= maxLen;
     }
     function numRange(field, lo, hi) {
       return field is number && field >= lo && field <= hi;
@@ -74,7 +139,6 @@ service cloud.firestore {
 
     function isValidMenu() {
       let d = request.resource.data;
-      // imageData จำกัดความยาวใน rules (~150k ตัวอักษร) กัน document บloat
       return d.keys().hasAll(['id', 'name', 'price'])
         && strMax(d.id, 64)
         && strMax(d.name, 120)
@@ -84,16 +148,13 @@ service cloud.firestore {
         && (!('imageData' in d) || (d.imageData is string && d.imageData.size() <= 160000))
         && (!('isActive' in d) || d.isActive is bool)
         && (!('isOut' in d) || d.isOut is bool)
-        && (!('order' in d) || numRange(d.order, 0, 9999))
-        && (!('allowPlara' in d) || d.allowPlara is bool
-            || d.allowPlara in [0, 1] || d.allowPlara in ['0', '1', 'true', 'false']);
+        && (!('order' in d) || numRange(d.order, 0, 9999));
     }
 
     function isValidSpice() {
       let d = request.resource.data;
       return d.keys().hasAll(['id', 'name'])
-        && strMax(d.id, 64)
-        && strMax(d.name, 40)
+        && strMax(d.id, 64) && strMax(d.name, 40)
         && (!('order' in d) || numRange(d.order, 0, 9999))
         && (!('isActive' in d) || d.isActive is bool);
     }
@@ -101,8 +162,7 @@ service cloud.firestore {
     function isValidTopping() {
       let d = request.resource.data;
       return d.keys().hasAll(['id', 'name', 'price'])
-        && strMax(d.id, 64)
-        && strMax(d.name, 80)
+        && strMax(d.id, 64) && strMax(d.name, 80)
         && numRange(d.price, 0, 10000)
         && (!('order' in d) || numRange(d.order, 0, 9999))
         && (!('isActive' in d) || d.isActive is bool);
@@ -138,7 +198,6 @@ service cloud.firestore {
     }
 
     function isValidSettingsDoc() {
-      // จำกัดขนาดฟิลด์สำคัญ ไม่บังคับทุก key (merge บางส่วนได้)
       let d = request.resource.data;
       return (!('shopName' in d) || strMax(d.shopName, 120))
         && (!('promptpay' in d) || strMax(d.promptpay, 32))
@@ -163,40 +222,40 @@ service cloud.firestore {
       match /categories/{id} {
         allow read: if true;
         allow create, update: if isValidCategory();
-        allow delete: if true;
+        // ห้ามลบถาวร — ใช้ isActive:false แทน
+        allow delete: if false;
       }
       match /menus/{id} {
         allow read: if true;
         allow create, update: if isValidMenu();
-        allow delete: if true;
+        allow delete: if false;
       }
       match /spiceLevels/{id} {
         allow read: if true;
         allow create, update: if isValidSpice();
-        allow delete: if true;
+        allow delete: if false;
       }
       match /toppings/{id} {
         allow read: if true;
         allow create, update: if isValidTopping();
-        allow delete: if true;
+        allow delete: if false;
       }
 
       match /orders/{id} {
         allow read: if true;
         allow create: if isValidNewOrder();
-        allow update: if coreFieldsIntact() || canAppendTableItems();
+        allow update: if canUpdateOrder();
         allow delete: if isTerminalOrder();
       }
 
       match /tables/{tableId} {
         allow read: if true;
         allow create, update: if isValidTable();
-        allow delete: if true;
+        allow delete: if false;
       }
 
       match /receipts/{id} {
         allow read: if true;
-        // ใบเสร็จ: จำกัดขนาดข้อมูลโดยรวมผ่าน field ที่เป็น string ยาว
         allow write: if request.resource.data.keys().size() <= 40;
       }
 
@@ -209,13 +268,13 @@ service cloud.firestore {
       match /members/{phone} {
         allow read: if true;
         allow create, update: if isValidMember(phone);
-        allow delete: if true;
+        allow delete: if false;
       }
 
       match /coupons/{id} {
         allow read: if true;
         allow create, update: if isValidCoupon(id);
-        allow delete: if true;
+        allow delete: if false;
       }
     }
   }

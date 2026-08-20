@@ -16,8 +16,25 @@ window.SHOP_ID = "main";
 /** Web Push key จาก Firebase Console → Cloud Messaging → Web Push certificates */
 window.FIREBASE_VAPID_KEY = "";
 
-/** หลัง deploy functions เช่น https://asia-southeast1-pos1-4d72a.cloudfunctions.net */
+/**
+ * App Check (reCAPTCHA v3) — แนะนำเปิด
+ * Firebase Console → App Check → ลงทะเบียนเว็บแอป → คัดลอก site key
+ * ว่าง = ยังไม่เปิด (ระบบยังใช้ได้)
+ */
+window.FIREBASE_APPCHECK_SITE_KEY = "";
+
+/**
+ * หลัง deploy Cloud Functions เช่น
+ * https://asia-southeast1-pos1-4d72a.cloudfunctions.net
+ */
 window.FUNCTIONS_BASE = "";
+
+/**
+ * ความลับร้านสำหรับ markOrderPaid (ต้องตรงกับ
+ * firebase functions:config:set shop.secret="...")
+ * ใส่เฉพาะบนเครื่องร้าน / ตอน deploy ไม่ต้องแชร์สาธารณะ
+ */
+window.SHOP_OPS_SECRET = "";
 
 /** เลิกใช้ EasySlip ฝั่ง client — ใส่ key ใน Functions config แทน */
 window.EASYSLIP_API_KEY = "";
