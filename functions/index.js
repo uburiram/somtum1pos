@@ -104,13 +104,14 @@ exports.verifySlip = functions.region(REGION).https.onRequest(async (req, res) =
     const result = await verifyWithEasySlip(buf, order.total);
 
     if (result.ok) {
+      const expectAmt = Number(order.total || 0);
       const already = Number(order.paidAmount || 0);
       const paidNow = result.paid != null ? Number(result.paid) : expectAmt;
       const totalPaid = order.needsRepay
-        ? Math.max(Number(order.total || 0), already + (isNaN(paidNow) ? expectAmt : paidNow))
-        : (Number(order.total) || 0);
+        ? Math.max(expectAmt, already + (isNaN(paidNow) ? expectAmt : paidNow))
+        : expectAmt;
       await ref.update({
-        slipData: slipData.slice(0, 900000), // กันเอกสารใหญ่เกิน
+        slipData: String(slipData).slice(0, 200000), // ตรงกับ Firestore rules hasImageSlip (<=200000)
         slipStatus: 'APPROVED',
         paymentStatus: 'PAID',
         paidAmount: totalPaid,
@@ -126,11 +127,12 @@ exports.verifySlip = functions.region(REGION).https.onRequest(async (req, res) =
 
     // ไม่ผ่าน → รอร้านตรวจมือ
     await ref.update({
-      slipData: slipData.slice(0, 900000),
+      slipData: String(slipData).slice(0, 200000),
       slipStatus: 'PENDING_REVIEW',
       slipAutoReason: result.reason || 'รอตรวจมือ'
     });
-    return res.json({ ok: false, pendingManual: true, msg: result.reason || 'รอร้านตรวจสอบสลิป' });
+    // ส่งทั้ง pendingManual และ needManual เพื่อให้ client เวอร์ชันเก่า/ใหม่รองรับ
+    return res.json({ ok: false, pendingManual: true, needManual: true, msg: result.reason || 'รอร้านตรวจสอบสลิป' });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ ok: false, error: e.message || String(e) });
