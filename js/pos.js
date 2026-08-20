@@ -94,7 +94,12 @@ const M={
       try{
         if(window.FIREBASE_APPCHECK_SITE_KEY && firebase.appCheck){
           const appCheck=firebase.appCheck();
-          appCheck.activate(window.FIREBASE_APPCHECK_SITE_KEY, true);
+          // รองรับทั้ง string key (compat) และ ReCaptchaV3Provider
+          if(firebase.appCheck.ReCaptchaV3Provider){
+            appCheck.activate(new firebase.appCheck.ReCaptchaV3Provider(window.FIREBASE_APPCHECK_SITE_KEY), true);
+          }else{
+            appCheck.activate(window.FIREBASE_APPCHECK_SITE_KEY, true);
+          }
         }
       }catch(e){ console.warn('AppCheck', e); }
       db=firebase.firestore();
