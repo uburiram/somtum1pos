@@ -187,3 +187,57 @@ exports.onOrderCreate = functions.region(REGION).firestore
     await Promise.all(stale.map((t) => db.collection('shops').doc(shopId).collection('fcmTokens').doc(t).delete().catch(() => {})));
     return null;
   });
+
+
+/**
+ * ร้านยืนยันรับเงิน (ต้องมี X-Shop-Secret ตรงกับ functions config shop.secret)
+ * ใช้ Admin SDK ข้าม client rules — ปลอดภัยกว่าให้ client ตั้ง PAID เอง
+ */
+exports.markOrderPaid = functions.region(REGION).https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Shop-Secret');
+  if (req.method === 'OPTIONS') return res.status(204).send('');
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
+
+  try {
+    let secret = '';
+    try {
+      secret = (functions.config().shop && functions.config().shop.secret) || process.env.SHOP_SECRET || '';
+    } catch (e) {
+      secret = process.env.SHOP_SECRET || '';
+    }
+    const got = req.get('x-shop-secret') || req.get('X-Shop-Secret') || '';
+    if (!secret || got !== secret) {
+      return res.status(403).json({ ok: false, error: 'forbidden' });
+    }
+
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    const shopId = body.shopId || 'main';
+    const orderId = body.orderId;
+    const patch = body.patch || {};
+    if (!orderId) return res.status(400).json({ ok: false, error: 'orderId required' });
+
+    const ref = db.collection('shops').doc(shopId).collection('orders').doc(orderId);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ ok: false, error: 'order not found' });
+    const order = snap.data() || {};
+
+    const update = {
+      paymentStatus: 'PAID',
+      paidAt: Number(patch.paidAt) || Date.now(),
+      paidAmount: patch.paidAmount != null ? Number(patch.paidAmount) : Number(order.total || 0),
+      changeAmount: Number(patch.changeAmount || 0),
+      paymentMethod: patch.paymentMethod || order.paymentMethod || 'CASH',
+      updatedAt: Date.now()
+    };
+    if (order.status === 'AwaitingPayment') update.status = 'Pending';
+    if (patch.status) update.status = patch.status;
+
+    await ref.update(update);
+    return res.json({ ok: true, orderId, paymentStatus: 'PAID' });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ ok: false, error: e.message || String(e) });
+  }
+});
