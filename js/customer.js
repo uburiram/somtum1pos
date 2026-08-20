@@ -1607,6 +1607,18 @@ const C={
         cancelReason:'ลูกค้ายกเลิกตอนรอคิวทำ',
         benefitsRefunded: true
       });
+      // โหมดโต๊ะ: ปลด activeOrderId เพื่อให้สั่งใหม่/โต๊ะว่างทันที
+      try{
+        const tNo = o.tableNo!=null ? o.tableNo : this.tableNo;
+        if((o.orderMode==='table' || this.orderMode==='table') && tNo){
+          await shopRef.collection('tables').doc(String(tNo)).set({
+            activeOrderId:null,
+            status:'free',
+            callStaff:false,
+            updatedAt:Date.now()
+          },{merge:true});
+        }
+      }catch(e){ console.warn('free table after cancel', e); }
       this.lastOrder=Object.assign({}, o, {status:'Cancelled', cancelledBy:'customer', benefitsRefunded:true});
       this.renderTicket(this.lastOrder);
       toast('ยกเลิกโดยลูกค้าแล้ว');
@@ -2274,21 +2286,24 @@ const C={
             // คง kitchenSortAt เดิม (หรือใช้ createdAt ถ้ายังไม่มี)
             if(existing.kitchenSortAt==null) patch.kitchenSortAt=Number(existing.createdAt||Date.now());
           }
-          // สั่งเพิ่มทับออเดอร์ที่ชำระแล้ว → เปิดค้างชำระใหม่ (ห้ามกินฟรีส่วนเพิ่ม)
+          // สั่งเพิ่มทับออเดอร์ที่ชำระแล้ว → เปิดค้างชำระเฉพาะส่วนต่าง (เก็บยอดที่จ่ายแล้วไว้)
           if(String(existing.paymentStatus||'')==='PAID' && !fullyCovered){
-            patch.paymentStatus='UNPAID';
-            patch.paidAt=0;
-            patch.paidAmount=0;
-            patch.changeAmount=0;
-            patch.autoPaid=false;
-            patch.paidByDiscount=false;
-            patch.slipStatus='NONE';
-            patch.slipData='';
-            patch.paymentMethod='PROMPTPAY';
-            patch.needsRepay=true;
-            patch.reopenPayAt=Date.now();
-          } else if(fullyCovered && String(existing.paymentStatus||'')!=='PAID'){
-            // รอบนี้ส่วนลดครอบคลุมรายการใหม่ทั้งก้อน + ของเดิมยังไม่จ่าย → ไม่ force PAID ทั้งโต๊ะ
+            const alreadyPaid = Number(existing.paidAmount!=null ? existing.paidAmount : (existing.total||0));
+            const due = Math.max(0, newTotal - alreadyPaid);
+            patch.paymentStatus = due>0 ? 'UNPAID' : 'PAID';
+            // คง paidAmount เดิมไว้ — ร้านเก็บเฉพาะส่วนต่าง
+            patch.paidAmount = alreadyPaid;
+            patch.changeAmount = 0;
+            patch.autoPaid = false;
+            patch.paidByDiscount = false;
+            if(due>0){
+              patch.slipStatus = 'NONE';
+              patch.slipData = '';
+              patch.paymentMethod = 'PROMPTPAY';
+              patch.needsRepay = true;
+              patch.repayAmount = due;
+              patch.reopenPayAt = Date.now();
+            }
           }
           if(contactPhone && !existing.contactPhone) patch.contactPhone=contactPhone;
           if(memberPhone && !existing.memberPhone){
@@ -2709,7 +2724,7 @@ const C={
         <div style="border-top:1px dashed #ccc;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700">
           <span>รวม</span><span style="color:var(--p)">${money(o.total)}</span>
         </div>
-        <div style="margin-top:6px;font-size:13px">ชำระ: ${paid?(o.paymentMethod==='CASH'?'เงินสด (ที่ร้าน)':'พร้อมเพย์'):(o.needsRepay?'มีรายการเพิ่ม · รอชำระส่วนต่าง':'รอชำระ (QR / เงินสดที่ร้าน)')} · ${paid?'ชำระแล้ว':'ยังไม่ชำระ'}</div>
+        <div style="margin-top:6px;font-size:13px">ชำระ: ${paid?(o.paymentMethod==='CASH'?'เงินสด (ที่ร้าน)':'พร้อมเพย์'):(o.needsRepay?('มีรายการเพิ่ม · รอชำระส่วนต่าง ฿'+Number(o.repayAmount!=null?o.repayAmount:Math.max(0,Number(o.total||0)-Number(o.paidAmount||0)))):'รอชำระ (QR / เงินสดที่ร้าน)')} · ${paid?'ชำระแล้ว':'ยังไม่ชำระ'}</div>
         ${o.slipStatus&&o.slipStatus!=='NONE'?`<div style="font-size:12px;color:#555">สลิป: ${esc(o.slipStatus)}</div>`:''}
       </div>
       <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;

@@ -604,7 +604,8 @@ const M={
       <div style="font-size:12px;color:#666;margin-top:6px;text-align:center">ขั้นตอนปัจจุบัน: <strong>${({AwaitingPayment:'รอคิวทำ',Pending:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:(o.cancelledBy==='customer'?'ยกเลิกโดยลูกค้า':(o.cancelledBy==='shop'?'ยกเลิกโดยร้าน':'ยกเลิก'))})[o.status]||o.status}</strong></div>
       ${!locked?`<button class="btn btn-d btn-block" style="margin-top:10px" onclick="M.cancelOrder('${esc(o.id)}')">ยกเลิกออเดอร์</button>`:''}
       ${!locked && o.paymentStatus!=='PAID'?`<div style="margin-top:12px">
-        <label class="lbl">รับเงินสด</label><input type="number" id="cashIn" placeholder="จำนวนที่รับ" inputmode="decimal">
+        ${o.needsRepay?`<div style="margin-bottom:8px;padding:8px;background:#FFF3E0;border-radius:8px;font-size:13px;color:#E65100;text-align:center">มีรายการเพิ่ม · เก็บส่วนต่าง <strong>฿${Math.max(0,Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-Number(o.paidAmount||0)))}</strong><div style="font-size:11px;color:#888;margin-top:2px">จ่ายแล้ว ฿${Number(o.paidAmount||0)} / รวม ฿${Number(o.total||0)}</div></div>`:''}
+        <label class="lbl">รับเงินสด</label><input type="number" id="cashIn" placeholder="จำนวนที่รับ" inputmode="decimal" value="${o.needsRepay?Math.max(0,Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-Number(o.paidAmount||0))):''}">
         <button class="btn btn-g btn-block" style="margin-top:8px" onclick="M.payCash('${esc(o.id)}')">ยืนยันรับเงินสด</button>
         <button class="btn btn-i btn-block" style="margin-top:8px" onclick="M.payPP('${esc(o.id)}')">ยืนยันรับโอนแล้ว</button>
       </div>`:''}`;
@@ -692,6 +693,18 @@ const M={
       status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
       benefitsRefunded: true
     });
+    // ปลดโต๊ะถ้าออเดอร์ผูกโต๊ะ
+    try{
+      const tNo = order && order.tableNo;
+      if(tNo!=null && tNo!==''){
+        const tref=shopRef.collection('tables').doc(String(tNo));
+        const ts=await tref.get();
+        const td=ts.exists?ts.data():{};
+        if(td.activeOrderId===id){
+          await tref.set({activeOrderId:null, status:'free', callStaff:false, updatedAt:Date.now()},{merge:true});
+        }
+      }
+    }catch(e){ console.warn('free table', e); }
     toast('ยกเลิกโดยร้านแล้ว');
     (function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})();
   },
@@ -1724,7 +1737,9 @@ const M={
       paidAt,
       paidAmount: patch.paidAmount!=null ? Number(patch.paidAmount) : Number(cur&&cur.total||0),
       changeAmount: Number(patch.changeAmount||0),
-      paymentMethod: patch.paymentMethod||'CASH'
+      paymentMethod: patch.paymentMethod||'CASH',
+      needsRepay:false,
+      repayAmount:0
     }, patch);
     if(payload.paidAmount==null || isNaN(payload.paidAmount)) payload.paidAmount=Number(cur&&cur.total||0);
     // จ่ายเงินแล้ว — ไม่ย้อนสถานะครัว
@@ -1799,15 +1814,32 @@ const M={
     const o=this.orders.find(x=>x.id===id); if(!o) return;
     const cashEl=document.getElementById('cashIn');
     const paid=Number(cashEl && cashEl.value);
-    if(isNaN(paid)||paid<o.total){toast('เงินไม่พอ');return}
-    await this.markPaid(id,{paymentMethod:'CASH',paidAmount:paid,changeAmount:paid-o.total});
+    const already=Number(o.paidAmount||0);
+    const due=Math.max(0, Number(o.total||0) - (o.needsRepay?already:0));
+    const need = o.needsRepay ? due : Number(o.total||0);
+    if(isNaN(paid)||paid<need){toast('เงินไม่พอ (ต้องอย่างน้อย ฿'+need+')');return}
+    // ยอดชำระสะสม = ของเดิม + ที่รับรอบนี้ (หรือรับเต็ม)
+    const totalPaid = o.needsRepay ? (already + paid) : paid;
+    await this.markPaid(id,{
+      paymentMethod:'CASH',
+      paidAmount: totalPaid,
+      changeAmount: o.needsRepay ? Math.max(0, paid-need) : Math.max(0, paid-Number(o.total||0)),
+      needsRepay:false,
+      repayAmount:0
+    });
     this.openDetail(id);
   },
   async payPP(id){
     const o=this.orders.find(x=>x.id===id); if(!o) return;
+    const already=Number(o.paidAmount||0);
+    const totalPaid = o.needsRepay ? Number(o.total||0) : Number(o.total||0);
     await this.markPaid(id,{
-      paymentMethod:'PROMPTPAY', paidAmount:o.total, changeAmount:0,
-      slipStatus: o.slipStatus==='PENDING_REVIEW'?'APPROVED':(o.slipStatus||'NONE')
+      paymentMethod:'PROMPTPAY',
+      paidAmount: totalPaid,
+      changeAmount:0,
+      slipStatus: o.slipStatus==='PENDING_REVIEW'?'APPROVED':(o.slipStatus||'NONE'),
+      needsRepay:false,
+      repayAmount:0
     });
     this.openDetail(id);
   },
