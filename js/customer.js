@@ -322,6 +322,7 @@ const C={
     }).join('');
   },
   openProduct(id){
+    if(this.isOpen===false){ toast('อยู่นอกเวลาทำการ · ขออภัยในความไม่สะดวก'); return; }
     const m=this.menus.find(x=>x.id===id); if(!m||m.isOut)return;
     // หมวด "กินคู่" = ไม่มีตัวเลือกเพิ่ม แค่จำนวน
     const cat=(this.cats||[]).find(c=>c.id===m.catId);
@@ -1604,6 +1605,12 @@ const C={
       toast('ชำระเงินแล้ว ยกเลิกไม่ได้ · ติดต่อร้านโดยตรง');
       return;
     }
+    // เคยชำระบางส่วน / สั่งเพิ่มค้างส่วนต่าง → ห้ามลูกค้ายกเลิกเอง (ป้องกันยกเลิกทั้งบิลที่จ่ายแล้ว)
+    const alreadyPaid=Number(o.paidAmount||0);
+    if(o.needsRepay || alreadyPaid>0){
+      toast('ออเดอร์นี้มีการชำระเงินแล้วบางส่วน · ยกเลิกไม่ได้ ติดต่อร้านโดยตรง');
+      return;
+    }
     if(o.status!=='Pending' && o.status!=='AwaitingPayment'){
       toast('คิวนี้ไม่ได้อยู่ขั้นรอคิวทำแล้ว · ยกเลิกไม่ได้ กรุณาติดต่อร้านโดยตรง');
       return;
@@ -2746,7 +2753,7 @@ const C={
     try{
       const cbox=document.getElementById('custCancelBox');
       if(cbox){
-        const canCancel = !cancelled && !paid && (o.status==='Pending' || o.status==='AwaitingPayment');
+        const canCancel = !cancelled && !paid && !o.needsRepay && !(Number(o.paidAmount||0)>0) && (o.status==='Pending' || o.status==='AwaitingPayment');
         if(cancelled){
           const by=o.cancelledBy==='customer'?'ลูกค้า':(o.cancelledBy==='shop'?'ร้าน':'—');
           cbox.innerHTML='<div style="font-size:13px;color:#C62828;text-align:center;padding:8px;background:#FFEBEE;border-radius:8px;font-weight:600">ยกเลิกโดย'+by+'</div>';

@@ -660,6 +660,22 @@ const M={
     const idx=this.orders.findIndex(x=>x.id===id);
     if(idx>=0) this.orders[idx]=Object.assign({}, this.orders[idx], patch);
 
+    // เสร็จสมบูรณ์ + โหมดโต๊ะ → ปลดโต๊ะอัตโนมัติ (ร้านไม่ต้องกดเคลียร์เอง)
+    if(status==='Completed'){
+      try{
+        const tNo = cur && cur.tableNo;
+        if(tNo!=null && tNo!==''){
+          const tref=shopRef.collection('tables').doc(String(tNo));
+          const ts=await tref.get();
+          const td=ts.exists?ts.data():{};
+          if(!td.activeOrderId || td.activeOrderId===id){
+            await tref.set({activeOrderId:null, status:'free', callStaff:false, updatedAt:Date.now()},{merge:true});
+            toast('เสร็จสมบูรณ์ · ปลดโต๊ะ '+tNo+' แล้ว');
+          }
+        }
+      }catch(e){ console.warn('auto free table on complete', e); }
+    }
+
     if(status==='Ready'){
       // ทำเสร็จแล้ว → ปิดการ์ดทันที ออกจากครัว
       const paid = (cur && cur.paymentStatus==='PAID') || patch.paymentStatus==='PAID';
