@@ -558,7 +558,7 @@ const C={
     if(!this.cart.length) el.innerHTML='<div style="text-align:center;color:#999;padding:20px">ตะกร้าว่าง</div>';
     else el.innerHTML=this.cart.map((i,idx)=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty} (${money(t.total)})`).join(', ');
-      const meta=[i.spiceName, i.plara, tops, i.note?('หมายเหตุ: '+i.note):''].filter(Boolean).join(' · ');
+      const meta=[i.spiceName, i.plara, tops, i.note?('หมายเหตุ: '+esc(i.note)):''].filter(Boolean).join(' · ');
       return `<div class="ci"><div><div style="font-weight:600">${esc(i.name)} × ${i.qty}</div>
         ${meta?`<div style="font-size:13px;color:#777">${meta}</div>`:''}
         <button style="color:var(--d);font-size:13px;margin-top:4px" onclick="C.rmCart(${idx})">ลบ</button></div>
@@ -622,7 +622,7 @@ const C={
     }
     el.innerHTML=cart.map(i=>{
       const tops=(i.toppings||[]).map(t=>esc(t.name)+(t.qty>1?(' x'+t.qty):'')).join(', ');
-      const meta=[i.spiceName, i.plara, tops, i.note?('หมายเหตุ: '+i.note):''].filter(Boolean).join(' · ');
+      const meta=[i.spiceName, i.plara, tops, i.note?('หมายเหตุ: '+esc(i.note)):''].filter(Boolean).join(' · ');
       return '<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px dashed #eee">'+
         '<div style="text-align:left"><div style="font-weight:600">'+esc(i.name)+' × '+i.qty+'</div>'+
         (meta?'<div style="font-size:12px;color:#777;margin-top:2px">'+meta+'</div>':'')+
@@ -1650,10 +1650,10 @@ const C={
         return;
       }
       this.member=md;
-      if(st) st.innerHTML='<span style="color:#2E7D32">✓ สมาชิก: '+this.escName(this.member)+'</span>';
+      if(st) st.innerHTML='<span style="color:#2E7D32">✓ สมาชิก: '+esc(this.escName(this.member))+'</span>';
       if(box) box.style.display='block';
       const info=document.getElementById('memInfo');
-      if(info) info.innerHTML='<strong>'+this.escName(this.member)+'</strong><br>แต้มคงเหลือ <strong style="color:var(--p)">'+Number(this.member.points||0)+'</strong> แต้ม';
+      if(info) info.innerHTML='<strong>'+esc(this.escName(this.member))+'</strong><br>แต้มคงเหลือ <strong style="color:var(--p)">'+Number(this.member.points||0)+'</strong> แต้ม';
       const ph=document.getElementById('memPointsHint');
       if(ph) ph.textContent='ใช้ได้สูงสุดตามยอดออเดอร์ · 1 แต้ม = ส่วนลด 1 บาท';
       const up=document.getElementById('memPointsUse'); if(up) up.value='0';
@@ -1672,6 +1672,7 @@ const C={
       try{ this.recalcPayTotal(); }catch(e2){}
     }
   },
+  /** ชื่อสมาชิกดิบ (ไม่ escape) — ใช้เก็บลง Firestore เป็น memberName; หน้าจอที่แสดงผลต้องครอบด้วย esc() เอง */
   escName(m){
     return (String(m.firstName||'')+' '+String(m.lastName||'')).trim()||m.phone||'';
   },
