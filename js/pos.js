@@ -509,10 +509,11 @@ const M={
       });
     }
     const active=this.orders.filter(o=>o.status!=='Completed'&&o.status!=='Cancelled');
-    document.getElementById('sPending').textContent=active.filter(o=>['Pending','AwaitingPayment'].includes(o.status)).length;
-    document.getElementById('sCooking').textContent=active.filter(o=>o.status==='Cooking').length;
-    document.getElementById('sReady').textContent=active.filter(o=>o.status==='Ready').length;
-    document.getElementById('sUnpaid').textContent=active.filter(o=>o.paymentStatus!=='PAID' && o.status==='Ready').length;
+    const setTxt=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+    setTxt('sPending', active.filter(o=>['Pending','AwaitingPayment'].includes(o.status)).length);
+    setTxt('sCooking', active.filter(o=>o.status==='Cooking').length);
+    setTxt('sReady', active.filter(o=>o.status==='Ready').length);
+    setTxt('sUnpaid', active.filter(o=>o.paymentStatus!=='PAID' && o.status==='Ready').length);
     const n=active.length;
     const badge=document.getElementById('orderBadge');
     if(badge){ if(n>0){badge.textContent=n;badge.classList.remove('hide')} else badge.classList.add('hide'); }
@@ -589,7 +590,7 @@ const M={
     } else {
       statusBtns=`<div style="margin-top:12px;padding:12px;background:#E8F5E9;border-radius:10px;text-align:center;font-weight:600;color:#2E7D32">ออเดอร์${o.status==='Completed'?'เสร็จสิ้น':'ถูกยกเลิก'}แล้ว — ไม่สามารถย้อนขั้นตอนได้</div>`;
     }
-    document.getElementById('detailBody').innerHTML=`
+    (document.getElementById('detailBody')||{}).innerHTML=`
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <button class="btn btn-o btn-sm" onclick="(function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})()">← กลับ</button>
         <h2 style="color:var(--p)">คิว ${esc(o.queue)}</h2><div style="width:50px"></div>
@@ -607,7 +608,7 @@ const M={
         <button class="btn btn-g btn-block" style="margin-top:8px" onclick="M.payCash('${esc(o.id)}')">ยืนยันรับเงินสด</button>
         <button class="btn btn-i btn-block" style="margin-top:8px" onclick="M.payPP('${esc(o.id)}')">ยืนยันรับโอนแล้ว</button>
       </div>`:''}`;
-    document.getElementById('detailModal').classList.add('on');
+    try{document.getElementById('detailModal').classList.add('on');}catch(e){}
   },
   async setStatus(id,status){
     const cur=this.orders.find(x=>x.id===id);
@@ -1850,8 +1851,8 @@ const M={
         ${r.changeAmount?`<div style="font-size:13px">ทอน: ${money(r.changeAmount)}</div>`:''}
       </div>`;
     this._lastReceiptHtml = receiptHtml;
-    document.getElementById('detailModal').classList.add('on');
-    document.getElementById('detailBody').innerHTML=`
+    try{document.getElementById('detailModal').classList.add('on');}catch(e){}
+    (document.getElementById('detailBody')||{}).innerHTML=`
       <button class="btn btn-o btn-sm" onclick="(function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})()">← ปิด</button>
       <div style="border:1px dashed #ccc;border-radius:12px;margin-top:12px;overflow:hidden">${receiptHtml}</div>
       <button class="btn btn-g btn-block" style="margin-top:12px" onclick="M.printReceiptNow()">🖨️ พิมพ์ใบเสร็จ</button>`;
