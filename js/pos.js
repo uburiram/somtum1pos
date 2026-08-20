@@ -523,8 +523,10 @@ const M={
     if(!list.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#888">ไม่มีออเดอร์</div>'; try{ this.renderTablesBoard(); }catch(e){} return}
     g.innerHTML=list.map(o=>{
       let prev=(o.items||[]).map(i=>i.name+' x'+i.qty).join(', '); if(prev.length>40) prev=prev.slice(0,40)+'…';
-      const due=o.needsRepay?Math.max(0,Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-Number(o.paidAmount||0))):0;
-      const pay=o.paymentStatus==='PAID'?'<span style="background:#E8F5E9;color:#2E7D32;padding:2px 8px;border-radius:4px;font-size:12px">ชำระแล้ว</span>':(o.needsRepay?('<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:4px;font-size:12px">ค้างส่วนต่าง ฿'+due+'</span>'):'<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px">ยังไม่ชำระ</span>');
+      const alreadyPaid=Number(o.paidAmount||0);
+      const isPartial=o.paymentStatus!=='PAID' && (o.needsRepay || alreadyPaid>0);
+      const due=isPartial?Math.max(0, Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-alreadyPaid)):0;
+      const pay=o.paymentStatus==='PAID'?'<span style="background:#E8F5E9;color:#2E7D32;padding:2px 8px;border-radius:4px;font-size:12px">ชำระแล้ว</span>':(isPartial?('<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:4px;font-size:12px">ค้างส่วนต่าง ฿'+due+'</span>'):'<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px">ยังไม่ชำระ</span>');
       const method = (o.paymentMethod==='CASH')
         ? '<span style="background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:4px;font-size:11px">เงินสด</span>'
         : '<span style="background:#E8EAF6;color:#3949AB;padding:2px 6px;border-radius:4px;font-size:11px">พร้อมเพย์</span>';
@@ -598,15 +600,19 @@ const M={
       </div>
       <div style="text-align:center;margin-bottom:12px"><div style="color:#777">ยอดรวม</div>
         <div style="font-size:2rem;font-weight:700;color:var(--p)">${money(o.total)}</div>
-        <div style="margin-top:6px">${o.paymentMethod==='CASH'?'<span style="background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">เงินสด</span>':'<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">พร้อมเพย์</span>'}${o.paymentStatus==='PAID'?'<span style="color:var(--g);font-weight:700">✓ ชำระแล้ว</span>':'<span style="color:var(--d);font-weight:700">ยังไม่ชำระ</span>'} · <span style="font-weight:600">${o.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์ / QR'}</span></div>
+        <div style="margin-top:6px">${o.paymentMethod==='CASH'?'<span style="background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">เงินสด</span>':'<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">พร้อมเพย์</span>'}${o.paymentStatus==='PAID'?'<span style="color:var(--g);font-weight:700">✓ ชำระแล้ว</span>':((o.needsRepay||Number(o.paidAmount||0)>0)?'<span style="color:#E65100;font-weight:700">ค้างส่วนต่าง ฿'+Math.max(0,Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-Number(o.paidAmount||0)))+'</span>':'<span style="color:var(--d);font-weight:700">ยังไม่ชำระ</span>')} · <span style="font-weight:600">${o.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์ / QR'}</span></div>
+        ${(o.paymentStatus!=='PAID' && (o.needsRepay || Number(o.paidAmount||0)>0))?`<div style="margin-top:10px;padding:12px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:10px;text-align:center">
+          <div style="font-size:13px;color:#E65100;font-weight:700">มีรายการเพิ่ม · เก็บส่วนต่าง <span style="font-size:1.25rem">฿${Math.max(0,Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-Number(o.paidAmount||0)))}</span></div>
+          <div style="font-size:13px;color:#555;margin-top:6px">จ่ายแล้ว <strong style="color:#2E7D32">฿${Number(o.paidAmount||0)}</strong> · รวมบิล <strong>฿${Number(o.total||0)}</strong></div>
+        </div>`:''}
       </div>
       ${items}${slipBlock}
       ${statusBtns}
       <div style="font-size:12px;color:#666;margin-top:6px;text-align:center">ขั้นตอนปัจจุบัน: <strong>${({AwaitingPayment:'รอคิวทำ',Pending:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:(o.cancelledBy==='customer'?'ยกเลิกโดยลูกค้า':(o.cancelledBy==='shop'?'ยกเลิกโดยร้าน':'ยกเลิก'))})[o.status]||o.status}</strong></div>
       ${!locked?`<button class="btn btn-d btn-block" style="margin-top:10px" onclick="M.cancelOrder('${esc(o.id)}')">ยกเลิกออเดอร์</button>`:''}
       ${!locked && o.paymentStatus!=='PAID'?`<div style="margin-top:12px">
-        ${o.needsRepay?`<div style="margin-bottom:8px;padding:8px;background:#FFF3E0;border-radius:8px;font-size:13px;color:#E65100;text-align:center">มีรายการเพิ่ม · เก็บส่วนต่าง <strong>฿${Math.max(0,Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-Number(o.paidAmount||0)))}</strong><div style="font-size:11px;color:#888;margin-top:2px">จ่ายแล้ว ฿${Number(o.paidAmount||0)} / รวม ฿${Number(o.total||0)}</div></div>`:''}
-        <label class="lbl">รับเงินสด</label><input type="number" id="cashIn" placeholder="จำนวนที่รับ" inputmode="decimal" value="${o.needsRepay?Math.max(0,Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-Number(o.paidAmount||0))):''}">
+        ${(o.needsRepay||Number(o.paidAmount||0)>0)?`<div style="margin-bottom:8px;padding:10px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:8px;font-size:13px;color:#E65100;text-align:center">เก็บส่วนต่าง <strong style="font-size:1.15rem">฿${Math.max(0,Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-Number(o.paidAmount||0)))}</strong><div style="font-size:12px;color:#555;margin-top:4px">จ่ายแล้ว ฿${Number(o.paidAmount||0)} / รวมบิล ฿${Number(o.total||0)}</div></div>`:''}
+        <label class="lbl">รับเงินสด ${(o.needsRepay||Number(o.paidAmount||0)>0)?'(ส่วนต่าง)':''}</label><input type="number" id="cashIn" placeholder="จำนวนที่รับ" inputmode="decimal" value="${(o.needsRepay||Number(o.paidAmount||0)>0)?Math.max(0,Number(o.repayAmount!=null?o.repayAmount:Number(o.total||0)-Number(o.paidAmount||0))):''}">
         <button class="btn btn-g btn-block" style="margin-top:8px" onclick="M.payCash('${esc(o.id)}')">ยืนยันรับเงินสด</button>
         <button class="btn btn-i btn-block" style="margin-top:8px" onclick="M.payPP('${esc(o.id)}')">ยืนยันรับโอนแล้ว</button>
       </div>`:''}`;
@@ -1832,15 +1838,16 @@ const M={
     const cashEl=document.getElementById('cashIn');
     const paid=Number(cashEl && cashEl.value);
     const already=Number(o.paidAmount||0);
-    const due=Math.max(0, Number(o.total||0) - (o.needsRepay?already:0));
-    const need = o.needsRepay ? due : Number(o.total||0);
+    const isPartial=!!(o.needsRepay || (o.paymentStatus!=='PAID' && already>0));
+    const due=Math.max(0, Number(o.total||0) - (isPartial?already:0));
+    const need = isPartial ? due : Number(o.total||0);
     if(isNaN(paid)||paid<need){toast('เงินไม่พอ (ต้องอย่างน้อย ฿'+need+')');return}
     // ยอดชำระสะสม = ของเดิม + ที่รับรอบนี้ (หรือรับเต็ม)
-    const totalPaid = o.needsRepay ? (already + paid) : paid;
+    const totalPaid = isPartial ? (already + paid) : paid;
     await this.markPaid(id,{
       paymentMethod:'CASH',
       paidAmount: totalPaid,
-      changeAmount: o.needsRepay ? Math.max(0, paid-need) : Math.max(0, paid-Number(o.total||0)),
+      changeAmount: isPartial ? Math.max(0, paid-need) : Math.max(0, paid-Number(o.total||0)),
       needsRepay:false,
       repayAmount:0
     });
@@ -1848,11 +1855,10 @@ const M={
   },
   async payPP(id){
     const o=this.orders.find(x=>x.id===id); if(!o) return;
-    const already=Number(o.paidAmount||0);
-    const totalPaid = o.needsRepay ? Number(o.total||0) : Number(o.total||0);
+    // รับโอนแล้ว = ถือว่ายอดครบทั้งบิล
     await this.markPaid(id,{
       paymentMethod:'PROMPTPAY',
-      paidAmount: totalPaid,
+      paidAmount: Number(o.total||0),
       changeAmount:0,
       slipStatus: o.slipStatus==='PENDING_REVIEW'?'APPROVED':(o.slipStatus||'NONE'),
       needsRepay:false,
