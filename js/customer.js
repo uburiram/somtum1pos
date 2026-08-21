@@ -2258,6 +2258,18 @@ const C={
     try{ await this.recalcPayTotal(); }catch(e){}
     const md=this.memDiscount||{};
     const contactPhone=this.normPhone((document.getElementById('memPhone')||{}).value||'');
+    // ถ้าใส่เบอร์แล้วแต่ยังไม่ได้กดค้นหาสมาชิก — ตรวจอัตโนมัติก่อนสร้างออเดอร์
+    if(contactPhone.length>=9 && !(this.member&&this.member.phone) && this.memberSystemEnabled!==false){
+      try{
+        const snap=await shopRef.collection('members').doc(contactPhone).get();
+        if(snap.exists){
+          const md={phone:contactPhone, ...snap.data()};
+          if(md.status!=='cancelled' && md.active!==false){
+            this.member=md;
+          }
+        }
+      }catch(e){ console.warn('auto member lookup', e); }
+    }
     // ถ้าแอดมินปิดระบบสมาชิก — ไม่ใช้แต้ม/คูปอง (เก็บแค่เบอร์ติดต่อ)
     const memOn=this.memberSystemEnabled!==false;
     const memberPhone=(memOn && this.member&&this.member.phone)||'';
@@ -2867,22 +2879,40 @@ const C={
       const note=i.note?`<div style="font-size:12px;color:#E65100">📝 ${esc(i.note)}</div>`:'';
       return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span>${esc(i.name)} × ${i.qty}${spice}${pl}${tops?`<div style="font-size:12px;color:#777">+ ${tops}</div>`:''}${note}</span><span>${money(i.total)}</span></div>`;
     }).join('');
+    const orderCode=String(o.id||'').slice(0,12);
+    const memberName=String(o.memberName||'').trim();
+    const memberLine=memberName
+      ? ('<div style="font-size:15px;font-weight:600;color:#6A1B9A;margin-top:4px">'+esc(memberName)+'</div>')
+      : '';
     document.getElementById('ticketBody').innerHTML=`
       <h2 style="color:${cancelled?'var(--d)':paid?'var(--g)':'var(--p)'};margin-bottom:8px">${cancelled?'<i class="fa-solid fa-xmark"></i> ยกเลิกแล้ว':paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> รอชำระเงิน / รอรับออเดอร์'}</h2>
       <div>คิวของคุณ</div>
       <div class="huge">${esc(o.queue)}</div>
+      ${memberLine}
+      <div style="font-size:12px;color:#888;margin-top:4px">รหัสการสั่งซื้อ: <strong style="color:#333">${esc(orderCode)}</strong></div>
       <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
       <div id="custCancelBox" style="margin:8px 0"></div>
       <div id="queueEtaBox" style="display:none;margin:10px 0;padding:12px;background:#FFF3E0;border-radius:12px;border:1px solid #FFE0B2;text-align:center"></div>
       <div class="receipt" id="receiptBox">
         <h3>${esc(this.shopName)}</h3><div style="text-align:center;font-size:13px;font-weight:600;color:${paid?'var(--g)':'var(--p)'}">${paid?'ใบเสร็จรับเงิน':'ใบสั่งอาหาร (ยังไม่ชำระ)'}</div>
+        <div style="text-align:center;font-size:12px;color:#888">รหัสการสั่งซื้อ: <strong>${esc(orderCode)}</strong></div>
         <div style="text-align:center;font-size:13px;color:#666;margin-bottom:8px">${new Date(o.createdAt||Date.now()).toLocaleString('th-TH')}</div>
         ${lines}
         <div style="border-top:1px dashed #ccc;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700">
           <span>รวม</span><span style="color:var(--p)">${money(o.total)}</span>
         </div>
         <div style="margin-top:6px;font-size:13px">ชำระ: ${paid?(o.paymentMethod==='CASH'?'เงินสด (ที่ร้าน)':'พร้อมเพย์'):(function(){const cv=calcPaymentCover(o);return cv.due>0?('มีรายการเพิ่ม · รอชำระส่วนต่าง ฿'+cv.due):'รอชำระ (QR / เงินสดที่ร้าน)';})()} · ${paid?'ชำระแล้ว':'ยังไม่ชำระ'}</div>
+        ${paid && o.paymentMethod==='CASH' && Number(o.changeAmount||0)>0 ? `<div style="font-size:13px;color:#1565C0">เงินทอน: ${money(o.changeAmount)}</div>` : ''}
         ${o.slipStatus&&o.slipStatus!=='NONE'?`<div style="font-size:12px;color:#555">สลิป: ${esc(o.slipStatus)}</div>`:''}
+        ${(o.status==='Completed' && paid) ? (
+          (Number(o.pointsUsed||0)>0 || Number(o.couponDisc||0)>0 || o.couponCode || Number(o.pointsEarned||0)>0)
+            ? `<div style="margin-top:10px;padding:8px;background:#F3E5F5;border-radius:8px;font-size:12px;color:#6A1B9A">
+                ${Number(o.pointsUsed||0)>0?('<div>ใช้แต้ม: '+Number(o.pointsUsed)+' แต้ม (−฿'+Number(o.pointsUsed)+')</div>'):''}
+                ${Number(o.couponDisc||0)>0||o.couponCode?('<div>คูปอง'+(o.couponCode?(' '+esc(o.couponCode)):'')+': −฿'+Number(o.couponDisc||0)+'</div>'):''}
+                ${Number(o.pointsEarned||0)>0?('<div>ได้รับแต้มครั้งนี้: +'+Number(o.pointsEarned)+' แต้ม</div>'):''}
+              </div>`
+            : ''
+        ) : ''}
       </div>
       <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;
     document.getElementById('btnPrintReceipt').style.display = paid ? 'inline-flex' : 'none';

@@ -744,20 +744,39 @@ const M={
     } else {
       statusBtns=`<div style="margin-top:12px;padding:12px;background:#E8F5E9;border-radius:10px;text-align:center;font-weight:600;color:#2E7D32">ออเดอร์${o.status==='Completed'?'เสร็จสิ้น':'ถูกยกเลิก'}แล้ว — ไม่สามารถย้อนขั้นตอนได้</div>`;
     }
+    const orderCode=String(o.id||'').slice(0,12);
+    const changeAmt=Math.max(0, Number(o.changeAmount||0));
+    const memberPhone=String(o.memberPhone||o.contactPhone||'').trim();
+    const memberName=String(o.memberName||'').trim();
+    const changeBox=(o.paymentStatus==='PAID' && o.paymentMethod==='CASH' && changeAmt>0)
+      ? `<div style="margin-top:12px;padding:14px;background:#E3F2FD;border:2px solid #1976D2;border-radius:12px;text-align:center">
+          <div style="font-size:13px;color:#1565C0;font-weight:600">เงินทอน</div>
+          <div style="font-size:2rem;font-weight:800;color:#0D47A1;letter-spacing:1px">${money(changeAmt)}</div>
+          <div style="font-size:12px;color:#555;margin-top:4px">รับมา ${money(Number(o.paidAmount||0)+changeAmt)} · ยอดบิล ${money(o.total)}</div>
+        </div>` : '';
+    const memberHeader=memberPhone
+      ? `<div style="margin:8px 0;padding:8px 10px;background:#F3E5F5;border-radius:8px;font-size:13px;text-align:center">
+          <div style="font-weight:700;color:#6A1B9A">สมาชิก ${memberName?esc(memberName)+' · ':''}${esc(memberPhone)}</div>
+          ${Number(o.pointsUsed||0)>0||Number(o.couponDisc||0)>0||o.couponCode?`<div style="margin-top:4px;color:#555">ใช้แล้ว: ${Number(o.pointsUsed||0)>0?('แต้ม '+Number(o.pointsUsed)+' บาท'):''}${Number(o.couponDisc||0)>0||o.couponCode?(Number(o.pointsUsed||0)>0?' · ':'')+('คูปอง '+(o.couponCode||'')+' -฿'+Number(o.couponDisc||0)):''}</div>`:''}
+        </div>` : '';
     (document.getElementById('detailBody')||{}).innerHTML=`
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <button class="btn btn-o btn-sm" onclick="(function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})()">← กลับ</button>
         <h2 style="color:var(--p)">คิว ${esc(o.queue)}</h2><div style="width:50px"></div>
       </div>
+      <div style="text-align:center;font-size:12px;color:#888;margin-bottom:6px">รหัสการสั่งซื้อ: <strong style="color:#333;letter-spacing:0.5px">${esc(orderCode)}</strong></div>
+      ${memberHeader}
       <div style="text-align:center;margin-bottom:12px"><div style="color:#777">ยอดรวม</div>
         <div style="font-size:2rem;font-weight:700;color:var(--p)">${money(o.total)}</div>
         <div style="margin-top:6px">${o.paymentMethod==='CASH'?'<span style="background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">เงินสด</span>':'<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">พร้อมเพย์</span>'}${o.paymentStatus==='PAID'?'<span style="color:var(--g);font-weight:700">✓ ชำระแล้ว</span>':(cov.due>0?'<span style="color:#E65100;font-weight:700">ค้างส่วนต่าง ฿'+cov.due+'</span>':'<span style="color:var(--d);font-weight:700">ยังไม่ชำระ</span>')} · <span style="font-weight:600">${o.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์ / QR'}</span></div>
+        ${changeBox}
         ${(o.paymentStatus!=='PAID' && cov.due>0)?`<div style="margin-top:10px;padding:12px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:10px;text-align:center">
           <div style="font-size:13px;color:#E65100;font-weight:700">มีรายการเพิ่ม · เก็บส่วนต่าง <span style="font-size:1.25rem">฿${cov.due}</span></div>
           <div style="font-size:13px;color:#555;margin-top:6px">จ่ายแล้ว <strong style="color:#2E7D32">฿${cov.covered}</strong> · รวมบิล <strong>฿${cov.billTotal}</strong></div>
         </div>`:''}
       </div>
       ${items}${slipBlock}
+      <div id="posMemberBox" style="display:none"></div>
       ${statusBtns}
       <div style="font-size:12px;color:#666;margin-top:6px;text-align:center">ขั้นตอนปัจจุบัน: <strong>${({AwaitingPayment:'รอคิวทำ',Pending:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:(o.cancelledBy==='customer'?'ยกเลิกโดยลูกค้า':(o.cancelledBy==='shop'?'ยกเลิกโดยร้าน':'ยกเลิก'))})[o.status]||o.status}</strong></div>
       ${!locked?`<button class="btn btn-d btn-block" style="margin-top:10px" onclick="M.cancelOrder('${esc(o.id)}')">ยกเลิกออเดอร์</button>`:''}
@@ -768,6 +787,10 @@ const M={
         <button class="btn btn-i btn-block" style="margin-top:8px" onclick="M.payPP('${esc(o.id)}')">ยืนยันรับโอนแล้ว</button>
       </div>`:''}`;
     try{document.getElementById('detailModal').classList.add('on');}catch(e){}
+    // โหลดข้อมูลสมาชิก (แต้ม/คูปอง) ให้ร้านใช้ส่วนลดแทนลูกค้า
+    if(memberPhone && o.paymentStatus!=='PAID' && !locked){
+      try{ this.loadPosMemberPanel(o); }catch(e){ console.warn('loadPosMemberPanel', e); }
+    }
   },
   async setStatus(id,status){
     const cur=this.orders.find(x=>x.id===id);
@@ -2018,6 +2041,149 @@ const M={
     };
     await shopRef.collection('receipts').doc(order.id).set(receipt,{merge:true});
   },
+  /** โหลดแต้ม/คูปองของสมาชิกในหน้า detail ให่ร้านใช้แทนลูกค้า */
+  async loadPosMemberPanel(order){
+    const box=document.getElementById('posMemberBox');
+    if(!box) return;
+    const phone=String(order.memberPhone||order.contactPhone||'').trim();
+    if(!phone){ box.style.display='none'; return; }
+    box.style.display='block';
+    box.innerHTML='<div style="padding:10px;background:#F3E5F5;border-radius:10px;margin:10px 0;font-size:13px;text-align:center;color:#666">กำลังโหลดข้อมูลสมาชิก…</div>';
+    try{
+      const snap=await shopRef.collection('members').doc(phone).get();
+      if(!snap.exists){
+        box.innerHTML='<div style="padding:10px;background:#FFF8E1;border-radius:10px;margin:10px 0;font-size:13px;text-align:center">เบอร์ '+esc(phone)+' ยังไม่ใช่สมาชิก</div>';
+        return;
+      }
+      const m={phone, ...snap.data()};
+      if(m.status==='cancelled' || m.active===false){
+        box.innerHTML='<div style="padding:10px;background:#FFEBEE;border-radius:10px;margin:10px 0;font-size:13px;text-align:center">สมาชิกถูกยกเลิกสิทธิ์</div>';
+        return;
+      }
+      const pts=Math.max(0, Math.floor(Number(m.points||0)));
+      const pcs=Array.isArray(m.personalCoupons)?m.personalCoupons.filter(c=>c&&!c.used):[];
+      const alreadyPts=Math.max(0, Number(order.pointsUsed||0));
+      const alreadyCp=String(order.couponCode||'');
+      let cpOpts=pcs.map(c=>{
+        const lab=(c.type==='percent'?(c.value+'%'):('฿'+c.value))+(c.note?(' · '+c.note):'');
+        return '<option value="'+esc(c.id)+'">'+esc(lab)+'</option>';
+      }).join('');
+      box.innerHTML=`
+        <div style="padding:12px;background:#F3E5F5;border:1px solid #CE93D8;border-radius:12px;margin:10px 0">
+          <div style="font-weight:700;color:#6A1B9A;margin-bottom:6px">🎁 สิทธิ์สมาชิก (ร้านใช้แทนลูกค้า)</div>
+          <div style="font-size:13px;margin-bottom:8px">แต้มคงเหลือ: <strong style="font-size:1.15rem;color:#6A1B9A">${pts}</strong> แต้ม (1 แต้ม = 1 บาท)</div>
+          ${pcs.length?('<div style="font-size:12px;color:#555;margin-bottom:8px">คูปองส่วนตัวที่ยังใช้ได้: '+pcs.length+' ใบ</div>'):'<div style="font-size:12px;color:#888;margin-bottom:8px">ไม่มีคูปองส่วนตัว</div>'}
+          <div style="font-size:12px;color:#C62828;margin-bottom:8px">⚠ ใช้แต้มหรือคูปองอย่างใดอย่างหนึ่งเท่านั้น (ใช้พร้อมกันไม่ได้)</div>
+          <label class="lbl">ใช้แต้มลด (บาท)</label>
+          <input type="number" id="posPtsUse" inputmode="numeric" min="0" max="${pts}" value="0" placeholder="0" style="margin-bottom:8px">
+          <label class="lbl">หรือเลือกคูปองส่วนตัว</label>
+          <select id="posCouponSel" style="width:100%;padding:10px;border-radius:8px;border:1px solid #ccc;margin-bottom:8px">
+            <option value="">— ไม่ใช้คูปอง —</option>
+            ${cpOpts}
+          </select>
+          <button type="button" class="btn btn-p btn-block" onclick="M.applyPosMemberDiscount('${esc(order.id)}')">ใช้ส่วนลดสมาชิก</button>
+          ${alreadyPts||alreadyCp?('<div style="margin-top:8px;font-size:12px;color:#2E7D32">ออเดอร์นี้ใช้แล้ว: '+(alreadyPts?('แต้ม '+alreadyPts):'')+(alreadyCp?((alreadyPts?' · ':'')+'คูปอง '+alreadyCp):'')+'</div>'):''}
+        </div>`;
+      // mutual exclusive UI
+      const ptsEl=document.getElementById('posPtsUse');
+      const cpEl=document.getElementById('posCouponSel');
+      if(ptsEl && cpEl){
+        ptsEl.addEventListener('input', function(){
+          if(Number(ptsEl.value)>0) cpEl.value='';
+        });
+        cpEl.addEventListener('change', function(){
+          if(cpEl.value) ptsEl.value='0';
+        });
+      }
+    }catch(e){
+      console.warn(e);
+      box.innerHTML='<div style="padding:10px;color:#C62828;font-size:13px">โหลดสมาชิกไม่สำเร็จ</div>';
+    }
+  },
+
+  /** ร้านใช้แต้มหรือคูปองแทนลูกค้า (ใช้พร้อมกันไม่ได้) */
+  async applyPosMemberDiscount(orderId){
+    const o=this.orders.find(x=>x.id===orderId);
+    if(!o || o.paymentStatus==='PAID'){ toast('ออเดอร์นี้ชำระแล้ว'); return; }
+    const phone=String(o.memberPhone||o.contactPhone||'').trim();
+    if(!phone){ toast('ไม่มีเบอร์สมาชิก'); return; }
+    const wantPts=Math.max(0, Math.floor(Number((document.getElementById('posPtsUse')||{}).value||0)));
+    const wantCpId=String((document.getElementById('posCouponSel')||{}).value||'').trim();
+    if(wantPts>0 && wantCpId){
+      toast('ใช้แต้มกับคูปองพร้อมกันไม่ได้ · เลือกอย่างใดอย่างหนึ่ง');
+      return;
+    }
+    if(wantPts<=0 && !wantCpId){
+      toast('ระบุแต้มหรือเลือกคูปอง');
+      return;
+    }
+    try{
+      await db.runTransaction(async tx=>{
+        const oref=shopRef.collection('orders').doc(orderId);
+        const os=await tx.get(oref);
+        if(!os.exists) throw new Error('ไม่พบออเดอร์');
+        const cur=os.data()||{};
+        if(cur.paymentStatus==='PAID') throw new Error('ชำระแล้ว');
+        const mref=shopRef.collection('members').doc(phone);
+        const ms=await tx.get(mref);
+        if(!ms.exists) throw new Error('ไม่พบสมาชิก');
+        const md=ms.data()||{};
+        const bal=Math.max(0, Math.floor(Number(md.points||0)));
+        // คำนวณ subtotal จากรายการ (ก่อนส่วนลด)
+        const itemsSum=(cur.items||[]).reduce((s,i)=>s+Number(i.total||0),0);
+        const prevDisc=Math.max(0, Number(cur.discountAmount||0));
+        const base=Math.max(0, itemsSum); // ใช้ยอดรายการเป็นฐาน
+        let pointsUsed=0, couponDisc=0, couponCode='', personalCouponId='', pointsDisc=0;
+        if(wantPts>0){
+          pointsUsed=Math.min(wantPts, bal, Math.floor(base));
+          pointsDisc=pointsUsed;
+          // ตัดแต้ม
+          tx.update(mref, { points: bal - pointsUsed, updatedAt: Date.now() });
+        } else if(wantCpId){
+          const pcs=Array.isArray(md.personalCoupons)?md.personalCoupons:[];
+          const idx=pcs.findIndex(c=>c && String(c.id)===wantCpId && !c.used);
+          if(idx<0) throw new Error('ไม่พบคูปองหรือใช้แล้ว');
+          const c=pcs[idx];
+          if(c.type==='percent'){
+            couponDisc=Math.round(base * (Number(c.value||0)/100));
+          } else {
+            couponDisc=Math.min(base, Math.max(0, Number(c.value||0)));
+          }
+          couponCode=String(c.code||c.note||c.id||'PERSONAL');
+          personalCouponId=String(c.id);
+          const next=pcs.slice();
+          next[idx]=Object.assign({}, c, {used:true, usedAt:Date.now(), usedOrderId:orderId});
+          tx.update(mref, { personalCoupons: next, updatedAt: Date.now() });
+        }
+        const discountAmount=Math.min(base, pointsDisc + couponDisc);
+        const newTotal=Math.max(0, base - discountAmount);
+        tx.update(oref, {
+          discountAmount,
+          pointsUsed: Number(cur.pointsUsed||0)+pointsUsed,
+          pointsDisc: Number(cur.pointsDisc||0)+pointsDisc,
+          couponDisc: Number(cur.couponDisc||0)+couponDisc,
+          couponCode: couponCode || cur.couponCode || '',
+          personalCouponId: personalCouponId || cur.personalCouponId || '',
+          total: newTotal,
+          memberPhone: phone,
+          memberName: cur.memberName || ((md.firstName||'')+' '+(md.lastName||'')).trim(),
+          updatedAt: Date.now()
+        });
+      });
+      toast('ใช้ส่วนลดสมาชิกแล้ว');
+      // refresh local + detail
+      const snap=await shopRef.collection('orders').doc(orderId).get();
+      if(snap.exists){
+        const idx=this.orders.findIndex(x=>x.id===orderId);
+        if(idx>=0) this.orders[idx]=Object.assign({}, this.orders[idx], snap.data());
+      }
+      this.openDetail(orderId);
+    }catch(e){
+      console.error(e);
+      toast('ใช้ส่วนลดไม่สำเร็จ: '+(e.message||e));
+    }
+  },
+
   async payCash(id){
     const o=this.orders.find(x=>x.id===id); if(!o) return;
     const cashEl=document.getElementById('cashIn');
@@ -2044,6 +2210,11 @@ const M={
       needsRepay:false,
       repayAmount:0
     });
+    if(changeAmount > 0){
+      toast('รับเงินสด ฿'+tendered+' · เงินทอน ฿'+changeAmount);
+    } else {
+      toast('รับเงินสดครบ ฿'+tendered);
+    }
     this.openDetail(id);
   },
   async payPP(id){
