@@ -36,32 +36,15 @@ function getEasySlipKey() {
 
 /** แปลง dataURL → Buffer */
 function dataUrlToBuffer(dataUrl) {
-  if (!dataUrl || typeof dataUrl !== 'string') {
-    throw new Error('slipData ต้องเป็น string');
-  }
-  const m = dataUrl.match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=\s]+)$/i);
-  if (!m) throw new Error('slipData ต้องเป็น data URL รูปภาพ JPEG/PNG/WebP ที่ถูกต้อง');
+  const m = String(dataUrl || '').match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=\s]+)$/i);
+  if (!m) throw new Error('slipData ต้องเป็น data URL รูปภาพ JPEG/PNG/WebP');
   const raw = m[2].replace(/\s+/g, '');
-  if (raw.length > 190000) throw new Error('slipData ใหญ่เกินกำหนด (max 190k chars)');
+  // กัน payload ขนาดใหญ่เกินกว่าที่ระบบจะเก็บใน Firestore ได้อย่างปลอดภัย
+  if (raw.length > 190000) throw new Error('slipData ใหญ่เกินกำหนด');
   const buffer = Buffer.from(raw, 'base64');
-  if (!buffer.length || buffer.length > 140000) throw new Error('ขนาดรูปสลิปไม่ถูกต้องหลัง decode');
+  if (!buffer.length || buffer.length > 140000) throw new Error('ขนาดรูปสลิปไม่ถูกต้อง');
   return buffer;
 }
-
-// ในฟังก์ชัน exports.verifySlip ให้แทนที่ส่วนคำนวณ expectAmt ด้วย:
-    const billTotal = Math.max(0, Number(order.total || 0));
-    const already = Math.max(0, Number(order.paidAmount || 0));
-    let expectAmt = billTotal;
-    
-    if (order.needsRepay) {
-      expectAmt = Number(order.repayAmount != null ? order.repayAmount : (billTotal - already));
-    }
-    
-    expectAmt = Math.max(0, Math.round(expectAmt * 100) / 100);
-    
-    if (expectAmt <= 0) {
-      return res.status(409).json({ ok: false, error: 'ออเดอร์นี้ไม่มียอดที่ต้องชำระผ่านสลิป หรือชำระครบแล้ว' });
-    }
 
 function extractVerifiedAmount(json) {
   const candidates = [
