@@ -3105,4 +3105,4 @@ const C={
   }
 };
 C.init();
-try{ if(C.isLineBrowser && C.isLineBrowser()){ const h=document.getElementById('ppQRHint'); if(h) h.style.display='block'; } }catch(e){}
+try{ if(typeof C.isLineBrowser === 'function' && C.isLineBrowser()){ const h=document.getElementById('ppQRHint'); if(h) h.style.display='block'; } }catch(e){}
