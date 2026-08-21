@@ -2149,33 +2149,101 @@ const C={
   },
 
   async awardMemberPoints(order){
-    if(!order || !order.memberPhone || order.pointsAwarded) return;
-    // สะสมแต้มจากยอดขายจริง (total หลังส่วนลด) ไม่ใช่เงินสดที่รับเกิน
+    if(!order || order.pointsAwarded) return;
+    // ใช้ memberPhone หรือ contactPhone (กรณีบันทึกเป็นเบอร์ติดต่อแต่เป็นสมาชิก)
+    const phone=this.normPhone(order.memberPhone||order.contactPhone||'');
+    if(!phone || phone.length<9) return;
+    // สะสมแต้มจากยอดขายจริง (total หลังส่วนลด) — ครบ 100 บาท = 1 แต้ม
     const sale=Math.max(0, Number(order.total!=null ? order.total : 0));
     const earn=Math.floor(sale/100);
-    const phone=this.normPhone(order.memberPhone);
-    if(!phone) return;
     try{
       await db.runTransaction(async tx=>{
         const oref=shopRef.collection('orders').doc(order.id);
         const os=await tx.get(oref);
-        if(!os.exists || (os.data()||{}).pointsAwarded) return;
+        if(!os.exists) return;
+        const od=os.data()||{};
+        if(od.pointsAwarded) return;
+        // ยืนยันว่าเป็นสมาชิกจริง
         const mref=shopRef.collection('members').doc(phone);
         const ms=await tx.get(mref);
         if(!ms.exists){
+          // ไม่ใช่สมาชิก — ทำเครื่องหมายแล้วจบ (ไม่แอดแต้ม)
           tx.update(oref,{ pointsAwarded:true, pointsEarned:0 });
           return;
         }
         const md=ms.data()||{};
+        if(md.status==='cancelled' || md.active===false){
+          tx.update(oref,{ pointsAwarded:true, pointsEarned:0, memberPhone: phone });
+          return;
+        }
+        // แอดแต้ม (แม้ earn=0 ก็ mark แล้วเพื่อไม่ให้รันซ้ำ)
         tx.update(mref,{
           points: Number(md.points||0)+earn,
           totalSpent: Number(md.totalSpent||0)+sale,
           orderCount: Number(md.orderCount||0)+1,
           updatedAt: Date.now()
         });
-        tx.update(oref,{ pointsAwarded:true, pointsEarned:earn });
+        tx.update(oref,{
+          pointsAwarded:true,
+          pointsEarned:earn,
+          memberPhone: od.memberPhone||phone,
+          memberName: od.memberName || (String(md.firstName||'')+' '+String(md.lastName||'')).trim() || phone
+        });
       });
+      // sync local
+      if(this.lastOrder && this.lastOrder.id===order.id){
+        this.lastOrder.pointsAwarded=true;
+        this.lastOrder.pointsEarned=earn;
+        if(!this.lastOrder.memberPhone) this.lastOrder.memberPhone=phone;
+      }
     }catch(e){ console.warn('awardMemberPoints', e); }
+  },
+
+  /** ใบเสร็จหลังเสร็จสมบูรณ์: แสดงแต้มคงเหลือ + คูปองที่มี + ที่ใช้/ได้ในออเดอร์นี้ */
+  async fillReceiptMemberBenefits(order){
+    const el=document.getElementById('receiptMemberBenefits');
+    if(!el || !order) return;
+    const phone=this.normPhone(order.memberPhone||order.contactPhone||'');
+    if(!phone){ el.style.display='none'; return; }
+    el.style.display='block';
+    el.innerHTML='<div style="margin-top:10px;padding:8px;background:#F3E5F5;border-radius:8px;font-size:12px;color:#6A1B9A;text-align:center">กำลังโหลดสิทธิ์สมาชิก…</div>';
+    try{
+      const snap=await shopRef.collection('members').doc(phone).get();
+      let pts=0, coupons=[];
+      let name=String(order.memberName||'').trim();
+      if(snap.exists){
+        const md=snap.data()||{};
+        pts=Math.max(0, Math.floor(Number(md.points||0)));
+        if(!name) name=(String(md.firstName||'')+' '+String(md.lastName||'')).trim();
+        const now=Date.now();
+        coupons=(Array.isArray(md.personalCoupons)?md.personalCoupons:[]).filter(c=>c&&!c.used&&(!c.expiresAt||Number(c.expiresAt)>now));
+      }
+      const usedPts=Math.max(0, Number(order.pointsUsed||0));
+      const earned=Math.max(0, Number(order.pointsEarned||0));
+      const cDisc=Math.max(0, Number(order.couponDisc||0));
+      const cCode=String(order.couponCode||'');
+      let html='<div style="margin-top:10px;padding:10px;background:#F3E5F5;border-radius:8px;font-size:12px;color:#6A1B9A;text-align:left">';
+      html+='<div style="font-weight:700;margin-bottom:6px;text-align:center">👤 สมาชิก'+(name?(' · '+esc(name)):'')+'</div>';
+      html+='<div>แต้มคงเหลือ: <strong style="font-size:1.1rem">'+pts+'</strong> แต้ม</div>';
+      if(earned>0) html+='<div style="color:#2E7D32">ได้รับแต้มครั้งนี้: +'+earned+' แต้ม</div>';
+      if(usedPts>0) html+='<div>ใช้แต้มในออเดอร์นี้: '+usedPts+' แต้ม (−฿'+usedPts+')</div>';
+      if(cDisc>0||cCode) html+='<div>ใช้คูปอง'+(cCode?(' '+esc(cCode)):'')+': −฿'+cDisc+'</div>';
+      if(coupons.length){
+        html+='<div style="margin-top:6px;border-top:1px dashed #CE93D8;padding-top:6px">คูปองส่วนตัวที่ยังใช้ได้:</div>';
+        coupons.forEach(c=>{
+          const lab=c.type==='percent'?(c.value+'%'):('฿'+c.value);
+          html+='<div style="margin-top:2px">• '+esc(c.note||lab)+' ('+lab+')</div>';
+        });
+      } else {
+        html+='<div style="margin-top:4px;color:#888">ไม่มีคูปองส่วนตัวคงเหลือ</div>';
+      }
+      html+='</div>';
+      el.innerHTML=html;
+    }catch(e){
+      console.warn(e);
+      el.innerHTML='';
+      el.style.display='none';
+    }
   },
 
   async confirmOrder(){
@@ -2272,7 +2340,15 @@ const C={
     }
     // ถ้าแอดมินปิดระบบสมาชิก — ไม่ใช้แต้ม/คูปอง (เก็บแค่เบอร์ติดต่อ)
     const memOn=this.memberSystemEnabled!==false;
-    const memberPhone=(memOn && this.member&&this.member.phone)||'';
+    // ถ้าพบสมาชิกแล้ว บังคับใช้เบอร์สมาชิก (ไม่ปล่อยว่าง)
+    let memberPhone=(memOn && this.member&&this.member.phone)||'';
+    if(memOn && !memberPhone && contactPhone && this.member && this.member.phone){
+      memberPhone=this.normPhone(this.member.phone);
+    }
+    // ถ้ายังว่างแต่มีเบอร์และเป็นสมาชิกใน lookup ล่าสุด
+    if(memOn && !memberPhone && contactPhone && this.member){
+      memberPhone=contactPhone;
+    }
     const wantPts=(memOn && memberPhone)?Math.max(0, Math.floor(Number(md.pointsUsed||0))):0;
     let wantPersonalId=(memOn && memberPhone)?(md.personalCouponId||''):'';
     // คูปองรวมใช้ได้เมื่อระบบสมาชิกเปิด (แม้ไม่เป็นสมาชิก) — ปิดระบบแล้วไม่รับคูปอง
@@ -2593,6 +2669,15 @@ const C={
     }
     this.orderId=id;
     this.lastOrder={id,...order};
+    // เติมชื่อสมาชิกทันทีถ้ายังว่าง (กันตั๋วไม่โชว์ชื่อ)
+    try{
+      if(this.lastOrder && !this.lastOrder.memberName && this.member){
+        this.lastOrder.memberName=this.escName(this.member);
+      }
+      if(this.lastOrder && !this.lastOrder.memberPhone && this.member && this.member.phone){
+        this.lastOrder.memberPhone=this.normPhone(this.member.phone);
+      }
+    }catch(e){}
     // แสดงคิวก่อนทันที — ทุกขั้นตอน UI หุ้ม try กันพังกลางทาง
     try{ this.cart=[]; }catch(e){}
     try{ this.renderCart(); }catch(e){ try{ this.updFab(); }catch(e2){} }
@@ -2880,16 +2965,22 @@ const C={
       return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span>${esc(i.name)} × ${i.qty}${spice}${pl}${tops?`<div style="font-size:12px;color:#777">+ ${tops}</div>`:''}${note}</span><span>${money(i.total)}</span></div>`;
     }).join('');
     const orderCode=String(o.id||'').slice(0,12);
-    const memberName=String(o.memberName||'').trim();
-    const memberLine=memberName
-      ? ('<div style="font-size:15px;font-weight:600;color:#6A1B9A;margin-top:4px">'+esc(memberName)+'</div>')
+    // ชื่อสมาชิก: จากออเดอร์ หรือจาก this.member ที่โหลดไว้ (กรณี snapshot ยังไม่มีชื่อ)
+    let memberName=String(o.memberName||'').trim();
+    const mPhone=String(o.memberPhone||o.contactPhone||'').trim();
+    if(!memberName && this.member && mPhone && String(this.member.phone||'')===mPhone){
+      memberName=this.escName(this.member);
+    }
+    // แสดงชื่อใต้คิวเมื่อเป็นสมาชิก (มี memberPhone หรือมีชื่อ)
+    const isMember=!!(o.memberPhone || memberName);
+    const memberLine=isMember
+      ? ('<div style="font-size:15px;font-weight:600;color:#6A1B9A;margin-top:6px">'+(memberName?esc(memberName):('สมาชิก '+esc(mPhone)))+'</div>')
       : '';
     document.getElementById('ticketBody').innerHTML=`
       <h2 style="color:${cancelled?'var(--d)':paid?'var(--g)':'var(--p)'};margin-bottom:8px">${cancelled?'<i class="fa-solid fa-xmark"></i> ยกเลิกแล้ว':paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> รอชำระเงิน / รอรับออเดอร์'}</h2>
       <div>คิวของคุณ</div>
       <div class="huge">${esc(o.queue)}</div>
       ${memberLine}
-      <div style="font-size:12px;color:#888;margin-top:4px">รหัสการสั่งซื้อ: <strong style="color:#333">${esc(orderCode)}</strong></div>
       <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
       <div id="custCancelBox" style="margin:8px 0"></div>
       <div id="queueEtaBox" style="display:none;margin:10px 0;padding:12px;background:#FFF3E0;border-radius:12px;border:1px solid #FFE0B2;text-align:center"></div>
@@ -2904,18 +2995,16 @@ const C={
         <div style="margin-top:6px;font-size:13px">ชำระ: ${paid?(o.paymentMethod==='CASH'?'เงินสด (ที่ร้าน)':'พร้อมเพย์'):(function(){const cv=calcPaymentCover(o);return cv.due>0?('มีรายการเพิ่ม · รอชำระส่วนต่าง ฿'+cv.due):'รอชำระ (QR / เงินสดที่ร้าน)';})()} · ${paid?'ชำระแล้ว':'ยังไม่ชำระ'}</div>
         ${paid && o.paymentMethod==='CASH' && Number(o.changeAmount||0)>0 ? `<div style="font-size:13px;color:#1565C0">เงินทอน: ${money(o.changeAmount)}</div>` : ''}
         ${o.slipStatus&&o.slipStatus!=='NONE'?`<div style="font-size:12px;color:#555">สลิป: ${esc(o.slipStatus)}</div>`:''}
-        ${(o.status==='Completed' && paid) ? (
-          (Number(o.pointsUsed||0)>0 || Number(o.couponDisc||0)>0 || o.couponCode || Number(o.pointsEarned||0)>0)
-            ? `<div style="margin-top:10px;padding:8px;background:#F3E5F5;border-radius:8px;font-size:12px;color:#6A1B9A">
-                ${Number(o.pointsUsed||0)>0?('<div>ใช้แต้ม: '+Number(o.pointsUsed)+' แต้ม (−฿'+Number(o.pointsUsed)+')</div>'):''}
-                ${Number(o.couponDisc||0)>0||o.couponCode?('<div>คูปอง'+(o.couponCode?(' '+esc(o.couponCode)):'')+': −฿'+Number(o.couponDisc||0)+'</div>'):''}
-                ${Number(o.pointsEarned||0)>0?('<div>ได้รับแต้มครั้งนี้: +'+Number(o.pointsEarned)+' แต้ม</div>'):''}
-              </div>`
-            : ''
-        ) : ''}
+        <div id="receiptMemberBenefits" style="display:none"></div>
       </div>
       <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;
     document.getElementById('btnPrintReceipt').style.display = paid ? 'inline-flex' : 'none';
+    // ใบเสร็จ: แสดงแต้ม/คูปองสมาชิกเฉพาะเมื่อเสร็จสมบูรณ์ทุกขั้นตอน
+    try{
+      if(o.status==='Completed' && paid && (o.memberPhone||o.contactPhone)){
+        this.fillReceiptMemberBenefits(o);
+      }
+    }catch(e){ console.warn('fillReceiptMemberBenefits', e); }
     // ปุ่มยกเลิกฝั่งลูกค้า — ได้เฉพาะรอคิวทำ
     try{
       const cbox=document.getElementById('custCancelBox');

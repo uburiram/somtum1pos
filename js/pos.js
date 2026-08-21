@@ -1806,92 +1806,46 @@ const M={
   },
 
   async awardMemberPoints(order){
-    if(!order||!order.memberPhone||order.pointsAwarded) return;
-    // สะสมแต้มจากยอดขายจริง (total หลังส่วนลด) ไม่ใช่เงินสดทอน/รับเกิน
+    if(!order || order.pointsAwarded) return;
+    const phone=this.normPhone(order.memberPhone||order.contactPhone||'');
+    if(!phone || phone.length<9) return;
+    // สะสมแต้มจากยอดขายจริง (total หลังส่วนลด) — ครบ 100 บาท = 1 แต้ม
     const sale=Math.max(0, Number(order.total!=null?order.total:0));
     const earn=Math.floor(sale/100);
-    const phone=this.normPhone(order.memberPhone);
     try{
       await db.runTransaction(async tx=>{
         const oref=shopRef.collection('orders').doc(order.id);
         const os=await tx.get(oref);
-        if(!os.exists||(os.data()||{}).pointsAwarded) return;
+        if(!os.exists) return;
+        const od=os.data()||{};
+        if(od.pointsAwarded) return;
         const mref=shopRef.collection('members').doc(phone);
         const ms=await tx.get(mref);
-        if(!ms.exists){ tx.update(oref,{ pointsAwarded:true, pointsEarned:0 }); return; }
+        if(!ms.exists){
+          tx.update(oref,{ pointsAwarded:true, pointsEarned:0 });
+          return;
+        }
         const md=ms.data()||{};
+        if(md.status==='cancelled' || md.active===false){
+          tx.update(oref,{ pointsAwarded:true, pointsEarned:0, memberPhone:phone });
+          return;
+        }
         tx.update(mref,{
-          points:Number(md.points||0)+earn,
-          totalSpent:Number(md.totalSpent||0)+sale,
-          orderCount:Number(md.orderCount||0)+1,
-          updatedAt:Date.now()
+          points: Number(md.points||0)+earn,
+          totalSpent: Number(md.totalSpent||0)+sale,
+          orderCount: Number(md.orderCount||0)+1,
+          updatedAt: Date.now()
         });
-        tx.update(oref,{ pointsAwarded:true, pointsEarned:earn });
+        tx.update(oref,{
+          pointsAwarded:true,
+          pointsEarned:earn,
+          memberPhone: od.memberPhone||phone,
+          memberName: od.memberName || (String(md.firstName||'')+' '+String(md.lastName||'')).trim() || phone
+        });
       });
-      if(earn>0) toast('สมาชิก +'+earn+' แต้ม');
-    }catch(e){ console.warn('award', e); }
+    }catch(e){ console.warn('awardMemberPoints', e); }
   },
 
-  
-  openMemberDetail(phone){
-    phone=this.normPhone(phone);
-    const m=(this.membersCache||[]).find(x=>this.normPhone(x.phone||x.id)===phone);
-    if(!m){ toast('ไม่พบสมาชิก'); return; }
-    this._editingMember=m;
-    const panel=document.getElementById('panelMemberDetail');
-    const list=document.getElementById('panelMembers');
-    if(list) list.classList.add('hide');
-    if(panel) panel.classList.remove('hide');
-    this.renderMemberDetail(m);
-  },
-  closeMemberDetail(){
-    const panel=document.getElementById('panelMemberDetail');
-    const list=document.getElementById('panelMembers');
-    if(panel) panel.classList.add('hide');
-    if(list) list.classList.remove('hide');
-    this._editingMember=null;
-    this.loadMembersPanel();
-  },
-  renderMemberDetail(m){
-    const box=document.getElementById('memDetailBody');
-    if(!box||!m) return;
-    const phone=esc(m.phone||m.id||'');
-    const active=m.status!=='cancelled' && m.active!==false;
-    const created=m.createdAt?new Date(m.createdAt).toLocaleString('th-TH'):'-';
-    const cancelled=m.cancelledAt?new Date(m.cancelledAt).toLocaleString('th-TH'):'-';
-    const pcs=Array.isArray(m.personalCoupons)?m.personalCoupons:[];
-    let pcHtml='';
-    if(!pcs.length) pcHtml='<div style="color:#888;font-size:13px">ยังไม่มีคูปองส่วนตัว</div>';
-    else {
-      pcHtml=pcs.map(c=>{
-        const lab=c.type==='percent'?(c.value+'%'):('฿'+c.value);
-        const st=c.used?'<span style="color:#888">ใช้แล้ว</span>':'<span style="color:#2E7D32">ยังใช้ได้</span>';
-        return '<div style="padding:6px 0;border-bottom:1px solid #eee;font-size:13px;display:flex;justify-content:space-between;gap:6px">'
-          +'<span>'+esc(c.note||lab)+' ('+lab+') · '+st+'</span>'
-          +(c.used?'':'<button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="M.removePersonalCoupon(\''+phone+'\',\''+esc(c.id)+'\')">ลบ</button>')
-          +'</div>';
-      }).join('');
-    }
-    box.innerHTML=
-      '<div style="margin-bottom:10px;padding:8px;background:'+(active?'#E8F5E9':'#FFEBEE')+';border-radius:8px;font-size:13px">'
-      +(active?'✓ สิทธิ์สมาชิกใช้งานได้':'✗ ยกเลิกสิทธิ์แล้ว')
-      +'<div style="font-size:12px;color:#555;margin-top:4px">สมัครเมื่อ: '+created
-      +(m.cancelledAt?(' · ยกเลิกเมื่อ: '+cancelled):'')
-      +(m.cancelReason?(' · เหตุผล: '+esc(m.cancelReason)):'')
-      +'</div></div>'
-      +'<label class="lbl">ชื่อ</label><input id="mdFirst" value="'+esc(m.firstName||'')+'">'
-      +'<label class="lbl">นามสกุล</label><input id="mdLast" value="'+esc(m.lastName||'')+'">'
-      +'<label class="lbl">เบอร์โทร (แก้ไม่ได้)</label><input id="mdPhone" value="'+phone+'" disabled>'
-      +'<label class="lbl">แต้ม</label><input id="mdPoints" type="number" min="0" value="'+Number(m.points||0)+'">'
-      +'<button type="button" class="btn btn-p" style="margin-top:10px" onclick="M.saveMemberDetail()">บันทึกข้อมูล / แต้ม</button>'
-      +'<div style="margin-top:16px;font-weight:600">🎟 คูปองส่วนตัว</div>'
-      +'<div style="margin:8px 0">'+pcHtml+'</div>'
-      +'<button type="button" class="btn btn-o" style="margin-top:6px" onclick="M.assignPersonalCoupon(\''+phone+'\')">+ มอบคูปองส่วนตัว</button>'
-      +(active
-        ? ('<button type="button" class="btn btn-o" style="margin-top:12px;color:var(--d);border-color:#ef9a9a" onclick="M.cancelMembership(\''+phone+'\')">ยกเลิกสิทธิ์สมาชิก</button>'
-           +'<div style="font-size:11px;color:#888;margin-top:4px">ไม่ลบประวัติ · เก็บวันสมัคร/วันยกเลิกไว้ตรวจสอบย้อนหลัง</div>')
-        : ('<button type="button" class="btn btn-o" style="margin-top:12px" onclick="M.reactivateMembership(\''+phone+'\')">เปิดสิทธิ์สมาชิกอีกครั้ง</button>'));
-  },
   async saveMemberDetail(){
     const m=this._editingMember; if(!m) return;
     const phone=this.normPhone(m.phone||m.id);
