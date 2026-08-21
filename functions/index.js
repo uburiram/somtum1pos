@@ -19,6 +19,7 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const fetch = require('node-fetch');
 const FormData = require('form-data');
+const crypto = require('crypto');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -35,9 +36,32 @@ function getEasySlipKey() {
 
 /** แปลง dataURL → Buffer */
 function dataUrlToBuffer(dataUrl) {
-  const m = String(dataUrl || '').match(/^data:([^;]+);base64,(.+)$/);
-  if (!m) throw new Error('slipData ต้องเป็น data URL รูปภาพ');
-  return Buffer.from(m[2], 'base64');
+  const m = String(dataUrl || '').match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,([A-Za-z0-9+/=\s]+)$/i);
+  if (!m) throw new Error('slipData ต้องเป็น data URL รูปภาพ JPEG/PNG/WebP');
+  const raw = m[2].replace(/\s+/g, '');
+  // กัน payload ขนาดใหญ่เกินกว่าที่ระบบจะเก็บใน Firestore ได้อย่างปลอดภัย
+  if (raw.length > 190000) throw new Error('slipData ใหญ่เกินกำหนด');
+  const buffer = Buffer.from(raw, 'base64');
+  if (!buffer.length || buffer.length > 140000) throw new Error('ขนาดรูปสลิปไม่ถูกต้อง');
+  return buffer;
+}
+
+function extractVerifiedAmount(json) {
+  const candidates = [
+    json && json.data && json.data.amount && json.data.amount.amount,
+    json && json.data && json.data.amount,
+    json && json.amount && json.amount.amount,
+    json && json.amount
+  ];
+  for (const value of candidates) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+}
+
+function slipHash(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
 async function verifyWithEasySlip(buffer, amount) {
@@ -60,9 +84,9 @@ async function verifyWithEasySlip(buffer, amount) {
   if (!res.ok) {
     return { ok: false, reason: 'EasySlip HTTP ' + res.status, raw: text.slice(0, 300) };
   }
-  const paid = Number((json.data && json.data.amount) || json.amount || 0);
-  if (paid && amount && Math.abs(paid - Number(amount)) > 1) {
-    return { ok: false, reason: 'ยอดในสลิปไม่ตรง ฿' + paid, raw: json };
+  const paid = extractVerifiedAmount(json);
+  if (amount > 0 && (!paid || Math.abs(paid - Number(amount)) > 1)) {
+    return { ok: false, reason: paid ? ('ยอดในสลิปไม่ตรง ฿' + paid) : 'ระบบตรวจไม่พบยอดเงินในผลตรวจสลิป', raw: json };
   }
   // บางแพ็กเกจใช้ status field
   const status = (json.status || (json.data && json.data.status) || '').toString().toLowerCase();
@@ -99,37 +123,61 @@ exports.verifySlip = functions.region(REGION).https.onRequest(async (req, res) =
     if (order.paymentStatus === 'PAID') {
       return res.json({ ok: true, alreadyPaid: true, msg: 'ชำระแล้ว' });
     }
+    if (order.status === 'Cancelled' || order.status === 'Completed') {
+      return res.status(409).json({ ok: false, error: 'ออเดอร์ปิดแล้ว ไม่สามารถตรวจสลิปได้' });
+    }
 
     const buf = dataUrlToBuffer(slipData);
+    const hash = slipHash(buf);
+    if (order.slipHash && order.slipHash === hash) {
+      return res.status(409).json({ ok: false, error: 'สลิปนี้ถูกส่งตรวจแล้ว' });
+    }
+
     // ยอดที่ต้องตรงในสลิป = ส่วนต่าง (ถ้า needsRepay) ไม่งั้นยอดเต็มบิล
-    const billTotal = Number(order.total || 0);
-    const already = Number(order.paidAmount || 0);
+    const billTotal = Math.max(0, Number(order.total || 0));
+    const already = Math.max(0, Number(order.paidAmount || 0));
     const expectAmt = order.needsRepay
       ? Math.max(0, Number(order.repayAmount != null ? order.repayAmount : (billTotal - already)))
       : billTotal;
+    if (!(expectAmt > 0)) {
+      return res.status(409).json({ ok: false, error: 'ออเดอร์นี้ไม่มียอดที่ต้องชำระผ่านสลิป' });
+    }
     const result = await verifyWithEasySlip(buf, expectAmt);
 
     if (result.ok) {
-      // paidAmount = ยอดที่ครอบคลุมบิล (billTotal) ไม่ใช่เงินที่ยื่น/ยอดสลิป
-      // กันส่วนต่างผิดเมื่อสั่งเพิ่มหลังรับเงินสดที่มีทอน
-      await ref.update({
-        slipData: String(slipData).slice(0, 200000), // ตรงกับ Firestore rules hasImageSlip (<=200000)
-        slipStatus: 'APPROVED',
-        paymentStatus: 'PAID',
-        paidAmount: billTotal,
-        paidAt: Date.now(),
-        paymentMethod: order.paymentMethod || 'PROMPTPAY',
-        status: order.status === 'AwaitingPayment' ? 'Pending' : (order.status || 'Pending'),
-        slipAuto: true,
-        needsRepay: false,
-        repayAmount: 0
+      // ยืนยันอีกครั้งแบบ transaction เพื่อกันการยิงสลิปซ้ำพร้อมกันหลาย request
+      const committed = await db.runTransaction(async (tx) => {
+        const latest = await tx.get(ref);
+        if (!latest.exists) return false;
+        const cur = latest.data() || {};
+        if (cur.paymentStatus === 'PAID' || cur.slipHash === hash) return false;
+        const latestTotal = Math.max(0, Number(cur.total || 0));
+        if (cur.status === 'Cancelled' || cur.status === 'Completed') return false;
+        tx.update(ref, {
+          slipData: String(slipData).slice(0, 200000),
+          slipHash: hash,
+          slipStatus: 'APPROVED',
+          paymentStatus: 'PAID',
+          paidAmount: latestTotal,
+          paidAt: Date.now(),
+          paymentMethod: cur.paymentMethod || 'PROMPTPAY',
+          status: cur.status === 'AwaitingPayment' ? 'Pending' : (cur.status || 'Pending'),
+          slipAuto: true,
+          needsRepay: false,
+          repayAmount: 0
+        });
+        return true;
       });
+      if (!committed) {
+        return res.json({ ok: true, alreadyPaid: true, msg: 'รายการถูกยืนยันไปแล้ว' });
+      }
       return res.json({ ok: true, msg: result.reason, autoPaid: true });
     }
 
     // ไม่ผ่าน → รอร้านตรวจมือ
     await ref.update({
       slipData: String(slipData).slice(0, 200000),
+      slipHash: hash,
       slipStatus: 'PENDING_REVIEW',
       slipAutoReason: result.reason || 'รอตรวจมือ'
     });
