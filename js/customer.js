@@ -9,28 +9,17 @@ async function sha256(text){const b=await crypto.subtle.digest('SHA-256',new Tex
  * คำนวณยอดที่ครอบคลุมแล้ว + ส่วนต่าง (ซ่อมข้อมูลเก่าที่ paidAmount รวมทอน)
  * ใช้ addRound: รวมรายการก่อนรอบล่าสุด = ยอดที่ควรชำระแล้ว
  */
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const money=n=>'฿'+Number(n||0).toLocaleString('en-US',{maximumFractionDigits:0});
-const toast=msg=>{const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';clearTimeout(t._x);t._x=setTimeout(()=>t.style.display='none',2800)};
-const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
-const showErr=msg=>{const e=document.getElementById('errBanner');e.textContent=msg;e.classList.add('on')};
-async function sha256(text){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(String(text)));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
-
 function calcPaymentCover(order){
   const o=order||{};
   const billTotal=Math.max(0, Number(o.total||0));
   const rawPaid=Math.max(0, Number(o.paidAmount||0));
   const items=Array.isArray(o.items)?o.items:[];
-  
-  if(String(o.paymentStatus||'')==='PAID' && !o.needsRepay){
-    return { covered: billTotal, due: 0, billTotal, rawPaid, maxRound: 0 };
-  }
-  
   const rounds=items.map(i=>Math.max(0, Math.floor(Number(i.addRound||0))));
   const maxRound=rounds.length?Math.max.apply(null, rounds):0;
   let covered=rawPaid;
-  
-  if(o.needsRepay || (String(o.paymentStatus||'')!=='PAID' && rawPaid>0)){
+  if(String(o.paymentStatus||'')==='PAID' && !o.needsRepay){
+    covered=billTotal;
+  } else if(o.needsRepay || (String(o.paymentStatus||'')!=='PAID' && rawPaid>0)){
     if(maxRound>0){
       const prevSum=items
         .filter(i=>Math.max(0, Math.floor(Number(i.addRound||0))) < maxRound)
@@ -50,7 +39,6 @@ function calcPaymentCover(order){
       covered=Math.min(rawPaid, billTotal);
     }
   }
-  
   covered=Math.max(0, Math.min(covered, billTotal));
   const due=Math.max(0, Math.round((billTotal - covered)*100)/100);
   return { covered, due, billTotal, rawPaid, maxRound };
@@ -3105,4 +3093,4 @@ const C={
   }
 };
 C.init();
-try{ if(typeof C.isLineBrowser === 'function' && C.isLineBrowser()){ const h=document.getElementById('ppQRHint'); if(h) h.style.display='block'; } }catch(e){}
+try{ if(C.isLineBrowser && C.isLineBrowser()){ const h=document.getElementById('ppQRHint'); if(h) h.style.display='block'; } }catch(e){}
