@@ -200,7 +200,7 @@ const M={
           try{ this.applyShopOpenUI(d.isOpen!==false); }catch(e){}
           try{ this.applyMemberSystemUI(d.memberSystemEnabled!==false); }catch(e){}
           try{
-            this.applyOrderModeUI(d.orderMode==='table'?'table':'queue');
+            this.applyOrderModeUI((d.orderMode==='table' || d.orderMode==='auto') ? d.orderMode : 'queue');
             this.tableCount=Number(d.tableCount||10);
             const tc=document.getElementById('setTableCount'); if(tc) tc.value=String(this.tableCount);
           }catch(e){}
@@ -669,10 +669,9 @@ const M={
       // กระพริบเฉพาะที่อยู่ใน _blinkAdds = ออเดอร์ใหม่ หรือเพิ่งมีเมนูเพิ่ม (ไม่กระพริบทุกใบ)
       const isAlert=!!(this._blinkAdds && this._blinkAdds.has(o.id));
       const tableTag=o.tableNo?(`<span style="background:#F3E5F5;color:#6A1B9A;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">โต๊ะ ${o.tableNo}</span> `):'';
-      const orderTypeTag=(o.orderType==='DINE_IN'||o.tableNo)?'<span style="background:#F3E5F5;color:#6A1B9A;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">🍽️ ทานที่ร้าน</span> ':'<span style="background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">🥡 กลับบ้าน</span> ';
       const addTag=(isAlert && o.hasNewItems)?(' <span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">สั่งเพิ่ม!</span>'):(isAlert?' <span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">ใหม่</span>':'');
       return `<div class="oc ${esc(o.status||'')} ${isAlert?'oc-blink':''}" style="${isAlert?'box-shadow:0 0 0 3px #F44336;':''}" onclick="M.openDetail('${esc(o.id)}')">
-        <div style="margin-bottom:4px">${orderTypeTag}${tableTag}${addTag}</div>
+        <div style="margin-bottom:4px">${tableTag}${addTag}</div>
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px"><div class="q">${esc(o.queue)}</div>
         <div style="text-align:right"><div style="color:#888;font-size:12px">${o.createdAt?new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}</div>
         <div style="font-size:11px;font-weight:600;margin-top:2px;color:${o.status==='Cooking'?'#1565C0':o.status==='Ready'?'#2E7D32':'#E65100'}">${({Pending:'รอคิวทำ',AwaitingPayment:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:'ยกเลิก'})[o.status]||o.status}</div></div></div>
@@ -752,7 +751,6 @@ const M={
       </div>
       <div style="text-align:center;margin-bottom:12px"><div style="color:#777">ยอดรวม</div>
         <div style="font-size:2rem;font-weight:700;color:var(--p)">${money(o.total)}</div>
-        <div style="margin-top:6px">${(o.orderType==='DINE_IN'||o.tableNo)?'<span style="background:#F3E5F5;color:#6A1B9A;padding:4px 10px;border-radius:14px;font-size:12px;font-weight:700">🍽️ ทานที่ร้าน'+(o.tableNo?' · โต๊ะ '+esc(o.tableNo):'')+'</span>':'<span style="background:#E3F2FD;color:#1565C0;padding:4px 10px;border-radius:14px;font-size:12px;font-weight:700">🥡 กลับบ้าน · คิวรับอาหาร</span>'}</div>
         <div style="margin-top:6px">${o.paymentMethod==='CASH'?'<span style="background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">เงินสด</span>':'<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">พร้อมเพย์</span>'}${o.paymentStatus==='PAID'?'<span style="color:var(--g);font-weight:700">✓ ชำระแล้ว</span>':(cov.due>0?'<span style="color:#E65100;font-weight:700">ค้างส่วนต่าง ฿'+cov.due+'</span>':'<span style="color:var(--d);font-weight:700">ยังไม่ชำระ</span>')} · <span style="font-weight:600">${o.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์ / QR'}</span></div>
         ${(o.paymentStatus!=='PAID' && cov.due>0)?`<div style="margin-top:10px;padding:12px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:10px;text-align:center">
           <div style="font-size:13px;color:#E65100;font-weight:700">มีรายการเพิ่ม · เก็บส่วนต่าง <span style="font-size:1.25rem">฿${cov.due}</span></div>
@@ -995,32 +993,33 @@ const M={
     }
   },
   applyOrderModeUI(mode){
-    this.orderMode = (mode==='table') ? 'table' : 'queue';
+    this.orderMode = (mode==='table' || mode==='auto') ? mode : 'queue';
     const st=document.getElementById('orderModeStatus');
     if(st){
-      st.textContent = this.orderMode==='table' ? 'โหมดปัจจุบัน: โต๊ะ' : 'โหมดปัจจุบัน: คิว';
-      st.style.color = this.orderMode==='table' ? '#6A1B9A' : '#1565C0';
+      st.textContent = this.orderMode==='table' ? 'โหมดปัจจุบัน: โต๊ะ' : (this.orderMode==='auto' ? 'โหมดปัจจุบัน: Auto · QR กำหนด คิว/โต๊ะอัตโนมัติ' : 'โหมดปัจจุบัน: คิว');
+      st.style.color = this.orderMode==='table' ? '#6A1B9A' : (this.orderMode==='auto' ? '#00838F' : '#1565C0');
     }
     const bq=document.getElementById('btnModeQueue');
     const bt=document.getElementById('btnModeTable');
+    const ba=document.getElementById('btnModeAuto');
     if(bq) bq.style.outline = this.orderMode==='queue' ? '3px solid #2E7D32' : 'none';
     if(bt) bt.style.outline = this.orderMode==='table' ? '3px solid #6A1B9A' : 'none';
+    if(ba) ba.style.outline = this.orderMode==='auto' ? '3px solid #00838F' : 'none';
     const box=document.getElementById('tableModeSettings');
-    // QR เป็นตัวกำหนดประเภทออเดอร์รายครั้ง จึงต้องแสดงการจัดการโต๊ะไว้เสมอ
-    if(box) box.style.display = 'block';
+    if(box) box.style.display = (this.orderMode==='table' || this.orderMode==='auto') ? 'block' : 'none';
     const nav=document.getElementById('navTables');
-    if(nav) nav.classList.remove('hide');
+    if(nav) nav.classList.toggle('hide', this.orderMode==='queue');
   },
   async setOrderMode(mode){
-    mode = mode==='table' ? 'table' : 'queue';
+    mode = (mode==='table' || mode==='auto') ? mode : 'queue';
     try{
       await shopRef.collection('settings').doc('public').set({
         orderMode: mode,
         orderModeUpdatedAt: Date.now()
       }, {merge:true});
       this.applyOrderModeUI(mode);
-      if(mode==='table'){
-        toast('เปิดโหมดโต๊ะ · ใช้แท็บ 「โต๊ะ」จัดการ');
+      if(mode==='table' || mode==='auto'){
+        toast(mode==='auto' ? 'เปิดโหมด Auto · QR โต๊ะ = ทานที่ร้าน / QR คิว = คิวรับอาหาร' : 'เปิดโหมดโต๊ะ · ใช้แท็บ 「โต๊ะ」จัดการ');
         try{ await this.ensureTables(Number(document.getElementById('setTableCount')?.value||this.tableCount||10)); }catch(e){}
         try{ this.renderTableQrList(); }catch(e){}
       } else {
@@ -1033,11 +1032,12 @@ const M={
     if(!(n>=1 && n<=100)){ toast('จำนวนโต๊ะต้อง 1–100'); return; }
     try{
       await shopRef.collection('settings').doc('public').set({
+        orderMode:this.orderMode==='auto' ? 'auto' : 'table',
         tableCount:n,
         tableCountUpdatedAt:Date.now()
       },{merge:true});
       this.tableCount=n;
-      this.applyOrderModeUI('table');
+      this.applyOrderModeUI(this.orderMode==='auto' ? 'auto' : 'table');
       await this.ensureTables(n);
       this.renderTableQrList();
       toast('บันทึก '+n+' โต๊ะ และสร้าง QR แล้ว');
@@ -1083,37 +1083,6 @@ const M={
       const origin=(location&&location.origin&&location.origin!=='null')?location.origin:'';
       return origin+'/index.html?table='+tableNo;
     }
-  },
-  queueOrderUrl(){
-    try{
-      const base=(location.origin&&location.origin!=='null') ? location.origin+location.pathname.replace(/[^/]*$/,'') : '';
-      const path=base+'index.html';
-      const u=new URL(path||'index.html', location.href);
-      u.searchParams.set('mode','queue');
-      return u.href;
-    }catch(e){ return (location.origin&&location.origin!=='null'?location.origin:'')+'/index.html?mode=queue'; }
-  },
-  buildQueueQrCard(size){
-    size=size||260;
-    const pageUrl=this.queueOrderUrl();
-    const canvas=document.createElement('canvas'); const pad=24, headerH=72, footerH=56;
-    canvas.width=size+pad*2; canvas.height=headerH+size+footerH+pad;
-    const ctx=canvas.getContext('2d'); ctx.fillStyle='#FFF8F5'; ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.strokeStyle='#1565C0'; ctx.lineWidth=6; ctx.strokeRect(8,8,canvas.width-16,canvas.height-16);
-    ctx.fillStyle='#1565C0'; ctx.font='bold 28px sans-serif'; ctx.textAlign='center'; ctx.fillText('สั่งกลับบ้าน',canvas.width/2,40);
-    ctx.font='16px sans-serif'; ctx.fillStyle='#555'; ctx.fillText('สแกน QR เพื่อรับหมายเลขคิว',canvas.width/2,64);
-    const tmp=document.createElement('div'); tmp.style.cssText='position:fixed;left:-9999px;top:0'; document.body.appendChild(tmp);
-    try{ new QRCode(tmp,{text:pageUrl,width:size,height:size,correctLevel:QRCode.CorrectLevel.M}); const c=tmp.querySelector('canvas'); if(c) ctx.drawImage(c,pad,headerH,size,size); }catch(e){ console.warn('buildQueueQrCard',e); }
-    try{tmp.remove();}catch(e){}
-    ctx.fillStyle='#666'; ctx.font='12px sans-serif'; ctx.fillText('ร้าน: '+(this.shopName||document.getElementById('shopTitle')?.textContent||''),canvas.width/2,headerH+size+28);
-    ctx.font='10px sans-serif'; ctx.fillStyle='#999'; ctx.fillText(pageUrl.length>42?pageUrl.slice(0,40)+'…':pageUrl,canvas.width/2,headerH+size+46);
-    return canvas.toDataURL('image/png');
-  },
-  downloadQueueQr(){
-    try{ const data=this.buildQueueQrCard(260); const a=document.createElement('a'); a.href=data; a.download='QR-คิว-กลับบ้าน.png'; document.body.appendChild(a); a.click(); a.remove(); toast('บันทึก QR คิว/กลับบ้านแล้ว'); }catch(e){toast('บันทึก QR ไม่สำเร็จ: '+(e.message||e));}
-  },
-  printQueueQr(){
-    try{ const data=this.buildQueueQrCard(300); const w=window.open('','_blank','width=460,height=620'); if(!w){toast('อนุญาตป๊อปอัปเพื่อพิมพ์ QR');return;} w.document.write('<html><head><title>QR คิว กลับบ้าน</title></head><body style="text-align:center;font-family:sans-serif;padding:16px"><img src="'+data+'" style="max-width:100%"><script>setTimeout(function(){window.print()},400);<\/script></body></html>'); w.document.close(); }catch(e){toast('พิมพ์ QR ไม่สำเร็จ');}
   },
   /** สร้างรูป QR มีกรอบ + ข้อความโต๊ะ (สำหรับพิมพ์/บันทึก) */
   buildTableQrCard(tableNo, size){
@@ -2592,10 +2561,10 @@ const M={
     document.getElementById('setName').value=d.shopName||'';
     this.applyShopOpenUI(d.isOpen!==false);
     this.applyMemberSystemUI(d.memberSystemEnabled!==false);
-    this.applyOrderModeUI(d.orderMode==='table'?'table':'queue');
+    this.applyOrderModeUI((d.orderMode==='table' || d.orderMode==='auto') ? d.orderMode : 'queue');
     this.tableCount=Number(d.tableCount||10);
     const tc=document.getElementById('setTableCount'); if(tc) tc.value=String(this.tableCount);
-    if(this.orderMode==='table'){ try{ this.renderTableQrList(); }catch(e){} }
+    if(this.orderMode==='table' || this.orderMode==='auto'){ try{ this.renderTableQrList(); }catch(e){} }
     document.getElementById('setAccount').value=d.accountName||'นาย นรากร วงค์แก่นท้าว';
     document.getElementById('setPP').value=d.promptpay||'1319900156353';
     const payType=d.payType||'kshop';
@@ -2603,7 +2572,7 @@ const M={
     const mid=document.getElementById('setMerchantId'); if(mid) mid.value=d.merchantId||'EMPKB000002198793001';
     const kp=document.getElementById('setKshopPayload'); if(kp) kp.value=d.kshopPayload||'';
     this.togglePayTypeUI();
-    const cu=this.queueOrderUrl();
+    const cu=new URL('index.html', location.href).href;
     document.getElementById('qrUrl').textContent=cu;
     const shopEl=document.getElementById('qrShopLabel');
     if(shopEl) shopEl.textContent=document.getElementById('shopTitle')?.textContent||this.shopName||'ร้าน';

@@ -168,13 +168,46 @@ function fileToDataUrl(file,maxSide=480,quality=.55){
 }
 
 async function migrateAndSeed(){
-  // ลูกค้าต้องอ่านข้อมูลเท่านั้น ห้าม seed/แก้ไขการตั้งค่าร้าน เมนู หรือคิว
-  // การตั้งค่าเริ่มต้นและ migration ที่เขียนข้อมูลให้ทำจากฝั่ง POS/ผู้ดูแลเท่านั้น
-  return true;
+  // แก้ชื่อบัญชีสะกดผิดในข้อมูลเก่า (นราทร → นรากร)
+  try{
+    const pub=await shopRef.collection('settings').doc('public').get();
+    if(pub.exists){
+      const an=String((pub.data()||{}).accountName||'');
+      if(an.includes('นราทร')){
+        await shopRef.collection('settings').doc('public').set({accountName:an.replace(/นราทร/g,'นรากร')},{merge:true});
+      }
+    }
+  }catch(e){ console.warn('fix accountName', e); }
+  try{
+    const q=await shopRef.collection('settings').doc('queue').get();
+    if(!q.exists){
+      await shopRef.collection('settings').doc('queue').set({queueCounter:1,queueDate:''},{merge:true});
+    }
+  }catch(e){ console.warn('queue seed', e); }
+  try{
+    const catSnap=await shopRef.collection('categories').limit(1).get();
+    if(!catSnap.empty) return;
+    const batch=db.batch();
+    [['c1','เมนูส้มตำ',1],['c2','เมนูยำ',2],['c3','เมนูของทอด',3],['c4','เมนูกินคู่ส้มตำ',4],['c5','เครื่องดื่ม',5]]
+      .forEach(([id,name,order])=>batch.set(shopRef.collection('categories').doc(id),{id,name,isActive:true,order}));
+    const menus=[
+      ['m1','c1','ตำปูปลาร้า',40],['m2','c1','ตำไทย',40],['m3','c1','ตำป่า',45],['m4','c1','ตำแตง',40],
+      ['m5','c2','ยำวุ้นเส้น',50],['m6','c3','ไก่ทอด',50],['m7','c3','ปีกไก่ทอด',40],
+      ['m8','c4','ไข่ต้ม',10],['m9','c4','ไข่ดาว',15],['m10','c5','น้ำเปล่า',10],['m11','c5','น้ำอัดลม',15]
+    ];
+    menus.forEach(([id,catId,name,price])=>batch.set(shopRef.collection('menus').doc(id),{id,catId,name,price,isActive:true,isOut:false,imageUrl:'',imageData:'',order:0}));
+    [['s1','ไม่เผ็ด',1],['s2','เผ็ดน้อย',2],['s3','เผ็ดกลาง',3],['s4','เผ็ดมาก',4]].forEach(([id,name,order])=>batch.set(shopRef.collection('spiceLevels').doc(id),{id,name,isActive:true,order}));
+    [['t1','ไข่ดาว',10],['t2','ไข่ต้ม',10],['t3','เพิ่มปู',20],['t4','หมูกรอบ',15]].forEach(([id,name,price],i)=>batch.set(shopRef.collection('toppings').doc(id),{id,name,price,isActive:true,order:i+1}));
+    batch.set(shopRef.collection('settings').doc('public'),{
+      shopName:'ส้มตำนายหนึ่ง', isOpen:true, memberSystemEnabled:true, promptpay:'1319900156353', accountName:'นาย นรากร วงค์แก่นท้าว',
+      payType:'kshop', merchantId:'EMPKB000002198793001', kshopPayload:window.KSHOP_QR_PAYLOAD||''
+    },{merge:true});
+    await batch.commit();
+  }catch(e){ console.warn('seed menus', e); }
 }
 
 const C={
-  shopName:'ร้าน',promptpay:'',accountName:'',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:'',memberSystemEnabled:true,orderMode:'queue',qrOrderMode:null,qrContext:null,tableNo:null,tableCount:0,optionConfig:{spiceMode:'single',toppingMode:'multi',toppingAllowQty:true},cats:[],menus:[],spice:[],tops:[],
+  shopName:'ร้าน',promptpay:'',accountName:'',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:'',memberSystemEnabled:true,orderMode:'queue',tableNo:null,tableCount:0,optionConfig:{spiceMode:'single',toppingMode:'multi',toppingAllowQty:true},cats:[],menus:[],spice:[],tops:[],
   cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'PROMPTPAY',slipData:'',lastOrder:null,kitchenOrders:[],bestSellerIds:[],bestSellerRank:{},
 
   async init(){
@@ -208,17 +241,9 @@ const C={
       shopRef=db.collection('shops').doc(window.SHOP_ID||'main');
       setConn('เชื่อมต่อแล้ว');
       try{
-        this.qrContext=this.parseQrContext();
-        if(this.qrContext){
-          this.qrOrderMode=this.qrContext.mode;
-          this.tableNo=this.qrContext.tableNo||null;
-          this.orderMode=this.qrContext.mode;
-          this.applyOrderModeCustomerUI();
-        } else {
-          this.tableNo=this.parseTableFromUrl();
-          if(this.tableNo) this.applyOrderModeCustomerUI();
-        }
-      }catch(e){ console.warn('QR context',e); }
+        this.tableNo=this.parseTableFromUrl();
+        if(this.tableNo) this.applyOrderModeCustomerUI();
+      }catch(e){}
       // seed ไม่ควรบล็อกการแสดงผลนาน
       try{ await Promise.race([migrateAndSeed(), new Promise(function(r){setTimeout(r,5000);})]); }catch(e){ console.warn('seed',e); }
       shopRef.collection('settings').doc('public').onSnapshot(s=>{
@@ -235,8 +260,10 @@ const C={
         this.setShopOpenState(d.isOpen!==false);
         // ระบบสมาชิกบนหน้าลูกค้า (default เปิด เพื่อไม่พังร้านเดิม)
         this.applyMemberSystemState(d.memberSystemEnabled!==false);
-        // QR เป็นตัวกำหนดประเภทออเดอร์เสมอ; setting ร้านใช้เป็นค่า fallback เท่านั้น
-        if(!this.qrOrderMode){ this.orderMode = d.orderMode==='table' ? 'table' : 'queue'; }
+        const configuredMode = (d.orderMode==='table' || d.orderMode==='auto') ? d.orderMode : 'queue';
+        // Auto: QR โต๊ะ (?table=N) => โต๊ะ, QR คิว (URL ปกติ) => คิว
+        this.orderMode = configuredMode==='auto' ? (this.parseTableFromUrl() ? 'table' : 'queue') : configuredMode;
+        this.configuredOrderMode = configuredMode;
         this.tableCount = Number(d.tableCount||0);
         try{ this.applyOrderModeCustomerUI(); }catch(e){}
       });
@@ -1404,25 +1431,6 @@ const C={
     }catch(e){}
   },
 
-  parseQrContext(){
-    try{
-      const u=new URL(location.href);
-      const rawMode=(u.searchParams.get('mode')||u.searchParams.get('order')||'').toLowerCase();
-      let table=u.searchParams.get('table')||u.searchParams.get('t');
-      if(table!=null && /^\d{1,3}$/.test(String(table)) && Number(table)>0){
-        return {mode:'table', tableNo:Number(table), source:'table-qr'};
-      }
-      if(['queue','takeaway','pickup','q'].includes(rawMode)){
-        return {mode:'queue', tableNo:null, source:'queue-qr'};
-      }
-      const h=String(location.hash||'');
-      const hm=h.match(/(?:mode|order)[=:_-]?(queue|takeaway|pickup)/i);
-      if(hm) return {mode:'queue',tableNo:null,source:'queue-qr'};
-      const ht=h.match(/table[=:_-]?(\d+)/i);
-      if(ht) return {mode:'table',tableNo:Number(ht[1]),source:'table-qr'};
-    }catch(e){}
-    return null;
-  },
   parseTableFromUrl(){
     try{
       const u=new URL(location.href);
@@ -1549,9 +1557,8 @@ const C={
     const lab=document.getElementById('tableModeLabel');
     const btn=document.getElementById('btnCallStaff');
     if(lab){
-      if(useTable) lab.textContent='🪑 ทานที่ร้าน · โต๊ะ '+this.tableNo;
+      if(useTable) lab.textContent='🪑 สั่งอาหาร · โต๊ะ '+this.tableNo;
       else if(this.orderMode==='table') lab.textContent='🪑 โหมดโต๊ะ · กรุณาสแกน QR บนโต๊ะก่อนสั่ง';
-      else if(lab && this.qrOrderMode==='queue') lab.textContent='🥡 สั่งกลับบ้าน · ระบบคิวอัตโนมัติ';
     }
     if(btn) btn.style.display = useTable ? 'inline-block' : 'none';
     if(useTable){
@@ -2072,8 +2079,7 @@ const C={
       if(snap.exists){ toast('เบอร์นี้เป็นสมาชิกแล้ว'); return; }
       await ref.set({
         phone, firstName:String(first).trim(), lastName:String(last).trim(),
-        points:10, totalSpent:0, orderCount:0,
-        status:'active', active:true,
+        points:0, totalSpent:0, orderCount:0,
         createdAt:Date.now(), updatedAt:Date.now()
       });
       toast('สมัครสมาชิกสำเร็จ');
@@ -2476,8 +2482,6 @@ const C={
           kitchenSortAt: Date.now(),
           etaAnchorAt: Date.now(),
           orderMode:'table',
-          orderType:'DINE_IN',
-          orderSource:'table-qr',
           tableNo:Number(this.tableNo)
         };
         tx.set(shopRef.collection('orders').doc(newId), ord);
@@ -2536,10 +2540,7 @@ const C={
       createdAt: Date.now(),
       kitchenSortAt: Date.now(),
       etaAnchorAt: Date.now(),
-      orderMode:'queue',
-      orderType:'TAKEAWAY',
-      orderSource:(this.qrContext&&this.qrContext.source)||'queue',
-      tableNo:null
+      orderMode:'queue'
     };
     await shopRef.collection('orders').doc(id).set(order);
     }
