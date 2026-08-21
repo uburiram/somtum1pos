@@ -1869,7 +1869,10 @@ const C={
   },
   /** ชื่อสมาชิกดิบ (ไม่ escape) — ใช้เก็บลง Firestore เป็น memberName; หน้าจอที่แสดงผลต้องครอบด้วย esc() เอง */
   escName(m){
-    return (String(m.firstName||'')+' '+String(m.lastName||'')).trim()||m.phone||'';
+    if(!m) return '';
+    const n=(String(m.firstName||'')+' '+String(m.lastName||'')).trim();
+    if(n) return n;
+    return String(m.phone||m.id||'').trim();
   },
   cartSubtotal(){
     return (this.cart||[]).reduce((s,i)=>s+Number(i.total||0),0);

@@ -190,6 +190,8 @@ const M={
     this.listenOrders();
     try{ this.listenTables(); }catch(e){}
     this.loadSettingsUI();
+    // โหลด cache สมาชิกเงียบ ๆ เพื่อแสดงชื่อบนออเดอร์ทันที
+    try{ this.loadMembersPanel(); }catch(e){}
     // อัปเดตชื่อร้านแบบ realtime
     if (shopRef) {
       shopRef.collection('settings').doc('public').onSnapshot(s => {
@@ -604,6 +606,21 @@ const M={
     const today=new Date(); today.setHours(0,0,0,0); const t0=today.getTime();
     // กรองออเดอร์ผีที่ไม่มีรายการเมนู (กันการ์ดค้างว่าง)
     let list=(this.orders||[]).filter(o=>o && (o.items||[]).length>0).slice();
+    // เติมชื่อสมาชิกจาก cache ถ้าออเดอร์มีเบอร์แต่ยังไม่มีชื่อ (แสดงบนการ์ดทันที)
+    try{
+      const cache=this.membersCache||[];
+      list.forEach(o=>{
+        if(o.memberName) return;
+        const ph=this.normPhone(o.memberPhone||o.contactPhone||'');
+        if(!ph) return;
+        const m=cache.find(x=>this.normPhone(x.phone||x.id)===ph);
+        if(m){
+          const nm=(String(m.firstName||'')+' '+String(m.lastName||'')).trim();
+          if(nm) o.memberName=nm;
+          if(!o.memberPhone) o.memberPhone=ph;
+        }
+      });
+    }catch(e){}
     // กฎตามที่ร้านต้องการ:
     // kitchen = กำลังทำ (Pending/Cooking) — ส่งเข้าครัวทันทีทุกช่องทาง
     // unpaid = ยังไม่ชำระ (ทุกสถานะยกเว้น Completed/Cancelled)
@@ -805,20 +822,25 @@ const M={
         const md=snap.data()||{};
         const nm=(String(md.firstName||'')+' '+String(md.lastName||'')).trim();
         if(!nm) return;
-        // อัปเดต local
         const idx=this.orders.findIndex(x=>x.id===oid);
         if(idx>=0){ this.orders[idx].memberName=nm; this.orders[idx].memberPhone=ph; }
-        // เขียนกลับ Firestore
-        shopRef.collection('orders').doc(oid).update({ memberName:nm, memberPhone:ph }).catch(()=>{});
-        // รีเฟรช detail ถ้ายังเปิดออเดอร์นี้อยู่
+        // เติม cache ด้วย
         try{
-          const body=document.getElementById('detailBody');
+          const c=this.membersCache||[];
+          const ci=c.findIndex(x=>this.normPhone(x.phone||x.id)===ph);
+          if(ci>=0){ c[ci].firstName=md.firstName; c[ci].lastName=md.lastName; }
+          else { c.push({id:ph, phone:ph, ...md}); this.membersCache=c; }
+        }catch(e){}
+        shopRef.collection('orders').doc(oid).update({ memberName:nm, memberPhone:ph }).catch(()=>{});
+        try{ this.renderOrders(); }catch(e){}
+        // รีเฟรช detail เฉพาะเมื่อยังเปิดออเดอร์นี้อยู่ (ครั้งเดียว เพราะมีชื่อแล้วจะไม่ fetch ซ้ำ)
+        try{
           const modal=document.getElementById('detailModal');
-          if(modal && modal.classList.contains('on') && body && body.innerHTML.indexOf(oid)>=0 || true){
-            this.openDetail(oid);
+          if(modal && modal.classList.contains('on')){
+            const cur=this.orders.find(x=>x.id===oid);
+            if(cur && cur.memberName) this.openDetail(oid);
           }
         }catch(e){}
-        try{ this.renderOrders(); }catch(e){}
       }).catch(()=>{});
     }
     // โหลดข้อมูลสมาชิก (แต้ม/คูปอง) ให้ร้านใช้ส่วนลดแทนลูกค้า
