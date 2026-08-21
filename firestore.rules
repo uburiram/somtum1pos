@@ -282,7 +282,9 @@ service cloud.firestore {
 
       match /receipts/{id} {
         allow read: if true;
-        allow write: if request.resource.data.keys().size() <= 40;
+        // create/update จำกัดขนาด — delete แยกเพราะ request.resource เป็น null ตอนลบ
+        allow create, update: if request.resource.data.keys().size() <= 40;
+        allow delete: if true;
       }
 
       match /fcmTokens/{tokenId} {
