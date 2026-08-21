@@ -2205,8 +2205,20 @@ const C={
     if(!el || !order) return;
     const phone=this.normPhone(order.memberPhone||order.contactPhone||'');
     if(!phone){ el.style.display='none'; return; }
+    // กันจอกระพริบ: ถ้าโหลดออเดอร์นี้แล้วและ HTML ยังอยู่ ข้าม (ยกเว้น pointsEarned เพิ่งเปลี่ยน)
+    const cacheKey=String(order.id||'')+'|'+(order.pointsEarned||0)+'|'+(order.pointsUsed||0);
+    if(this._receiptBenefitsKey===cacheKey && el.dataset.filled==='1' && el.innerHTML.length>40){
+      el.style.display='block';
+      return;
+    }
+    // ถ้ากำลังโหลดออเดอร์นี้อยู่แล้ว อย่าเริ่มซ้ำ
+    if(this._receiptBenefitsLoading===cacheKey) return;
+    this._receiptBenefitsLoading=cacheKey;
     el.style.display='block';
-    el.innerHTML='<div style="margin-top:10px;padding:8px;background:#F3E5F5;border-radius:8px;font-size:12px;color:#6A1B9A;text-align:center">กำลังโหลดสิทธิ์สมาชิก…</div>';
+    // แสดง placeholder เฉพาะครั้งแรกเท่านั้น (ไม่กระพริบทุก snapshot)
+    if(el.dataset.filled!=='1'){
+      el.innerHTML='<div style="margin-top:10px;padding:8px;background:#F3E5F5;border-radius:8px;font-size:12px;color:#6A1B9A;text-align:center">กำลังโหลดสิทธิ์สมาชิก…</div>';
+    }
     try{
       const snap=await shopRef.collection('members').doc(phone).get();
       let pts=0, coupons=[];
@@ -2239,10 +2251,19 @@ const C={
       }
       html+='</div>';
       el.innerHTML=html;
+      el.dataset.filled='1';
+      this._receiptBenefitsKey=cacheKey;
+      this._receiptBenefitsHtml=html;
+      this._receiptBenefitsOrderId=String(order.id||'');
     }catch(e){
       console.warn(e);
-      el.innerHTML='';
-      el.style.display='none';
+      // ไม่ล้าง HTML ถ้าเคยมีของเก่า — กันกระพริบตอน error ชั่วคราว
+      if(el.dataset.filled!=='1'){
+        el.innerHTML='';
+        el.style.display='none';
+      }
+    }finally{
+      if(this._receiptBenefitsLoading===cacheKey) this._receiptBenefitsLoading=null;
     }
   },
 
@@ -2965,22 +2986,20 @@ const C={
       return `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px"><span>${esc(i.name)} × ${i.qty}${spice}${pl}${tops?`<div style="font-size:12px;color:#777">+ ${tops}</div>`:''}${note}</span><span>${money(i.total)}</span></div>`;
     }).join('');
     const orderCode=String(o.id||'').slice(0,12);
-    // ชื่อสมาชิก: จากออเดอร์ หรือจาก this.member ที่โหลดไว้ (กรณี snapshot ยังไม่มีชื่อ)
+    // ชื่อสมาชิก: จากออเดอร์ หรือจาก this.member ที่โหลดไว้
     let memberName=String(o.memberName||'').trim();
     const mPhone=String(o.memberPhone||o.contactPhone||'').trim();
-    if(!memberName && this.member && mPhone && String(this.member.phone||'')===mPhone){
+    if(!memberName && this.member && mPhone && this.normPhone(this.member.phone||'')===this.normPhone(mPhone)){
       memberName=this.escName(this.member);
     }
-    // แสดงชื่อใต้คิวเมื่อเป็นสมาชิก (มี memberPhone หรือมีชื่อ)
-    const isMember=!!(o.memberPhone || memberName);
-    const memberLine=isMember
-      ? ('<div style="font-size:15px;font-weight:600;color:#6A1B9A;margin-top:6px">'+(memberName?esc(memberName):('สมาชิก '+esc(mPhone)))+'</div>')
-      : '';
+    // รูปแบบ: คิวของคุณ + ชื่อสมาชิก (ถ้ามี) แล้วตามด้วยเลขคิวด้านล่าง
+    const queueTitle=memberName
+      ? ('คิวของคุณ <span style="color:#6A1B9A;font-weight:700">'+esc(memberName)+'</span>')
+      : (o.memberPhone ? ('คิวของคุณ <span style="color:#6A1B9A;font-weight:700">สมาชิก</span>') : 'คิวของคุณ');
     document.getElementById('ticketBody').innerHTML=`
       <h2 style="color:${cancelled?'var(--d)':paid?'var(--g)':'var(--p)'};margin-bottom:8px">${cancelled?'<i class="fa-solid fa-xmark"></i> ยกเลิกแล้ว':paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> รอชำระเงิน / รอรับออเดอร์'}</h2>
-      <div>คิวของคุณ</div>
+      <div style="font-size:1.05rem;font-weight:600">${queueTitle}</div>
       <div class="huge">${esc(o.queue)}</div>
-      ${memberLine}
       <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
       <div id="custCancelBox" style="margin:8px 0"></div>
       <div id="queueEtaBox" style="display:none;margin:10px 0;padding:12px;background:#FFF3E0;border-radius:12px;border:1px solid #FFE0B2;text-align:center"></div>
@@ -3002,6 +3021,13 @@ const C={
     // ใบเสร็จ: แสดงแต้ม/คูปองสมาชิกเฉพาะเมื่อเสร็จสมบูรณ์ทุกขั้นตอน
     try{
       if(o.status==='Completed' && paid && (o.memberPhone||o.contactPhone)){
+        const el=document.getElementById('receiptMemberBenefits');
+        // ถ้ามี cache HTML แล้ว ใส่ทันที (ไม่กระพริบ)
+        if(el && this._receiptBenefitsHtml && this._receiptBenefitsOrderId===String(o.id||'')){
+          el.style.display='block';
+          el.innerHTML=this._receiptBenefitsHtml;
+          el.dataset.filled='1';
+        }
         this.fillReceiptMemberBenefits(o);
       }
     }catch(e){ console.warn('fillReceiptMemberBenefits', e); }

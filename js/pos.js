@@ -676,7 +676,7 @@ const M={
         <div style="text-align:right"><div style="color:#888;font-size:12px">${o.createdAt?new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}</div>
         <div style="font-size:11px;font-weight:600;margin-top:2px;color:${o.status==='Cooking'?'#1565C0':o.status==='Ready'?'#2E7D32':'#E65100'}">${({Pending:'รอคิวทำ',AwaitingPayment:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:'ยกเลิก'})[o.status]||o.status}</div></div></div>
         <div style="margin:8px 0;color:#444">${esc(prev)}</div>
-        ${o.memberPhone?`<div style="font-size:11px;color:#6A1B9A">👤 ${esc(o.memberName||o.memberPhone)}${o.discountAmount?(' · ส่วนลด ฿'+o.discountAmount):''}</div>`: (o.contactPhone?`<div style="font-size:11px;color:#666">📞 ${esc(o.contactPhone)}</div>`:'')}
+        ${o.memberPhone||o.memberName?`<div style="font-size:11px;color:#6A1B9A">👤 ${o.memberName?('สมาชิกคุณ '+esc(o.memberName)):esc(o.memberPhone||'')}${o.discountAmount?(' · ส่วนลด ฿'+o.discountAmount):''}</div>`: (o.contactPhone?`<div style="font-size:11px;color:#666">📞 ${esc(o.contactPhone)}</div>`:'')}
         ${this.formatEtaCountdown(o)}
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px"><strong style="color:var(--p);font-size:1.25rem">${money(o.total)}</strong><span style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${method}${pay}${slip}</span></div></div>`;
     }).join('');
@@ -756,7 +756,8 @@ const M={
         </div>` : '';
     const memberHeader=memberPhone
       ? `<div style="margin:8px 0;padding:8px 10px;background:#F3E5F5;border-radius:8px;font-size:13px;text-align:center">
-          <div style="font-weight:700;color:#6A1B9A">สมาชิก ${memberName?esc(memberName)+' · ':''}${esc(memberPhone)}</div>
+          <div style="font-weight:700;color:#6A1B9A">${memberName?('สมาชิกคุณ '+esc(memberName)):('สมาชิก '+esc(memberPhone))}</div>
+          ${memberName?('<div style="font-size:12px;color:#888;margin-top:2px">'+esc(memberPhone)+'</div>'):''}
           ${Number(o.pointsUsed||0)>0||Number(o.couponDisc||0)>0||o.couponCode?`<div style="margin-top:4px;color:#555">ใช้แล้ว: ${Number(o.pointsUsed||0)>0?('แต้ม '+Number(o.pointsUsed)+' บาท'):''}${Number(o.couponDisc||0)>0||o.couponCode?(Number(o.pointsUsed||0)>0?' · ':'')+('คูปอง '+(o.couponCode||'')+' -฿'+Number(o.couponDisc||0)):''}</div>`:''}
         </div>` : '';
     (document.getElementById('detailBody')||{}).innerHTML=`
@@ -1623,6 +1624,57 @@ const M={
         +'<div style="font-size:12px;color:var(--p);font-weight:600">จัดการ ›</div>'
         +'</div></div>';
     }).join('');
+  },
+  openMemberDetail(phone){
+    phone=this.normPhone(phone);
+    const m=(this.membersCache||[]).find(x=>this.normPhone(x.phone||x.id)===phone);
+    if(!m){ toast('ไม่พบสมาชิก'); return; }
+    this._editingMember=m;
+    const panel=document.getElementById('panelMemberDetail');
+    const list=document.getElementById('panelMembers');
+    if(list) list.classList.add('hide');
+    if(panel) panel.classList.remove('hide');
+    this.renderMemberDetail(m);
+  },
+  renderMemberDetail(m){
+    const box=document.getElementById('memDetailBody');
+    if(!box||!m) return;
+    const phone=esc(m.phone||m.id||'');
+    const active=m.status!=='cancelled' && m.active!==false;
+    const created=m.createdAt?new Date(m.createdAt).toLocaleString('th-TH'):'-';
+    const cancelled=m.cancelledAt?new Date(m.cancelledAt).toLocaleString('th-TH'):'-';
+    const pcs=Array.isArray(m.personalCoupons)?m.personalCoupons:[];
+    let pcHtml='';
+    if(!pcs.length) pcHtml='<div style="color:#888;font-size:13px">ยังไม่มีคูปองส่วนตัว</div>';
+    else {
+      pcHtml=pcs.map(c=>{
+        const lab=c.type==='percent'?(c.value+'%'):('฿'+c.value);
+        const st=c.used?'<span style="color:#888">ใช้แล้ว</span>':'<span style="color:#2E7D32">ยังใช้ได้</span>';
+        return '<div style="padding:6px 0;border-bottom:1px solid #eee;font-size:13px;display:flex;justify-content:space-between;gap:6px">'
+          +'<span>'+esc(c.note||lab)+' ('+lab+') · '+st+'</span>'
+          +(c.used?'':'<button type="button" class="btn btn-o btn-sm" style="width:auto;margin:0" onclick="M.removePersonalCoupon(\''+phone+'\',\''+esc(c.id)+'\')">ลบ</button>')
+          +'</div>';
+      }).join('');
+    }
+    box.innerHTML=
+      '<div style="margin-bottom:10px;padding:8px;background:'+(active?'#E8F5E9':'#FFEBEE')+';border-radius:8px;font-size:13px">'
+      +(active?'✓ สิทธิ์สมาชิกใช้งานได้':'✗ ยกเลิกสิทธิ์แล้ว')
+      +'<div style="font-size:12px;color:#555;margin-top:4px">สมัครเมื่อ: '+created
+      +(m.cancelledAt?(' · ยกเลิกเมื่อ: '+cancelled):'')
+      +(m.cancelReason?(' · เหตุผล: '+esc(m.cancelReason)):'')
+      +'</div></div>'
+      +'<label class="lbl">ชื่อ</label><input id="mdFirst" value="'+esc(m.firstName||'')+'">'
+      +'<label class="lbl">นามสกุล</label><input id="mdLast" value="'+esc(m.lastName||'')+'">'
+      +'<label class="lbl">เบอร์โทร (แก้ไม่ได้)</label><input id="mdPhone" value="'+phone+'" disabled>'
+      +'<label class="lbl">แต้ม</label><input id="mdPoints" type="number" min="0" value="'+Number(m.points||0)+'">'
+      +'<button type="button" class="btn btn-p" style="margin-top:10px" onclick="M.saveMemberDetail()">บันทึกข้อมูล / แต้ม</button>'
+      +'<div style="margin-top:16px;font-weight:600">🎟 คูปองส่วนตัว</div>'
+      +'<div style="margin:8px 0">'+pcHtml+'</div>'
+      +'<button type="button" class="btn btn-o" style="margin-top:6px" onclick="M.assignPersonalCoupon(\''+phone+'\')">+ มอบคูปองส่วนตัว</button>'
+      +(active
+        ? ('<button type="button" class="btn btn-o" style="margin-top:12px;color:var(--d);border-color:#ef9a9a" onclick="M.cancelMembership(\''+phone+'\')">ยกเลิกสิทธิ์สมาชิก</button>'
+           +'<div style="font-size:11px;color:#888;margin-top:4px">ไม่ลบประวัติ · เก็บวันสมัคร/วันยกเลิกไว้ตรวจสอบย้อนหลัง</div>')
+        : ('<button type="button" class="btn btn-o" style="margin-top:12px" onclick="M.reactivateMembership(\''+phone+'\')">เปิดสิทธิ์สมาชิกอีกครั้ง</button>'));
   },
   async adjustPoints(phone){
     phone=this.normPhone(phone);
