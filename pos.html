@@ -289,17 +289,17 @@
         <p style="font-size:12px;color:#777;margin-top:6px">ปิดแล้วหน้าสั่งของลูกค้าจะเหลือแค่เบอร์ติดต่อ ไม่แสดงแต้ม คูปอง และการสมัครสมาชิก — หน้าจอไม่รก ลูกค้าไม่สับสน</p>
       </div>
       <div style="margin-top:14px;padding:12px;border-radius:12px;background:#E3F2FD;border:1px solid #90CAF9">
-        <div style="font-weight:700;margin-bottom:8px;color:#0D47A1">🪑 โหมดรับออเดอร์ (เลือกอย่างใดอย่างหนึ่ง)</div>
+        <div style="font-weight:700;margin-bottom:8px;color:#0D47A1">🪑 ระบบรับออเดอร์อัตโนมัติจาก QR</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
           <button type="button" class="btn btn-g" id="btnModeQueue" onclick="M.setOrderMode('queue')">คิว (Queue)</button>
           <button type="button" class="btn btn-o" id="btnModeTable" onclick="M.setOrderMode('table')">โต๊ะ (Table)</button>
         </div>
-        <div id="orderModeStatus" style="font-size:13px;font-weight:600;color:#1565C0;margin-bottom:8px">โหมดปัจจุบัน: คิว</div>
-        <div id="tableModeSettings" style="display:none">
+        <div id="orderModeStatus" style="font-size:13px;font-weight:600;color:#1565C0;margin-bottom:8px">ค่าเริ่มต้นเมื่อเปิดลิงก์ตรง: คิว · แต่ QR จะกำหนดอัตโนมัติ</div>
+        <div id="tableModeSettings" style="display:block">
           <label class="lbl">จำนวนโต๊ะในร้าน</label>
           <input id="setTableCount" type="number" min="1" max="100" value="10" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px">
           <button class="btn btn-p btn-block" style="margin-top:8px" onclick="M.saveTableCount()">บันทึกจำนวนโต๊ะ + สร้าง QR</button>
-          <p style="font-size:12px;color:#666;margin-top:8px">ระบบจะสร้าง QR แยกแต่ละโต๊ะ · ลูกค้าสแกนแล้วสั่งเข้าโต๊ะนั้น · หลายเครื่องรวมออเดอร์เดียวกันจนกว่าจะเคลียร์โต๊ะ</p>
+          <p style="font-size:12px;color:#666;margin-top:8px">QR โต๊ะจะบังคับให้ลูกค้าทานที่ร้านและผูกกับโต๊ะนั้นโดยอัตโนมัติ · หลายเครื่องรวมออเดอร์โต๊ะเดียวกันได้จนกว่าจะเคลียร์โต๊ะ</p>
           <div id="tableQrList" style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px"></div>
         </div>
       </div>
