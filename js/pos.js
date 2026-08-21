@@ -1937,27 +1937,33 @@ const M={
     }catch(e){ toast('ลบไม่สำเร็จ: '+(e.message||e)); }
   },
 
-  async markPaid(id, patch){
+async markPaid(id, patch){
     const paidAt=Date.now();
     const cur=this.orders.find(x=>x.id===id);
+    const total = Number(cur && cur.total || 0);
+    const paidAmount = patch.paidAmount != null ? Number(patch.paidAmount) : total;
+    
+    // คำนวณเงินทอนอัตโนมัติหากไม่ได้ระบุไว้
+    let changeAmount = patch.changeAmount != null ? Number(patch.changeAmount) : 0;
+    if (patch.changeAmount == null && paidAmount > total) {
+      changeAmount = Math.round((paidAmount - total) * 100) / 100;
+    }
+    
     const payload=Object.assign({
       paymentStatus:'PAID',
       paidAt,
-      paidAmount: patch.paidAmount!=null ? Number(patch.paidAmount) : Number(cur&&cur.total||0),
-      changeAmount: Number(patch.changeAmount||0),
+      paidAmount: paidAmount,
+      changeAmount: changeAmount,
       paymentMethod: patch.paymentMethod||'CASH',
       needsRepay:false,
       repayAmount:0
     }, patch);
-    if(payload.paidAmount==null || isNaN(payload.paidAmount)) payload.paidAmount=Number(cur&&cur.total||0);
-    // จ่ายเงินแล้ว — ไม่ย้อนสถานะครัว
-    // ถ้ายังเป็น AwaitingPayment (ของเก่า) → เข้า Pending (รอคิวทำ)
+    
+    if(payload.paidAmount==null || isNaN(payload.paidAmount)) payload.paidAmount=total;
     if(cur && cur.status==='AwaitingPayment'){
       payload.status='Pending';
     }
-    // ถ้าครัวทำเสร็จแล้ว (Ready) + จ่ายแล้ว ร้านกดเสร็จสมบูรณ์เอง
-    // ไม่ auto-complete เพื่อให้ร้านตรวจสลิป/ยืนยันก่อน
-    // 1) Cloud Function + secret (ปลอดภัยกว่า) ถ้าตั้งค่าแล้ว
+    
     const base=(window.FUNCTIONS_BASE||'').replace(/\/$/,'');
     const secret=window.SHOP_OPS_SECRET||'';
     let updatedViaFn=false;
@@ -1970,43 +1976,18 @@ const M={
         });
         const j=await r.json().catch(()=>({}));
         if(r.ok && j.ok) updatedViaFn=true;
-        else console.warn('markOrderPaid CF', j);
-      }catch(e){ console.warn('markOrderPaid CF', e); }
+        else console.warn('markOrderPaid fn failed', j);
+      }catch(e){ console.warn('markOrderPaid fetch error', e); }
     }
+    
     if(!updatedViaFn){
-      try{
-        await shopRef.collection('orders').doc(id).update(payload);
-      }catch(e){
-        const m=String(e&&e.message||e);
-        if(/permission|PERMISSION|insufficient/i.test(m)){
-          toast('ยืนยันชำระไม่สำเร็จ (สิทธิ์ Firestore) — ตรวจ rules หรือตั้ง Cloud Function');
-        } else {
-          toast('ยืนยันชำระไม่สำเร็จ: '+m);
-        }
-        throw e;
-      }
+      const ref=db.collection('shops').doc(window.SHOP_ID||'main').collection('orders').doc(id);
+      await ref.update(payload);
     }
-    // รีโหลดจาก Firestore เป็นแหล่งจริง
-    const snap=await shopRef.collection('orders').doc(id).get();
-    const full={id, ...(snap.data()||{})};
-    try{ await this.awardMemberPoints(full); }catch(e){ console.warn(e); }
-    // reload after points
-    try{
-      const snap2=await shopRef.collection('orders').doc(id).get();
-      if(snap2.exists) Object.assign(full, snap2.data());
-    }catch(e){}
-    await this.writeReceipt(full);
-    // อัปเดต local list ให้ตรง
-    const idx=this.orders.findIndex(x=>x.id===id);
-    if(idx>=0) this.orders[idx]=full;
+    
+    toast('ยืนยันการชำระเงินสำเร็จ');
     this.renderOrders();
-    const after=this.orders.find(x=>x.id===id);
-    if(after && after.status==='Ready'){
-      toast('ชำระแล้ว → อยู่ใน「พร้อมรับ」· กดเสร็จสมบูรณ์เมื่อลูกค้ารับของ');
-    } else {
-      toast('ชำระแล้ว · บันทึกใบเสร็จ');
-    }
-  },
+}
   async writeReceipt(order){
     const pub=(await shopRef.collection('settings').doc('public').get()).data()||{};
     const receipt={
