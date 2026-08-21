@@ -211,7 +211,7 @@ service cloud.firestore {
         && (!('pinHash' in d) || strMax(d.pinHash, 128))
         && (!('queueCounter' in d) || numRange(d.queueCounter, 0, 100000))
         && (!('tableCount' in d) || numRange(d.tableCount, 0, 500))
-        && (!('orderMode' in d) || d.orderMode in ['queue', 'table']);
+        && (!('orderMode' in d) || d.orderMode in ['queue', 'table', 'auto']);
     }
 
     match /shops/{shopId} {
