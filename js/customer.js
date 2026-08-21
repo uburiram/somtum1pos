@@ -168,42 +168,9 @@ function fileToDataUrl(file,maxSide=480,quality=.55){
 }
 
 async function migrateAndSeed(){
-  // แก้ชื่อบัญชีสะกดผิดในข้อมูลเก่า (นราทร → นรากร)
-  try{
-    const pub=await shopRef.collection('settings').doc('public').get();
-    if(pub.exists){
-      const an=String((pub.data()||{}).accountName||'');
-      if(an.includes('นราทร')){
-        await shopRef.collection('settings').doc('public').set({accountName:an.replace(/นราทร/g,'นรากร')},{merge:true});
-      }
-    }
-  }catch(e){ console.warn('fix accountName', e); }
-  try{
-    const q=await shopRef.collection('settings').doc('queue').get();
-    if(!q.exists){
-      await shopRef.collection('settings').doc('queue').set({queueCounter:1,queueDate:''},{merge:true});
-    }
-  }catch(e){ console.warn('queue seed', e); }
-  try{
-    const catSnap=await shopRef.collection('categories').limit(1).get();
-    if(!catSnap.empty) return;
-    const batch=db.batch();
-    [['c1','เมนูส้มตำ',1],['c2','เมนูยำ',2],['c3','เมนูของทอด',3],['c4','เมนูกินคู่ส้มตำ',4],['c5','เครื่องดื่ม',5]]
-      .forEach(([id,name,order])=>batch.set(shopRef.collection('categories').doc(id),{id,name,isActive:true,order}));
-    const menus=[
-      ['m1','c1','ตำปูปลาร้า',40],['m2','c1','ตำไทย',40],['m3','c1','ตำป่า',45],['m4','c1','ตำแตง',40],
-      ['m5','c2','ยำวุ้นเส้น',50],['m6','c3','ไก่ทอด',50],['m7','c3','ปีกไก่ทอด',40],
-      ['m8','c4','ไข่ต้ม',10],['m9','c4','ไข่ดาว',15],['m10','c5','น้ำเปล่า',10],['m11','c5','น้ำอัดลม',15]
-    ];
-    menus.forEach(([id,catId,name,price])=>batch.set(shopRef.collection('menus').doc(id),{id,catId,name,price,isActive:true,isOut:false,imageUrl:'',imageData:'',order:0}));
-    [['s1','ไม่เผ็ด',1],['s2','เผ็ดน้อย',2],['s3','เผ็ดกลาง',3],['s4','เผ็ดมาก',4]].forEach(([id,name,order])=>batch.set(shopRef.collection('spiceLevels').doc(id),{id,name,isActive:true,order}));
-    [['t1','ไข่ดาว',10],['t2','ไข่ต้ม',10],['t3','เพิ่มปู',20],['t4','หมูกรอบ',15]].forEach(([id,name,price],i)=>batch.set(shopRef.collection('toppings').doc(id),{id,name,price,isActive:true,order:i+1}));
-    batch.set(shopRef.collection('settings').doc('public'),{
-      shopName:'ส้มตำนายหนึ่ง', isOpen:true, memberSystemEnabled:true, promptpay:'1319900156353', accountName:'นาย นรากร วงค์แก่นท้าว',
-      payType:'kshop', merchantId:'EMPKB000002198793001', kshopPayload:window.KSHOP_QR_PAYLOAD||''
-    },{merge:true});
-    await batch.commit();
-  }catch(e){ console.warn('seed menus', e); }
+  // ลูกค้าต้องอ่านข้อมูลเท่านั้น ห้าม seed/แก้ไขการตั้งค่าร้าน เมนู หรือคิว
+  // การตั้งค่าเริ่มต้นและ migration ที่เขียนข้อมูลให้ทำจากฝั่ง POS/ผู้ดูแลเท่านั้น
+  return true;
 }
 
 const C={
@@ -2076,7 +2043,8 @@ const C={
       if(snap.exists){ toast('เบอร์นี้เป็นสมาชิกแล้ว'); return; }
       await ref.set({
         phone, firstName:String(first).trim(), lastName:String(last).trim(),
-        points:0, totalSpent:0, orderCount:0,
+        points:10, totalSpent:0, orderCount:0,
+        status:'active', active:true,
         createdAt:Date.now(), updatedAt:Date.now()
       });
       toast('สมัครสมาชิกสำเร็จ');
