@@ -2347,27 +2347,32 @@ const C={
     try{ await this.recalcPayTotal(); }catch(e){}
     const md=this.memDiscount||{};
     const contactPhone=this.normPhone((document.getElementById('memPhone')||{}).value||'');
-    // ถ้าใส่เบอร์แล้วแต่ยังไม่ได้กดค้นหาสมาชิก — ตรวจอัตโนมัติก่อนสร้างออเดอร์
-    if(contactPhone.length>=9 && !(this.member&&this.member.phone) && this.memberSystemEnabled!==false){
+    // ถ้าใส่เบอร์แล้ว — ตรวจสมาชิกอัตโนมัติทุกครั้งก่อนสร้างออเดอร์ (ไม่ต้องกดค้นหา)
+    if(contactPhone.length>=9 && this.memberSystemEnabled!==false){
       try{
-        const snap=await shopRef.collection('members').doc(contactPhone).get();
-        if(snap.exists){
-          const md={phone:contactPhone, ...snap.data()};
-          if(md.status!=='cancelled' && md.active!==false){
-            this.member=md;
+        // ถ้ายังไม่มี this.member หรือเบอร์ไม่ตรง — lookup ใหม่
+        if(!(this.member&&this.normPhone(this.member.phone)===contactPhone)){
+          const snap=await shopRef.collection('members').doc(contactPhone).get();
+          if(snap.exists){
+            const md={phone:contactPhone, ...snap.data()};
+            if(md.status!=='cancelled' && md.active!==false){
+              this.member=md;
+            } else {
+              this.member=null;
+            }
+          } else {
+            this.member=null;
           }
         }
       }catch(e){ console.warn('auto member lookup', e); }
     }
     // ถ้าแอดมินปิดระบบสมาชิก — ไม่ใช้แต้ม/คูปอง (เก็บแค่เบอร์ติดต่อ)
     const memOn=this.memberSystemEnabled!==false;
-    // ถ้าพบสมาชิกแล้ว บังคับใช้เบอร์สมาชิก (ไม่ปล่อยว่าง)
-    let memberPhone=(memOn && this.member&&this.member.phone)||'';
-    if(memOn && !memberPhone && contactPhone && this.member && this.member.phone){
-      memberPhone=this.normPhone(this.member.phone);
-    }
-    // ถ้ายังว่างแต่มีเบอร์และเป็นสมาชิกใน lookup ล่าสุด
-    if(memOn && !memberPhone && contactPhone && this.member){
+    // บังคับ: ถ้าเป็นสมาชิก ต้องมี memberPhone + จะได้ memberName ตอนบันทึกออเดอร์
+    let memberPhone='';
+    if(memOn && this.member && this.member.phone){
+      memberPhone=this.normPhone(this.member.phone)||contactPhone;
+    } else if(memOn && contactPhone.length>=9 && this.member){
       memberPhone=contactPhone;
     }
     const wantPts=(memOn && memberPhone)?Math.max(0, Math.floor(Number(md.pointsUsed||0))):0;
@@ -2591,7 +2596,7 @@ const C={
           personalCouponId: personalCouponId||'',
           couponDisc: Number(couponDisc||0), pointsDisc: Number(pointsDisc||0),
           memberPhone: memberPhone||'', contactPhone: contactPhone||memberPhone||'',
-          memberName: this.member?this.escName(this.member):'',
+          memberName: (this.member?this.escName(this.member):'')||'',
           pointsAwarded:0, pointsEarned:0,
           status: opts.status||'Pending',
           paymentMethod: fullyCovered ? (pointsUsed>=discountAmount?'POINTS':'COUPON') : 'PROMPTPAY',
@@ -2650,7 +2655,7 @@ const C={
       personalCouponId: personalCouponId||'',
       couponDisc: Number(couponDisc||0), pointsDisc: Number(pointsDisc||0),
       memberPhone: memberPhone||'', contactPhone: contactPhone||memberPhone||'',
-      memberName: this.member?this.escName(this.member):'',
+      memberName: (this.member?this.escName(this.member):'')||'',
       pointsAwarded:0, pointsEarned:0,
       status: opts.status||'Pending',
       paymentMethod: fullyCovered ? (pointsUsed>=discountAmount?'POINTS':'COUPON') : 'PROMPTPAY',
@@ -2692,11 +2697,27 @@ const C={
     this.lastOrder={id,...order};
     // เติมชื่อสมาชิกทันทีถ้ายังว่าง (กันตั๋วไม่โชว์ชื่อ)
     try{
-      if(this.lastOrder && !this.lastOrder.memberName && this.member){
-        this.lastOrder.memberName=this.escName(this.member);
+      if(this.lastOrder && this.member){
+        const nm=this.escName(this.member);
+        if(nm) this.lastOrder.memberName=nm;
+        const ph=this.normPhone(this.member.phone||'');
+        if(ph) this.lastOrder.memberPhone=ph;
       }
-      if(this.lastOrder && !this.lastOrder.memberPhone && this.member && this.member.phone){
-        this.lastOrder.memberPhone=this.normPhone(this.member.phone);
+      // ถ้ายังไม่มีชื่อแต่มีเบอร์ — ดึงจาก Firestore ทันทีแล้วอัปเดตตั๋ว
+      if(this.lastOrder && !this.lastOrder.memberName && (this.lastOrder.memberPhone||this.lastOrder.contactPhone)){
+        const ph=this.normPhone(this.lastOrder.memberPhone||this.lastOrder.contactPhone);
+        shopRef.collection('members').doc(ph).get().then(snap=>{
+          if(!snap.exists || !this.lastOrder || this.lastOrder.id!==id) return;
+          const md=snap.data()||{};
+          const nm=(String(md.firstName||'')+' '+String(md.lastName||'')).trim();
+          if(nm){
+            this.lastOrder.memberName=nm;
+            this.lastOrder.memberPhone=ph;
+            // เขียนชื่อกลับออเดอร์ (ไม่บล็อก UI)
+            shopRef.collection('orders').doc(id).update({ memberName:nm, memberPhone:ph }).catch(()=>{});
+            try{ this.renderTicket(this.lastOrder); }catch(e){}
+          }
+        }).catch(()=>{});
       }
     }catch(e){}
     // แสดงคิวก่อนทันที — ทุกขั้นตอน UI หุ้ม try กันพังกลางทาง
@@ -2992,10 +3013,27 @@ const C={
     if(!memberName && this.member && mPhone && this.normPhone(this.member.phone||'')===this.normPhone(mPhone)){
       memberName=this.escName(this.member);
     }
-    // รูปแบบ: คิวของคุณ + ชื่อสมาชิก (ถ้ามี) แล้วตามด้วยเลขคิวด้านล่าง
+    // ถ้ายังไม่มีชื่อแต่มีเบอร์สมาชิก — ดึงชื่อแล้วอัปเดตตั๋ว (ครั้งเดียวต่อออเดอร์)
+    if(!memberName && mPhone && this._nameFetchId!==o.id){
+      this._nameFetchId=o.id;
+      const oid=o.id;
+      shopRef.collection('members').doc(this.normPhone(mPhone)).get().then(snap=>{
+        if(!snap.exists) return;
+        const md=snap.data()||{};
+        const nm=(String(md.firstName||'')+' '+String(md.lastName||'')).trim();
+        if(!nm) return;
+        if(this.lastOrder && this.lastOrder.id===oid){
+          this.lastOrder.memberName=nm;
+          this.lastOrder.memberPhone=this.normPhone(mPhone);
+          try{ this.renderTicket(this.lastOrder); }catch(e){}
+        }
+        shopRef.collection('orders').doc(oid).update({ memberName:nm, memberPhone:this.normPhone(mPhone) }).catch(()=>{});
+      }).catch(()=>{});
+    }
+    // รูปแบบ: คิวของคุณ + ชื่อสมาชิก แล้วตามด้วยเลขคิวด้านล่าง
     const queueTitle=memberName
       ? ('คิวของคุณ <span style="color:#6A1B9A;font-weight:700">'+esc(memberName)+'</span>')
-      : (o.memberPhone ? ('คิวของคุณ <span style="color:#6A1B9A;font-weight:700">สมาชิก</span>') : 'คิวของคุณ');
+      : (mPhone ? ('คิวของคุณ <span style="color:#6A1B9A;font-weight:700">สมาชิก</span>') : 'คิวของคุณ');
     document.getElementById('ticketBody').innerHTML=`
       <h2 style="color:${cancelled?'var(--d)':paid?'var(--g)':'var(--p)'};margin-bottom:8px">${cancelled?'<i class="fa-solid fa-xmark"></i> ยกเลิกแล้ว':paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> รอชำระเงิน / รอรับออเดอร์'}</h2>
       <div style="font-size:1.05rem;font-weight:600">${queueTitle}</div>

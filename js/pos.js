@@ -747,7 +747,14 @@ const M={
     const orderCode=String(o.id||'').slice(0,12);
     const changeAmt=Math.max(0, Number(o.changeAmount||0));
     const memberPhone=String(o.memberPhone||o.contactPhone||'').trim();
-    const memberName=String(o.memberName||'').trim();
+    let memberName=String(o.memberName||'').trim();
+    // ถ้ามีเบอร์แต่ไม่มีชื่อ — ดึงจาก cache สมาชิกทันที
+    if(!memberName && memberPhone){
+      try{
+        const m=(this.membersCache||[]).find(x=>this.normPhone(x.phone||x.id)===this.normPhone(memberPhone));
+        if(m) memberName=(String(m.firstName||'')+' '+String(m.lastName||'')).trim();
+      }catch(e){}
+    }
     const changeBox=(o.paymentStatus==='PAID' && o.paymentMethod==='CASH' && changeAmt>0)
       ? `<div style="margin-top:12px;padding:14px;background:#E3F2FD;border:2px solid #1976D2;border-radius:12px;text-align:center">
           <div style="font-size:13px;color:#1565C0;font-weight:600">เงินทอน</div>
@@ -788,6 +795,32 @@ const M={
         <button class="btn btn-i btn-block" style="margin-top:8px" onclick="M.payPP('${esc(o.id)}')">ยืนยันรับโอนแล้ว</button>
       </div>`:''}`;
     try{document.getElementById('detailModal').classList.add('on');}catch(e){}
+    // ถ้ามีเบอร์แต่ยังไม่มีชื่อ — ดึงชื่อจาก members แล้วอัปเดตออเดอร์ + เปิด detail ใหม่ครั้งเดียว
+    if(memberPhone && !memberName && this._posNameFetchId!==o.id){
+      this._posNameFetchId=o.id;
+      const oid=o.id;
+      const ph=this.normPhone(memberPhone);
+      shopRef.collection('members').doc(ph).get().then(snap=>{
+        if(!snap.exists) return;
+        const md=snap.data()||{};
+        const nm=(String(md.firstName||'')+' '+String(md.lastName||'')).trim();
+        if(!nm) return;
+        // อัปเดต local
+        const idx=this.orders.findIndex(x=>x.id===oid);
+        if(idx>=0){ this.orders[idx].memberName=nm; this.orders[idx].memberPhone=ph; }
+        // เขียนกลับ Firestore
+        shopRef.collection('orders').doc(oid).update({ memberName:nm, memberPhone:ph }).catch(()=>{});
+        // รีเฟรช detail ถ้ายังเปิดออเดอร์นี้อยู่
+        try{
+          const body=document.getElementById('detailBody');
+          const modal=document.getElementById('detailModal');
+          if(modal && modal.classList.contains('on') && body && body.innerHTML.indexOf(oid)>=0 || true){
+            this.openDetail(oid);
+          }
+        }catch(e){}
+        try{ this.renderOrders(); }catch(e){}
+      }).catch(()=>{});
+    }
     // โหลดข้อมูลสมาชิก (แต้ม/คูปอง) ให้ร้านใช้ส่วนลดแทนลูกค้า
     if(memberPhone && o.paymentStatus!=='PAID' && !locked){
       try{ this.loadPosMemberPanel(o); }catch(e){ console.warn('loadPosMemberPanel', e); }
@@ -1531,12 +1564,28 @@ const M={
     if(!(await this.verifyAdminPin('ใส่ PIN ร้านเพื่อยืนยันการรีเซ็ต'))) return;
     try{
       toast('กำลังรีเซ็ต…');
-      // กฎ Firestore: ลบได้เฉพาะ Completed/Cancelled → ยกเลิกออเดอร์ที่ยังไม่จบก่อน (chunk 400)
+      // กฎ Firestore: ลบ order ได้เฉพาะ Completed/Cancelled → ยกเลิกที่ยังไม่จบก่อน
+      let nCancel=0;
+      try{ nCancel=await this.cancelAllActiveOrdersInChunks(); }catch(e){ console.warn('pre-cancel', e); }
+      let nOrders=0, nReceipts=0, errMsg='';
+      try{ nOrders=await this.deleteCollectionInBatches(shopRef.collection('orders'), 400); }
+      catch(e){ console.error('del orders', e); errMsg+=(e.message||e)+' '; }
+      try{ nReceipts=await this.deleteCollectionInBatches(shopRef.collection('receipts'), 400); }
+      catch(e){ console.error('del receipts', e); errMsg+=(e.message||e)+' '; }
+      // เคลียร์โต๊ะที่ occupied
       try{
-        await this.cancelAllActiveOrdersInChunks();
-      }catch(e){ console.warn('pre-cancel', e); }
-      const nOrders = await this.deleteCollectionInBatches(shopRef.collection('orders'), 400);
-      const nReceipts = await this.deleteCollectionInBatches(shopRef.collection('receipts'), 400);
+        const ts=await shopRef.collection('tables').get();
+        const batch=db.batch();
+        let n=0;
+        ts.docs.forEach(d=>{
+          const t=d.data()||{};
+          if(t.status==='occupied' || t.activeOrderId){
+            batch.set(d.ref,{ status:'free', activeOrderId:null, callStaff:false, updatedAt:Date.now() },{merge:true});
+            n++;
+          }
+        });
+        if(n) await batch.commit();
+      }catch(e){ console.warn('clear tables', e); }
       const today=new Date();
       const dayKey=today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
       await shopRef.collection('settings').doc('queue').set({
@@ -1550,9 +1599,15 @@ const M={
       this.renderOrders();
       this.loadHistory();
       this.updateAlarmBadge && this.updateAlarmBadge();
-      toast('รีเซ็ตแล้ว · ลบออเดอร์ '+nOrders+' รายการ, ใบเสร็จ '+nReceipts+' · คิวเริ่ม A001');
+      if(errMsg){
+        toast('รีเซ็ตบางส่วน: ยกเลิก '+nCancel+' · ลบออเดอร์ '+nOrders+' · ใบเสร็จ '+nReceipts+' · คิว A001 (บางรายการอาจเหลือ: '+errMsg.trim()+')');
+      } else {
+        toast('รีเซ็ตแล้ว · ลบออเดอร์ '+nOrders+' รายการ, ใบเสร็จ '+nReceipts+' · คิวเริ่ม A001');
+      }
     }catch(e){
       console.error(e);
+      // แม้ error ยังรีเฟรช UI ให้เห็นสถานะจริง
+      try{ this.orders=[]; this.renderOrders(); this.loadHistory(); }catch(x){}
       toast('รีเซ็ตไม่สำเร็จ: '+(e.message||e));
     }
   },
@@ -1635,6 +1690,15 @@ const M={
     if(list) list.classList.add('hide');
     if(panel) panel.classList.remove('hide');
     this.renderMemberDetail(m);
+  },
+  /** กลับจากหน้ารายละเอียดสมาชิก → รายชื่อ (ปุ่ม «กลับรายชื่อ») */
+  closeMemberDetail(){
+    const panel=document.getElementById('panelMemberDetail');
+    const list=document.getElementById('panelMembers');
+    if(panel) panel.classList.add('hide');
+    if(list) list.classList.remove('hide');
+    this._editingMember=null;
+    try{ this.loadMembersPanel(); }catch(e){}
   },
   renderMemberDetail(m){
     const box=document.getElementById('memDetailBody');
@@ -2359,6 +2423,19 @@ const M={
       const el=document.getElementById('panel'+n.charAt(0).toUpperCase()+n.slice(1));
       if(el) el.classList.toggle('hide', n!==name);
     });
+    // panelMemberDetail อยู่นอก panelMembers — ต้องซ่อนทุกครั้งที่ไม่ได้อยู่แท็บสมาชิก
+    // ไม่งั้นกดออเดอร์/โต๊ะ/อื่น แล้วยังค้างทับจอ
+    try{
+      const detail=document.getElementById('panelMemberDetail');
+      if(detail){
+        if(name!=='members') detail.classList.add('hide');
+        else detail.classList.add('hide'); // เข้าแท็บสมาชิกเริ่มที่รายชื่อเสมอ
+      }
+      if(name==='members'){
+        const list=document.getElementById('panelMembers');
+        if(list) list.classList.remove('hide');
+      }
+    }catch(e){}
     document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('on'));
     const map={orders:'navOrders',tables:'navTables',history:'navHistory',shop:'navShop',report:'navReport',members:'navMembers',settings:'navSet'};
     if(map[name]) document.getElementById(map[name]).classList.add('on');
@@ -2366,7 +2443,7 @@ const M={
     if(name==='history') this.loadHistory();
     if(name==='shop') this.shopTab(this.shopTabName||'menu');
     if(name==='settings') this.loadSettingsUI();
-    if(name==='members'){ const d=document.getElementById('panelMemberDetail'); if(d) d.classList.add('hide'); this.loadMembersPanel(); }
+    if(name==='members'){ this.loadMembersPanel(); }
   },
   histPreset(p){
     const from=document.getElementById('histFrom');
