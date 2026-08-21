@@ -1728,29 +1728,45 @@ const C={
     }
     if(!confirm('ยืนยันยกเลิกออเดอร์คิว '+(o.queue||'')+' ?')) return;
     try{
-      if(!o.benefitsRefunded){
-        try{ await this.refundMemberBenefits(o); }catch(e){ console.warn('refund', e); }
-      }
-      await shopRef.collection('orders').doc(o.id).update({
-        status:'Cancelled',
-        cancelledAt:Date.now(),
-        cancelledBy:'customer',
-        cancelReason:'ลูกค้ายกเลิกตอนรอคิวทำ',
-        benefitsRefunded: true
-      });
-      // โหมดโต๊ะ: ปลด activeOrderId เพื่อให้สั่งใหม่/โต๊ะว่างทันที
-      try{
-        const tNo = o.tableNo!=null ? o.tableNo : this.tableNo;
-        if((o.orderMode==='table' || this.orderMode==='table') && tNo){
-          await shopRef.collection('tables').doc(String(tNo)).set({
-            activeOrderId:null,
-            status:'free',
-            callStaff:false,
-            updatedAt:Date.now()
-          },{merge:true});
+      // ยกเลิก + คืนแต้ม/คูปองใน transaction เดียวกัน เพื่อกันกรณีคืนสิทธิ์สำเร็จแต่ยกเลิกออเดอร์ไม่สำเร็จ
+      const result = await db.runTransaction(async tx=>{
+        const oref=shopRef.collection('orders').doc(o.id);
+        const os=await tx.get(oref);
+        if(!os.exists) throw new Error('ไม่พบออเดอร์');
+        const cur=os.data()||{};
+        if(cur.status==='Cancelled') return {o:cur};
+        if(cur.status==='Completed' || cur.paymentStatus==='PAID' || Number(cur.paidAmount||0)>0 || cur.needsRepay){
+          throw new Error('ออเดอร์มีการชำระเงินแล้วหรือปิดงานแล้ว · ยกเลิกไม่ได้');
         }
-      }catch(e){ console.warn('free table after cancel', e); }
-      this.lastOrder=Object.assign({}, o, {status:'Cancelled', cancelledBy:'customer', benefitsRefunded:true});
+        if(cur.orderMode==='table' || this.orderMode==='table') throw new Error('ออเดอร์โต๊ะเป็นออเดอร์ร่วม · ให้ร้านดำเนินการยกเลิก');
+        const phone=this.normPhone(cur.memberPhone||'');
+        const pts=Math.max(0,Number(cur.pointsUsed||cur.pointsDisc||0));
+        const pcid=String(cur.personalCouponId||'');
+        const pubCode=String(cur.couponCode||'').trim().toUpperCase();
+        const isPub=!!pubCode && !pubCode.startsWith('PERSONAL:');
+        const mref=phone?shopRef.collection('members').doc(phone):null;
+        const cref=isPub?shopRef.collection('coupons').doc(pubCode):null;
+        let ms=null, cs=null;
+        if(mref && (pts>0 || pcid)) ms=await tx.get(mref);
+        if(cref) cs=await tx.get(cref);
+        if(ms && ms.exists && (pts>0 || pcid)){
+          const md=ms.data()||{};
+          const patch={updatedAt:Date.now()};
+          if(pts>0) patch.points=Number(md.points||0)+pts;
+          if(pcid && Array.isArray(md.personalCoupons)) patch.personalCoupons=md.personalCoupons.map(c=>c&&String(c.id)===pcid&&c.used?Object.assign({},c,{used:false,usedAt:null}):c);
+          tx.update(mref,patch);
+        }
+        if(cs && cs.exists && isPub){
+          const cd=cs.data()||{};
+          tx.update(cref,{usedCount:Math.max(0,Number(cd.usedCount||0)-1),updatedAt:Date.now()});
+        }
+        tx.update(oref,{
+          status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'customer',
+          cancelReason:'ลูกค้ายกเลิกตอนรอคิวทำ', benefitsRefunded:true, updatedAt:Date.now()
+        });
+        return {o:Object.assign({},cur,{status:'Cancelled',cancelledBy:'customer',benefitsRefunded:true})};
+      });
+      this.lastOrder=Object.assign({}, result.o, {id:o.id});
       this.renderTicket(this.lastOrder);
       toast('ยกเลิกโดยลูกค้าแล้ว');
       // เคลียร์ state หลังโชว์ตั๋วยกเลิกสั้น ๆ — ให้สั่งคิวใหม่ได้ทันที
@@ -2079,7 +2095,7 @@ const C={
       if(snap.exists){ toast('เบอร์นี้เป็นสมาชิกแล้ว'); return; }
       await ref.set({
         phone, firstName:String(first).trim(), lastName:String(last).trim(),
-        points:0, totalSpent:0, orderCount:0,
+        points:10, totalSpent:0, orderCount:0,
         createdAt:Date.now(), updatedAt:Date.now()
       });
       toast('สมัครสมาชิกสำเร็จ');
@@ -2874,12 +2890,15 @@ const C={
     try{
       const cbox=document.getElementById('custCancelBox');
       if(cbox){
-        const canCancel = !cancelled && !paid && !o.needsRepay && !(Number(o.paidAmount||0)>0) && (o.status==='Pending' || o.status==='AwaitingPayment');
+        const canCancel = !cancelled && o.orderMode!=='table' && this.orderMode!=='table' && !paid && !o.needsRepay && !(Number(o.paidAmount||0)>0) && (o.status==='Pending' || o.status==='AwaitingPayment');
+        const isSharedTable = !cancelled && (o.orderMode==='table' || this.orderMode==='table');
         if(cancelled){
           const by=o.cancelledBy==='customer'?'ลูกค้า':(o.cancelledBy==='shop'?'ร้าน':'—');
           cbox.innerHTML='<div style="font-size:13px;color:#C62828;text-align:center;padding:8px;background:#FFEBEE;border-radius:8px;font-weight:600">ยกเลิกโดย'+by+'</div>';
         } else if(canCancel){
           cbox.innerHTML='<button type="button" class="btn btn-d btn-block" style="margin-top:4px" onclick="C.cancelMyOrder()">ยกเลิกออเดอร์</button><div style="font-size:11px;color:#888;margin-top:4px;text-align:center">ยกเลิกได้เฉพาะตอนรอคิวทำ</div>';
+        } else if(isSharedTable && o.status!=='Completed'){
+          cbox.innerHTML='<div style="font-size:12px;color:#6A1B9A;text-align:center;padding:7px;background:#F3E5F5;border-radius:8px">ออเดอร์โต๊ะเป็นออเดอร์ร่วม · การยกเลิกต้องให้ร้านดำเนินการ</div>';
         } else if(o.status!=='Completed'){
           cbox.innerHTML='<div style="font-size:12px;color:#888;text-align:center;padding:6px;background:#f5f5f5;border-radius:8px">ไม่สามารถยกเลิกได้แล้ว (ครัวรับออเดอร์แล้ว)<br>หากต้องการยกเลิก กรุณาติดต่อร้านโดยตรง</div>';
         } else {

@@ -858,27 +858,59 @@ const M={
       toast(order.status==='Completed'?'ออเดอร์เสร็จสมบูรณ์แล้ว ยกเลิกไม่ได้':'ออเดอร์นี้ยกเลิกไปแล้ว');
       return;
     }
-    // คืนสิทธิ์ก่อน แล้วค่อย mark ยกเลิก + กันคืนซ้ำด้วย benefitsRefunded
-    if(order && !order.benefitsRefunded){
-      try{ await this.refundMemberBenefits(order); }catch(e){ console.warn('refund', e); }
-    }
-    // ไม่แตะ paymentStatus/paidAmount — rules ห้ามเปลี่ยนการเงินตอน soft cancel
-    await shopRef.collection('orders').doc(id).update({
-      status:'Cancelled', cancelledAt:Date.now(), cancelledBy:'shop',
-      benefitsRefunded: true
-    });
-    // ปลดโต๊ะถ้าออเดอร์ผูกโต๊ะ
+    // ยกเลิก + คืนแต้ม/คูปอง + ปลดโต๊ะใน transaction เดียวกัน
     try{
-      const tNo = order && order.tableNo;
-      if(tNo!=null && tNo!==''){
-        const tref=shopRef.collection('tables').doc(String(tNo));
-        const ts=await tref.get();
-        const td=ts.exists?ts.data():{};
-        if(td.activeOrderId===id){
-          await tref.set({activeOrderId:null, status:'free', callStaff:false, updatedAt:Date.now()},{merge:true});
+      await db.runTransaction(async tx=>{
+        const oref=shopRef.collection('orders').doc(id);
+        const os=await tx.get(oref);
+        if(!os.exists) throw new Error('ไม่พบออเดอร์');
+        const cur=os.data()||{};
+        if(cur.status==='Completed' || cur.status==='Cancelled') return;
+
+        const phone=this.normPhone(cur.memberPhone||'');
+        const ptsUsed=Math.max(0,Number(cur.pointsUsed||cur.pointsDisc||0));
+        const earned=Math.max(0,Number(cur.pointsEarned||0));
+        const publicCode=String(cur.couponCode||'').trim().toUpperCase();
+        const isPublicCoupon=!!publicCode && !publicCode.startsWith('PERSONAL:');
+        const personalId=String(cur.personalCouponId||'');
+        const mref=phone?shopRef.collection('members').doc(phone):null;
+        const cref=isPublicCoupon?shopRef.collection('coupons').doc(publicCode):null;
+        const tNo=cur.tableNo;
+        const tref=(tNo!=null && tNo!=='')?shopRef.collection('tables').doc(String(tNo)):null;
+        let ms=null, cs=null, ts=null;
+        if(mref && (ptsUsed>0 || personalId || (earned>0 && cur.pointsAwarded && !cur.pointsRefunded))) ms=await tx.get(mref);
+        if(cref) cs=await tx.get(cref);
+        if(tref) ts=await tx.get(tref);
+
+        if(ms && ms.exists){
+          const md=ms.data()||{};
+          const patch={updatedAt:Date.now()};
+          let p=Number(md.points||0);
+          if(ptsUsed>0) p+=ptsUsed;
+          if(earned>0 && cur.pointsAwarded && !cur.pointsRefunded) p=Math.max(0,p-earned);
+          if(ptsUsed>0 || earned>0) patch.points=p;
+          if(earned>0 && cur.pointsAwarded && !cur.pointsRefunded){
+            patch.totalSpent=Math.max(0,Number(md.totalSpent||0)-Math.max(0,Number(cur.total||0)));
+            patch.orderCount=Math.max(0,Number(md.orderCount||0)-1);
+          }
+          if(personalId && Array.isArray(md.personalCoupons)){
+            patch.personalCoupons=md.personalCoupons.map(c=>c&&String(c.id)===personalId&&c.used?Object.assign({},c,{used:false,usedAt:null}):c);
+          }
+          tx.update(mref,patch);
         }
-      }
-    }catch(e){ console.warn('free table', e); }
+        if(cs && cs.exists && isPublicCoupon){
+          const cd=cs.data()||{};
+          tx.update(cref,{usedCount:Math.max(0,Number(cd.usedCount||0)-1),updatedAt:Date.now()});
+        }
+        const orderPatch={status:'Cancelled',cancelledAt:Date.now(),cancelledBy:'shop',benefitsRefunded:true,updatedAt:Date.now()};
+        if(earned>0 && cur.pointsAwarded && !cur.pointsRefunded) orderPatch.pointsRefunded=true;
+        tx.update(oref,orderPatch);
+        if(tref && ts && ts.exists){
+          const td=ts.data()||{};
+          if(td.activeOrderId===id) tx.set(tref,{activeOrderId:null,status:'free',callStaff:false,updatedAt:Date.now()},{merge:true});
+        }
+      });
+    }catch(e){ toast('ยกเลิกไม่สำเร็จ: '+(e.message||e)); return; }
     toast('ยกเลิกโดยร้านแล้ว');
     (function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})();
   },
