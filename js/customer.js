@@ -174,7 +174,7 @@ async function migrateAndSeed(){
 }
 
 const C={
-  shopName:'ร้าน',promptpay:'',accountName:'',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:'',memberSystemEnabled:true,orderMode:'queue',tableNo:null,tableCount:0,optionConfig:{spiceMode:'single',toppingMode:'multi',toppingAllowQty:true},cats:[],menus:[],spice:[],tops:[],
+  shopName:'ร้าน',promptpay:'',accountName:'',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:'',memberSystemEnabled:true,orderMode:'queue',qrOrderMode:null,qrContext:null,tableNo:null,tableCount:0,optionConfig:{spiceMode:'single',toppingMode:'multi',toppingAllowQty:true},cats:[],menus:[],spice:[],tops:[],
   cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'PROMPTPAY',slipData:'',lastOrder:null,kitchenOrders:[],bestSellerIds:[],bestSellerRank:{},
 
   async init(){
@@ -208,9 +208,17 @@ const C={
       shopRef=db.collection('shops').doc(window.SHOP_ID||'main');
       setConn('เชื่อมต่อแล้ว');
       try{
-        this.tableNo=this.parseTableFromUrl();
-        if(this.tableNo) this.applyOrderModeCustomerUI();
-      }catch(e){}
+        this.qrContext=this.parseQrContext();
+        if(this.qrContext){
+          this.qrOrderMode=this.qrContext.mode;
+          this.tableNo=this.qrContext.tableNo||null;
+          this.orderMode=this.qrContext.mode;
+          this.applyOrderModeCustomerUI();
+        } else {
+          this.tableNo=this.parseTableFromUrl();
+          if(this.tableNo) this.applyOrderModeCustomerUI();
+        }
+      }catch(e){ console.warn('QR context',e); }
       // seed ไม่ควรบล็อกการแสดงผลนาน
       try{ await Promise.race([migrateAndSeed(), new Promise(function(r){setTimeout(r,5000);})]); }catch(e){ console.warn('seed',e); }
       shopRef.collection('settings').doc('public').onSnapshot(s=>{
@@ -227,7 +235,8 @@ const C={
         this.setShopOpenState(d.isOpen!==false);
         // ระบบสมาชิกบนหน้าลูกค้า (default เปิด เพื่อไม่พังร้านเดิม)
         this.applyMemberSystemState(d.memberSystemEnabled!==false);
-        this.orderMode = d.orderMode==='table' ? 'table' : 'queue';
+        // QR เป็นตัวกำหนดประเภทออเดอร์เสมอ; setting ร้านใช้เป็นค่า fallback เท่านั้น
+        if(!this.qrOrderMode){ this.orderMode = d.orderMode==='table' ? 'table' : 'queue'; }
         this.tableCount = Number(d.tableCount||0);
         try{ this.applyOrderModeCustomerUI(); }catch(e){}
       });
@@ -1395,6 +1404,25 @@ const C={
     }catch(e){}
   },
 
+  parseQrContext(){
+    try{
+      const u=new URL(location.href);
+      const rawMode=(u.searchParams.get('mode')||u.searchParams.get('order')||'').toLowerCase();
+      let table=u.searchParams.get('table')||u.searchParams.get('t');
+      if(table!=null && /^\d{1,3}$/.test(String(table)) && Number(table)>0){
+        return {mode:'table', tableNo:Number(table), source:'table-qr'};
+      }
+      if(['queue','takeaway','pickup','q'].includes(rawMode)){
+        return {mode:'queue', tableNo:null, source:'queue-qr'};
+      }
+      const h=String(location.hash||'');
+      const hm=h.match(/(?:mode|order)[=:_-]?(queue|takeaway|pickup)/i);
+      if(hm) return {mode:'queue',tableNo:null,source:'queue-qr'};
+      const ht=h.match(/table[=:_-]?(\d+)/i);
+      if(ht) return {mode:'table',tableNo:Number(ht[1]),source:'table-qr'};
+    }catch(e){}
+    return null;
+  },
   parseTableFromUrl(){
     try{
       const u=new URL(location.href);
@@ -1521,8 +1549,9 @@ const C={
     const lab=document.getElementById('tableModeLabel');
     const btn=document.getElementById('btnCallStaff');
     if(lab){
-      if(useTable) lab.textContent='🪑 สั่งอาหาร · โต๊ะ '+this.tableNo;
+      if(useTable) lab.textContent='🪑 ทานที่ร้าน · โต๊ะ '+this.tableNo;
       else if(this.orderMode==='table') lab.textContent='🪑 โหมดโต๊ะ · กรุณาสแกน QR บนโต๊ะก่อนสั่ง';
+      else if(lab && this.qrOrderMode==='queue') lab.textContent='🥡 สั่งกลับบ้าน · ระบบคิวอัตโนมัติ';
     }
     if(btn) btn.style.display = useTable ? 'inline-block' : 'none';
     if(useTable){
@@ -2447,6 +2476,8 @@ const C={
           kitchenSortAt: Date.now(),
           etaAnchorAt: Date.now(),
           orderMode:'table',
+          orderType:'DINE_IN',
+          orderSource:'table-qr',
           tableNo:Number(this.tableNo)
         };
         tx.set(shopRef.collection('orders').doc(newId), ord);
@@ -2505,7 +2536,10 @@ const C={
       createdAt: Date.now(),
       kitchenSortAt: Date.now(),
       etaAnchorAt: Date.now(),
-      orderMode:'queue'
+      orderMode:'queue',
+      orderType:'TAKEAWAY',
+      orderSource:(this.qrContext&&this.qrContext.source)||'queue',
+      tableNo:null
     };
     await shopRef.collection('orders').doc(id).set(order);
     }
