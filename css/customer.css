@@ -28,6 +28,7 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
 .btn-o{border:1px solid var(--p);color:var(--p);background:#fff;width:100%}
 .btn-g{background:var(--g);color:#fff;width:100%}
 .btn-i{background:var(--i);color:#fff;width:100%}
+.btn-d{background:var(--d);color:#fff;width:100%}
 .btn-sm{padding:6px 10px;font-size:13px;width:auto}
 .qty{display:flex;align-items:center;justify-content:center;gap:14px;margin:12px 0}
 .qb{width:36px;height:36px;border-radius:50%;background:#eee;font-size:18px;font-weight:700}
