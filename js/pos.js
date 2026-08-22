@@ -92,7 +92,9 @@ const M={
     try{
       if(!firebase.apps || !firebase.apps.length) firebase.initializeApp(c);
       try{
-        if(window.FIREBASE_APPCHECK_SITE_KEY && firebase.appCheck){
+        const host=String(location.hostname||'');
+        const appCheckOk=/github\.io$/i.test(host);
+        if(appCheckOk && window.FIREBASE_APPCHECK_SITE_KEY && firebase.appCheck){
           const appCheck=firebase.appCheck();
           // รองรับทั้ง string key (compat) และ ReCaptchaV3Provider
           if(firebase.appCheck.ReCaptchaV3Provider){
@@ -352,14 +354,17 @@ const M={
       console.log('FCM token ลงทะเบียนสำเร็จ');
       toast('เปิดแจ้งเตือนพื้นหลังแล้ว ✓');
 
-      // รับข้อความตอนแอพเปิดอยู่ (foreground)
-      messaging.onMessage(function(payload){
-        const title = (payload.notification && payload.notification.title) || 'ออเดอร์ใหม่ — ส้มตำนายหนึ่ง';
-        const body = (payload.notification && payload.notification.body) || 'มีออเดอร์เข้ามาในระบบ';
-        try{ M.beep(); }catch(e){}
-        try{ M.pushNotify(title, body); }catch(e){}
-        try{ if(typeof M.startAlarm === 'function') M.startAlarm(); }catch(e){}
-      });
+      // รับข้อความตอนแอพเปิดอยู่ (foreground) — ผูกครั้งเดียวกัน handler ซ้อน
+      if(!this._fcmOnMessageBound){
+        this._fcmOnMessageBound=true;
+        messaging.onMessage(function(payload){
+          const title = (payload.notification && payload.notification.title) || 'ออเดอร์ใหม่ — ส้มตำนายหนึ่ง';
+          const body = (payload.notification && payload.notification.body) || 'มีออเดอร์เข้ามาในระบบ';
+          try{ M.beep(); }catch(e){}
+          try{ M.pushNotify(title, body); }catch(e){}
+          try{ if(typeof M.startAlarm === 'function') M.startAlarm(); }catch(e){}
+        });
+      }
     }catch(e){
       console.error('registerFCM error', e);
       // ไม่ toast error ทุกครั้ง เพื่อไม่รบกวน
@@ -370,92 +375,80 @@ const M={
   listenOrders(){
     if(this.unsub) this.unsub();
     this.unviewed=this.unviewed||new Set();
-    const attach=()=>{
-      this.unsub=shopRef.collection('orders').orderBy('createdAt','desc').limit(300).onSnapshot(snap=>{
-        this.orders=snap.docs.map(d=>({id:d.id,...d.data()}));
-        const activeOrders=this.orders.filter(o=>o.status!=='Completed'&&o.status!=='Cancelled');
-        const active=activeOrders.length;
-        if(this.ready){
-          this._prevAddAt=this._prevAddAt||{};
-          this._blinkAdds=this._blinkAdds||new Set();
-          let newOrderCount=0;
-          let newAddCount=0;
-          activeOrders.forEach(o=>{
-            // (1) ออเดอร์ใหม่จริง ๆ — id ที่ยังไม่เคยเห็น
-            if(!this.seenIds.has(o.id)){
-              this.seenIds.add(o.id);
-              // แจ้งเฉพาะที่เข้าครัว / รอทำ
-              if(o.status==='Pending'||o.status==='AwaitingPayment'||o.status==='Cooking'){
-                this.unviewed.add(o.id);
-                this._blinkAdds.add(o.id);
-                newOrderCount++;
-              }
-            }
-            // (2) มีเมนูเพิ่มในออเดอร์เดิม — lastAddAt เพิ่มขึ้นจากค่าที่จำไว้เท่านั้น
-            const la=Number(o.lastAddAt||0);
-            const prev=this._prevAddAt[o.id];
-            if(la>0 && prev!=null && la>Number(prev)){
-              this._blinkAdds.add(o.id);
+    const handle=(docs)=>{
+      this.orders=docs;
+      const activeOrders=this.orders.filter(o=>o.status!=='Completed'&&o.status!=='Cancelled');
+      const active=activeOrders.length;
+      if(this.ready){
+        this._prevAddAt=this._prevAddAt||{};
+        this._blinkAdds=this._blinkAdds||new Set();
+        let newOrderCount=0;
+        let newAddCount=0;
+        activeOrders.forEach(o=>{
+          if(!this.seenIds.has(o.id)){
+            this.seenIds.add(o.id);
+            if(o.status==='Pending'||o.status==='AwaitingPayment'||o.status==='Cooking'){
               this.unviewed.add(o.id);
-              newAddCount++;
-              const back=!!o.returnedToKitchen || o.status==='Pending' || o.status==='Cooking';
-              toast('🔔 โต๊ะ '+(o.tableNo||o.queue||'')+' สั่งเพิ่มครั้งที่ '+(o.lastAddRound||'')+(back?' · เข้าครัว':''));
-              try{
-                this.filterKey='kitchen';
-                document.querySelectorAll('.fc').forEach(x=>x.classList.remove('on'));
-                document.querySelectorAll('.fc').forEach(btn=>{
-                  if((btn.getAttribute('onclick')||'').indexOf('kitchen')>=0) btn.classList.add('on');
-                });
-              }catch(e){}
-            }
-            // จำ lastAddAt ทุกครั้ง (ครั้งแรกแค่ seed ไม่แจ้ง)
-            if(la>0) this._prevAddAt[o.id]=la;
-            else if(this._prevAddAt[o.id]==null) this._prevAddAt[o.id]=0;
-          });
-          // แจ้งเตือนเฉพาะเมื่อมีของใหม่ในรอบ snapshot นี้เท่านั้น — ไม่ยิงซ้ำทุกออเดอร์
-          if(newOrderCount>0 || newAddCount>0){
-            try{ this.beep(); }catch(e){}
-            try{ this.startAlarm(); }catch(e){}
-            if(newOrderCount>0){
-              toast('🔔 ออเดอร์ใหม่ '+newOrderCount+' รายการ');
-              try{ this.pushNotify('ออเดอร์ใหม่ — ส้มตำนายหนึ่ง', 'มี '+newOrderCount+' ออเดอร์ใหม่'); }catch(e){}
+              this._blinkAdds.add(o.id);
+              newOrderCount++;
             }
           }
-        } else {
-          // โหลดครั้งแรก: seed อย่างเดียว ไม่กระพริบ/ไม่เสียง
-          this.seenIds=new Set(this.orders.map(o=>o.id));
-          this.seenPaid=new Set(this.orders.filter(o=>o.paymentStatus==='PAID').map(o=>o.id));
-          this.unviewed=new Set();
-          this._blinkAdds=new Set();
-          this._prevAddAt={};
-          (this.orders||[]).forEach(o=>{
-            this._prevAddAt[o.id]=Number(o.lastAddAt||0);
-          });
-          this.ready=true;
+          const la=Number(o.lastAddAt||0);
+          const prev=this._prevAddAt[o.id];
+          if(la>0 && prev!=null && la>Number(prev)){
+            this._blinkAdds.add(o.id);
+            this.unviewed.add(o.id);
+            newAddCount++;
+            const back=!!o.returnedToKitchen || o.status==='Pending' || o.status==='Cooking';
+            toast('🔔 โต๊ะ '+(o.tableNo||o.queue||'')+' สั่งเพิ่มครั้งที่ '+(o.lastAddRound||'')+(back?' · เข้าครัว':''));
+            try{
+              this.filterKey='kitchen';
+              document.querySelectorAll('.fc').forEach(x=>x.classList.remove('on'));
+              document.querySelectorAll('.fc').forEach(btn=>{
+                if((btn.getAttribute('onclick')||'').indexOf('kitchen')>=0) btn.classList.add('on');
+              });
+            }catch(e){}
+          }
+          if(la>0) this._prevAddAt[o.id]=la;
+          else if(this._prevAddAt[o.id]==null) this._prevAddAt[o.id]=0;
+        });
+        if(newOrderCount>0 || newAddCount>0){
+          try{ this.beep(); }catch(e){}
+          try{ this.startAlarm(); }catch(e){}
+          if(newOrderCount>0){
+            toast('🔔 ออเดอร์ใหม่ '+newOrderCount+' รายการ');
+            try{ this.pushNotify('ออเดอร์ใหม่ — ส้มตำนายหนึ่ง', 'มี '+newOrderCount+' ออเดอร์ใหม่'); }catch(e){}
+          }
         }
-        this.lastActive=active; this.renderOrders(); this.startEtaTicker();
-        this.updateAlarmBadge();
+      } else {
+        this.seenIds=new Set(this.orders.map(o=>o.id));
+        this.seenPaid=new Set(this.orders.filter(o=>o.paymentStatus==='PAID').map(o=>o.id));
+        this.unviewed=new Set();
+        this._blinkAdds=new Set();
+        this._prevAddAt={};
+        (this.orders||[]).forEach(o=>{
+          this._prevAddAt[o.id]=Number(o.lastAddAt||0);
+        });
+        this.ready=true;
+      }
+      this.lastActive=active; this.renderOrders(); this.startEtaTicker();
+      this.updateAlarmBadge();
+    };
+    const attach=(q, fallback)=>{
+      this.unsub=q.onSnapshot(snap=>{
+        const docs=snap.docs.map(d=>({id:d.id,...d.data()}));
+        docs.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+        handle(docs);
       }, err=>{
-        console.warn('orderBy snapshot failed, fallback', err);
-        // fallback ไม่มี index
-        this.unsub=shopRef.collection('orders').limit(300).onSnapshot(snap=>{
-          this.orders=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
-          const activeOrders=this.orders.filter(o=>o.status!=='Completed'&&o.status!=='Cancelled');
-          if(!this.ready){
-            this.seenIds=new Set(this.orders.map(o=>o.id));
-            this.seenPaid=new Set(this.orders.filter(o=>o.paymentStatus==='PAID').map(o=>o.id));
-            this.unviewed=new Set();
-            this._blinkAdds=new Set();
-            this._prevAddAt={};
-            (this.orders||[]).forEach(o=>{ this._prevAddAt[o.id]=Number(o.lastAddAt||0); });
-            this.ready=true;
-          }
-          this.lastActive=activeOrders.length; this.renderOrders();
-          this.updateAlarmBadge();
-        }, e2=>toast('ฟังออเดอร์ไม่สำเร็จ: '+e2.message));
+        console.warn('orders snapshot', err);
+        if(fallback) fallback();
+        else toast('ฟังออเดอร์ไม่สำเร็จ: '+(err.message||err));
       });
     };
-    attach();
+    attach(shopRef.collection('orders').orderBy('createdAt','desc').limit(300), ()=>{
+      try{ if(this.unsub) this.unsub(); }catch(e){}
+      attach(shopRef.collection('orders').limit(300), null);
+    });
   },
   seenIds:new Set(),
   unviewed:new Set(),
@@ -1140,7 +1133,7 @@ const M={
   },
   async saveTableCount(){
     let n=Math.floor(Number(document.getElementById('setTableCount')?.value||0));
-    if(!(n>=1 && n<=100)){ toast('จำนวนโต๊ะต้อง 1–100'); return; }
+    if(!(n>=1 && n<=500)){ toast('จำนวนโต๊ะต้อง 1–500'); return; }
     try{
       await shopRef.collection('settings').doc('public').set({
         orderMode:this.orderMode==='auto' ? 'auto' : 'table',
@@ -1155,21 +1148,36 @@ const M={
     }catch(e){ toast('บันทึกจำนวนโต๊ะไม่สำเร็จ: '+(e.message||e)); }
   },
   async ensureTables(n){
-    n=Math.max(1, Math.min(100, Math.floor(Number(n)||10)));
+    n=Math.max(1, Math.min(500, Math.floor(Number(n)||10)));
     this.tableCount=n;
+    let existing=new Map();
+    try{
+      const snap=await shopRef.collection('tables').get();
+      snap.docs.forEach(d=>existing.set(d.id, d.data()||{}));
+    }catch(e){ console.warn('ensureTables read', e); }
     const batch=db.batch();
     for(let i=1;i<=n;i++){
       const id=String(i);
       const ref=shopRef.collection('tables').doc(id);
-      batch.set(ref,{
-        tableNo:i,
-        activeOrderId:null,
-        status:'free',
-        callStaff:false,
-        callAt:0,
-        callAckAt:0,
-        updatedAt:Date.now()
-      },{merge:true});
+      const cur=existing.get(id);
+      if(cur){
+        // โต๊ะที่มีอยู่แล้ว — ห้ามทับ activeOrderId / สถานะ occupied
+        if(cur.activeOrderId) continue;
+        batch.set(ref,{
+          tableNo:i,
+          updatedAt:Date.now()
+        },{merge:true});
+      } else {
+        batch.set(ref,{
+          tableNo:i,
+          activeOrderId:null,
+          status:'free',
+          callStaff:false,
+          callAt:0,
+          callAckAt:0,
+          updatedAt:Date.now()
+        },{merge:true});
+      }
     }
     await batch.commit();
   },
@@ -1686,7 +1694,7 @@ const M={
     }
     box.innerHTML=list.map(m=>{
       const phone=esc(m.phone||m.id||'');
-      const active=m.status!=='cancelled' && m.active!==false;
+      const active=m.status!=='cancelled' && m.active!==false && m.isActive!==false && m.disabled!==true;
       const pts=Number(m.points||0);
       const pc=(m.personalCoupons||[]).filter(c=>c&&!c.used).length;
       return '<div class="form-card" style="padding:10px;margin:0;cursor:pointer;opacity:'+(active?'1':'0.65')+'" onclick="M.openMemberDetail(\''+phone+'\')">'
@@ -1726,7 +1734,7 @@ const M={
     const box=document.getElementById('memDetailBody');
     if(!box||!m) return;
     const phone=esc(m.phone||m.id||'');
-    const active=m.status!=='cancelled' && m.active!==false;
+    const active=m.status!=='cancelled' && m.active!==false && m.isActive!==false && m.disabled!==true;
     const created=m.createdAt?new Date(m.createdAt).toLocaleString('th-TH'):'-';
     const cancelled=m.cancelledAt?new Date(m.cancelledAt).toLocaleString('th-TH'):'-';
     const pcs=Array.isArray(m.personalCoupons)?m.personalCoupons:[];
@@ -1780,7 +1788,7 @@ const M={
     phone=this.normPhone(phone);
     if(!confirm('ลบสมาชิก '+phone+' ?')) return;
     try{
-      await shopRef.collection('members').doc(phone).update({ isActive:false, disabled:true, updatedAt:Date.now() });
+      await shopRef.collection('members').doc(phone).update({ isActive:false, active:false, disabled:true, status:'cancelled', updatedAt:Date.now() });
       toast('ปิดสมาชิกแล้ว (ไม่ลบถาวร)');
       this.loadMembersPanel();
     }catch(e){ toast('ลบไม่สำเร็จ: '+(e.message||e)); }
@@ -1797,7 +1805,8 @@ const M={
       if((await ref.get()).exists){ toast('เบอร์นี้เป็นสมาชิกแล้ว'); return; }
       await ref.set({
         phone, firstName:first, lastName:last, points:pts,
-        totalSpent:0, orderCount:0, createdAt:Date.now(), updatedAt:Date.now()
+        totalSpent:0, orderCount:0, status:'active', active:true, isActive:true, disabled:false,
+        createdAt:Date.now(), updatedAt:Date.now()
       });
       toast('เพิ่มสมาชิกสำเร็จ');
       try{ document.getElementById('admMemFirst').value=''; document.getElementById('admMemLast').value=''; document.getElementById('admMemPhone').value=''; }catch(e){}
@@ -1815,7 +1824,7 @@ const M={
         const t=c.type==='percent'?(c.value+'%'):('฿'+c.value);
         const used=Number(c.usedCount||0)+'/'+(c.maxUses!=null?c.maxUses:'∞');
         const code=esc(c.code||c.id);
-        const active=c.active!==false;
+        const active=c.active!==false && c.isActive!==false && c.disabled!==true;
         const q="'"+code+"'";
         return '<div class="form-card" style="padding:10px;margin:0 0 8px">'
           +'<div style="font-weight:700">'+code+(active?'':' <span style="color:#C62828">ปิด</span>')+'</div>'
@@ -1855,7 +1864,7 @@ const M={
     code=String(code||'').toUpperCase();
     if(!confirm('ลบคูปองรวม '+code+' ถาวร?')) return;
     try{
-      await shopRef.collection('coupons').doc(code).update({ isActive:false, disabled:true, updatedAt:Date.now() });
+      await shopRef.collection('coupons').doc(code).update({ active:false, isActive:false, disabled:true, updatedAt:Date.now() });
       toast('ปิดคูปองแล้ว (ไม่ลบถาวร)');
       this.loadCoupons();
       try{ document.getElementById('cpCode').readOnly=false; document.getElementById('cpCode').value=''; }catch(e){}
@@ -1875,10 +1884,15 @@ const M={
     if(!(value>0)){ toast('ใส่มูลค่าคูปอง'); return; }
     if(type==='percent'&&value>100){ toast('% ไม่เกิน 100'); return; }
     try{
-      await shopRef.collection('coupons').doc(code).set({
-        code, type, value, minOrder, maxUses, usedCount:0, expiresAt, active:true,
-        createdAt:Date.now(), updatedAt:Date.now()
-      });
+      const cref=shopRef.collection('coupons').doc(code);
+      const prevSnap=await cref.get();
+      const prev=prevSnap.exists?(prevSnap.data()||{}):{};
+      await cref.set({
+        code, type, value, minOrder, maxUses,
+        usedCount: Number(prev.usedCount||0),
+        expiresAt, active:true, isActive:true, disabled:false,
+        createdAt: prev.createdAt||Date.now(), updatedAt:Date.now()
+      }, {merge:true});
       toast('บันทึกคูปอง '+code);
       try{ document.getElementById('cpCode').readOnly=false; document.getElementById('cpCode').value=''; }catch(e){}
       this.loadCoupons();
@@ -1886,7 +1900,7 @@ const M={
   },
   async toggleCoupon(code, turnOn){
     try{
-      await shopRef.collection('coupons').doc(code).update({ active:!!turnOn, updatedAt:Date.now() });
+      await shopRef.collection('coupons').doc(code).update({ active:!!turnOn, isActive:!!turnOn, disabled:!turnOn, updatedAt:Date.now() });
       this.loadCoupons();
     }catch(e){ toast('ปรับสถานะไม่สำเร็จ'); }
   },
@@ -2009,7 +2023,7 @@ const M={
     if(!confirm('ยืนยันยกเลิกสิทธิ์สมาชิก '+phone+'?\nข้อมูลจะถูกเก็บไว้ตรวจสอบย้อนหลัง')) return;
     try{
       await shopRef.collection('members').doc(phone).set({
-        status:'cancelled', active:false,
+        status:'cancelled', active:false, isActive:false, disabled:true,
         cancelledAt:Date.now(), cancelReason:String(reason).trim(),
         updatedAt:Date.now()
       }, {merge:true});
@@ -2024,7 +2038,7 @@ const M={
     if(!confirm('เปิดสิทธิ์สมาชิก '+phone+' อีกครั้ง?')) return;
     try{
       await shopRef.collection('members').doc(phone).set({
-        status:'active', active:true,
+        status:'active', active:true, isActive:true, disabled:false,
         reactivatedAt:Date.now(), updatedAt:Date.now()
       }, {merge:true});
       toast('เปิดสิทธิ์แล้ว');
@@ -2137,7 +2151,7 @@ const M={
   async loadPosMemberPanel(order){
     const box=document.getElementById('posMemberBox');
     if(!box) return;
-    const phone=String(order.memberPhone||order.contactPhone||'').trim();
+    const phone=this.normPhone(order.memberPhone||order.contactPhone||'');
     if(!phone){ box.style.display='none'; return; }
     box.style.display='block';
     box.innerHTML='<div style="padding:10px;background:#F3E5F5;border-radius:10px;margin:10px 0;font-size:13px;text-align:center;color:#666">กำลังโหลดข้อมูลสมาชิก…</div>';
@@ -2148,7 +2162,7 @@ const M={
         return;
       }
       const m={phone, ...snap.data()};
-      if(m.status==='cancelled' || m.active===false){
+      if(m.status==='cancelled' || m.active===false || m.isActive===false || m.disabled===true){
         box.innerHTML='<div style="padding:10px;background:#FFEBEE;border-radius:10px;margin:10px 0;font-size:13px;text-align:center">สมาชิกถูกยกเลิกสิทธิ์</div>';
         return;
       }
@@ -2197,8 +2211,12 @@ const M={
   async applyPosMemberDiscount(orderId){
     const o=this.orders.find(x=>x.id===orderId);
     if(!o || o.paymentStatus==='PAID'){ toast('ออเดอร์นี้ชำระแล้ว'); return; }
-    const phone=String(o.memberPhone||o.contactPhone||'').trim();
+    const phone=this.normPhone(o.memberPhone||o.contactPhone||'');
     if(!phone){ toast('ไม่มีเบอร์สมาชิก'); return; }
+    if(Number(o.pointsUsed||0)>0 || Number(o.discountAmount||0)>0 || o.couponCode || o.personalCouponId){
+      toast('ออเดอร์นี้ใช้ส่วนลดแล้ว · ไม่ซ้อนส่วนลดซ้ำ');
+      return;
+    }
     const wantPts=Math.max(0, Math.floor(Number((document.getElementById('posPtsUse')||{}).value||0)));
     const wantCpId=String((document.getElementById('posCouponSel')||{}).value||'').trim();
     if(wantPts>0 && wantCpId){
@@ -2216,10 +2234,14 @@ const M={
         if(!os.exists) throw new Error('ไม่พบออเดอร์');
         const cur=os.data()||{};
         if(cur.paymentStatus==='PAID') throw new Error('ชำระแล้ว');
+        if(Number(cur.pointsUsed||0)>0 || Number(cur.discountAmount||0)>0 || cur.couponCode || cur.personalCouponId){
+          throw new Error('ออเดอร์นี้ใช้ส่วนลดแล้ว');
+        }
         const mref=shopRef.collection('members').doc(phone);
         const ms=await tx.get(mref);
         if(!ms.exists) throw new Error('ไม่พบสมาชิก');
         const md=ms.data()||{};
+        if(md.status==='cancelled' || md.active===false || md.isActive===false || md.disabled===true) throw new Error('สมาชิกถูกระงับสิทธิ์');
         const bal=Math.max(0, Math.floor(Number(md.points||0)));
         // คำนวณ subtotal จากรายการ (ก่อนส่วนลด)
         const itemsSum=(cur.items||[]).reduce((s,i)=>s+Number(i.total||0),0);
@@ -2251,11 +2273,11 @@ const M={
         const newTotal=Math.max(0, base - discountAmount);
         tx.update(oref, {
           discountAmount,
-          pointsUsed: Number(cur.pointsUsed||0)+pointsUsed,
-          pointsDisc: Number(cur.pointsDisc||0)+pointsDisc,
-          couponDisc: Number(cur.couponDisc||0)+couponDisc,
-          couponCode: couponCode || cur.couponCode || '',
-          personalCouponId: personalCouponId || cur.personalCouponId || '',
+          pointsUsed,
+          pointsDisc,
+          couponDisc,
+          couponCode: couponCode || '',
+          personalCouponId: personalCouponId || '',
           total: newTotal,
           memberPhone: phone,
           memberName: cur.memberName || ((md.firstName||'')+' '+(md.lastName||'')).trim(),
@@ -2471,7 +2493,12 @@ const M={
     const from=document.getElementById('histFrom');
     const to=document.getElementById('histTo');
     const now=new Date();
-    const iso=d=>d.toISOString().slice(0,10);
+    const iso=d=>{
+      const y=d.getFullYear();
+      const m=String(d.getMonth()+1).padStart(2,'0');
+      const day=String(d.getDate()).padStart(2,'0');
+      return y+'-'+m+'-'+day;
+    };
     if(p==='today'){ from.value=iso(now); to.value=iso(now); }
     else if(p==='7d'){ const a=new Date(now.getTime()-6*864e5); from.value=iso(a); to.value=iso(now); }
     else if(p==='30d'){ const a=new Date(now.getTime()-29*864e5); from.value=iso(a); to.value=iso(now); }

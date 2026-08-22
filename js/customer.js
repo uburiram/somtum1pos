@@ -187,28 +187,15 @@ async function migrateAndSeed(){
   try{
     const catSnap=await shopRef.collection('categories').limit(1).get();
     if(!catSnap.empty) return;
-    const batch=db.batch();
-    [['c1','เมนูส้มตำ',1],['c2','เมนูยำ',2],['c3','เมนูของทอด',3],['c4','เมนูกินคู่ส้มตำ',4],['c5','เครื่องดื่ม',5]]
-      .forEach(([id,name,order])=>batch.set(shopRef.collection('categories').doc(id),{id,name,isActive:true,order}));
-    const menus=[
-      ['m1','c1','ตำปูปลาร้า',40],['m2','c1','ตำไทย',40],['m3','c1','ตำป่า',45],['m4','c1','ตำแตง',40],
-      ['m5','c2','ยำวุ้นเส้น',50],['m6','c3','ไก่ทอด',50],['m7','c3','ปีกไก่ทอด',40],
-      ['m8','c4','ไข่ต้ม',10],['m9','c4','ไข่ดาว',15],['m10','c5','น้ำเปล่า',10],['m11','c5','น้ำอัดลม',15]
-    ];
-    menus.forEach(([id,catId,name,price])=>batch.set(shopRef.collection('menus').doc(id),{id,catId,name,price,isActive:true,isOut:false,imageUrl:'',imageData:'',order:0}));
-    [['s1','ไม่เผ็ด',1],['s2','เผ็ดน้อย',2],['s3','เผ็ดกลาง',3],['s4','เผ็ดมาก',4]].forEach(([id,name,order])=>batch.set(shopRef.collection('spiceLevels').doc(id),{id,name,isActive:true,order}));
-    [['t1','ไข่ดาว',10],['t2','ไข่ต้ม',10],['t3','เพิ่มปู',20],['t4','หมูกรอบ',15]].forEach(([id,name,price],i)=>batch.set(shopRef.collection('toppings').doc(id),{id,name,price,isActive:true,order:i+1}));
-    batch.set(shopRef.collection('settings').doc('public'),{
-      shopName:'ส้มตำนายหนึ่ง', isOpen:true, memberSystemEnabled:true, promptpay:'1319900156353', accountName:'นาย นรากร วงค์แก่นท้าว',
-      payType:'kshop', merchantId:'EMPKB000002198793001', kshopPayload:window.KSHOP_QR_PAYLOAD||''
-    },{merge:true});
-    await batch.commit();
+    // หน้าลูกค้าห้าม seed เมนู/หมวด — ให้ร้านทำจาก POS เท่านั้น
+    return;
   }catch(e){ console.warn('seed menus', e); }
 }
 
 const C={
   shopName:'ร้าน',promptpay:'',accountName:'',payType:'kshop',merchantId:'EMPKB000002198793001',kshopPayload:'',memberSystemEnabled:true,orderMode:'queue',tableNo:null,tableCount:0,optionConfig:{spiceMode:'single',toppingMode:'multi',toppingAllowQty:true},cats:[],menus:[],spice:[],tops:[],
   cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'PROMPTPAY',slipData:'',lastOrder:null,kitchenOrders:[],bestSellerIds:[],bestSellerRank:{},
+  isOpen:null,
 
   async init(){
     const setConn=(t)=>{ try{ document.getElementById('conn').textContent=t; }catch(e){} };
@@ -225,7 +212,9 @@ const C={
         firebase.initializeApp(window.FIREBASE_CONFIG);
       }
       try{
-        if(window.FIREBASE_APPCHECK_SITE_KEY && firebase.appCheck){
+        const host=String(location.hostname||'');
+        const appCheckOk=/github\.io$/i.test(host);
+        if(appCheckOk && window.FIREBASE_APPCHECK_SITE_KEY && firebase.appCheck){
           const appCheck=firebase.appCheck();
           // รองรับทั้ง string key (compat) และ ReCaptchaV3Provider
           if(firebase.appCheck.ReCaptchaV3Provider){
@@ -244,7 +233,7 @@ const C={
         this.tableNo=this.parseTableFromUrl();
         if(this.tableNo) this.applyOrderModeCustomerUI();
       }catch(e){}
-      // seed ไม่ควรบล็อกการแสดงผลนาน
+      // seed คิว + แก้สะกดบัญชี — ไม่ seed แคตตาล็อกจากหน้าลูกค้า (กันเขียนทับร้าน)
       try{ await Promise.race([migrateAndSeed(), new Promise(function(r){setTimeout(r,5000);})]); }catch(e){ console.warn('seed',e); }
       shopRef.collection('settings').doc('public').onSnapshot(s=>{
         const d=s.data()||{};
@@ -568,9 +557,13 @@ const C={
     }
     const unit=this.calcUnit();
     const note=(document.getElementById('pNote')?.value||'').trim();
-    const needPlara=!p.isSimple && (p.menu.allowPlara===true||p.menu.allowPlara===1||p.menu.allowPlara==='true'||p.menu.allowPlara==='1');
+    const needPlara=!p.isSimple && (function(v){
+      if(v===true || v===1) return true;
+      if(typeof v==='string'){ const s=v.trim().toLowerCase(); return s==='true'||s==='1'||s==='yes'||s==='y'; }
+      return false;
+    })(p.menu.allowPlara);
     if(needPlara && !p.plara){ toast('เลือกใส่หรือไม่ใส่ปลาร้า'); return; }
-    const plaraLabel=(!p.isSimple && p.menu.allowPlara)?(p.plara==='with'?'ใส่ปลาร้า':'ไม่ใส่ปลาร้า'):'';
+    const plaraLabel=needPlara?(p.plara==='with'?'ใส่ปลาร้า':'ไม่ใส่ปลาร้า'):'';
     const cat=(this.cats||[]).find(c=>c.id===p.menu.catId);
     this.cart.push({
       name:p.menu.name, qty:p.qty, spiceName,
@@ -606,14 +599,26 @@ const C={
     }
   },
   renderCart(){
-    // ใช้หลังยืนยันออเดอร์ / เคลียร์ตะกร้า — ต้องมี method นี้เสมอ
     try{
       this.cart = this.cart || [];
       this.updFab();
       const el=document.getElementById('cartList');
-      if(el && !this.cart.length){
+      if(!el) return;
+      if(!this.cart.length){
         el.innerHTML='<div style="text-align:center;color:#999;padding:20px">ตะกร้าว่าง</div>';
+        const sum=document.getElementById('cartSum'); if(sum) sum.textContent=money(0);
+        return;
       }
+      el.innerHTML=this.cart.map((i,idx)=>{
+        const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty} (${money(t.total)})`).join(', ');
+        const meta=[i.spiceName, i.plara, tops, i.note?('หมายเหตุ: '+esc(i.note)):''].filter(Boolean).join(' · ');
+        return `<div class="ci"><div><div style="font-weight:600">${esc(i.name)} × ${i.qty}</div>
+          ${meta?`<div style="font-size:13px;color:#777">${meta}</div>`:''}
+          <button style="color:var(--d);font-size:13px;margin-top:4px" onclick="C.rmCart(${idx})">ลบ</button></div>
+          <div style="font-weight:600">${money(i.total)}</div></div>`;
+      }).join('');
+      const sum=document.getElementById('cartSum');
+      if(sum) sum.textContent=money(this.cart.reduce((s,i)=>s+Number(i.total||0),0));
     }catch(e){ console.warn('renderCart', e); }
   },
   openCart(){
@@ -704,7 +709,11 @@ const C={
         return;
       }
     }
-    this.clearOrderState();
+    const keepTableOrder = this.orderMode==='table' && this.tableNo && this.cart && this.cart.length
+      && this.orderId && this.lastOrder
+      && this.lastOrder.status!=='Cancelled' && this.lastOrder.status!=='Completed'
+      && Number(this.lastOrder.tableNo)===Number(this.tableNo);
+    if(!keepTableOrder) this.clearOrderState();
     const pt=document.getElementById('payTotal');
     if(pt) pt.textContent=money(this.cart.reduce((s,i)=>s+i.total,0));
     this.slipData='';
@@ -1056,37 +1065,39 @@ const C={
       return;
     }
 
-    // 3) ถอด QR จากรูปสลิป (Thai QR มียอดใน payload) — multi-pass
+    // 3) ถอด QR จากรูปสลิป — ใช้เป็นข้อมูลช่วยร้าน ไม่ auto-PAID จากเบราว์เซอร์
     try{
-      /* bg verify */
       const qrInfo=await this.readAmountFromSlipImage(dataUrl);
       if(qrInfo && qrInfo.amount!=null){
         const paid=Number(qrInfo.amount);
-        if(Math.abs(paid-amount)<=1){
-          await this.autoMarkPaidFromSlip(orderId, dataUrl, {msg:'QR ในสลิปยอดตรง', amount:paid});
-          setMsg('<span style="color:#2E7D32">✓ บันทึกสลิปแล้ว</span>');
-          /* auto-paid เงียบ ๆ */
-          return;
-        }
+        const note = Math.abs(paid-amount)<=1
+          ? ('QR ในสลิปยอด ฿'+paid+' ตรงออเดอร์ · รอร้านยืนยัน')
+          : ('ยอดในสลิป ฿'+paid+' ไม่ตรงออเดอร์ ฿'+amount+' · รอร้านตรวจ');
         await shopRef.collection('orders').doc(orderId).update({
           slipData:(dataUrl||'').slice(0,200000), slipStatus:'PENDING_REVIEW',
-          slipVerifyNote:'ยอดในสลิป ฿'+paid+' ไม่ตรงออเดอร์ ฿'+amount
+          slipVerifyNote:note
         });
-        setMsg('<span style="color:#E65100">ยอดในสลิปไม่ตรง (฿'+paid+' / ออเดอร์ ฿'+amount+') · รอร้านตรวจ</span>');
-        /* silent pending */
+        setMsg('<span style="color:#E65100">'+note+'</span>');
         this._applyLocalSlip(orderId, dataUrl, 'PENDING_REVIEW');
+        toast('ส่งสลิปแล้ว รอร้านตรวจ');
         return;
       }
     }catch(e){ console.warn('slip QR', e); }
 
-    // 3b) OCR หาตัวเลขยอดในรูป — ถ้าตรงออเดอร์ 100% อนุมัติ
+    // 3b) OCR เป็นข้อมูลช่วยร้านเท่านั้น — ไม่ auto-PAID (กันปลอมสลิป/อ่านผิด)
     try{
-      /* bg ocr */
       const ocr=await this.readAmountByOCR(dataUrl, amount);
-      if(ocr && ocr.amount!=null && Math.abs(Number(ocr.amount)-amount)<=1){
-        await this.autoMarkPaidFromSlip(orderId, dataUrl, {msg:'OCR ยอดตรงออเดอร์', amount:Number(ocr.amount), slipTs:ocr.slipTs||null});
-        setMsg('<span style="color:#2E7D32">✓ ยอดในสลิปตรงออเดอร์ · ยืนยันรับโอนอัตโนมัติ</span>');
-        toast('ชำระเงินสำเร็จ (ตรวจอัตโนมัติ)');
+      if(ocr && ocr.amount!=null){
+        const note = Math.abs(Number(ocr.amount)-amount)<=1
+          ? ('OCR อ่านยอด ฿'+ocr.amount+' ตรงออเดอร์ · รอร้านยืนยัน')
+          : ('OCR อ่านยอด ฿'+ocr.amount+' · รอร้านตรวจ');
+        await shopRef.collection('orders').doc(orderId).update({
+          slipData:(dataUrl||'').slice(0,200000), slipStatus:'PENDING_REVIEW',
+          slipVerifyNote:note
+        });
+        setMsg('<span style="color:#E65100">'+note+'</span>');
+        this._applyLocalSlip(orderId, dataUrl, 'PENDING_REVIEW');
+        toast('ส่งสลิปแล้ว รอร้านตรวจ');
         return;
       }
     }catch(e){ console.warn('slip OCR', e); }
@@ -1370,8 +1381,35 @@ const C={
     this._payWatchId=null;
     if(this.unsub){ try{ this.unsub(); }catch(e){} this.unsub=null; }
     if(this.trackUnsub){ try{ this.trackUnsub(); }catch(e){} this.trackUnsub=null; }
-    this.stopKitchenWatch();
+    // kitchen watch เป็นตัวรวมคิวร้าน — ห้ามปิดตอนเช็กคิว/เคลียร์ตั๋ว
   },
+  /** ฟังออเดอร์ใบเดียวแบบ realtime (กู้หลังรีเฟรช / โต๊ะ / เช็กคิว) */
+  attachOrderWatcher(id){
+    if(!id || !shopRef) return;
+    try{ if(this.unsub){ this.unsub(); this.unsub=null; } }catch(e){}
+    this.orderId=id;
+    this.unsub=shopRef.collection('orders').doc(id).onSnapshot(snap=>{
+      if(!snap.exists) return;
+      if(this.orderId && this.orderId!==snap.id) return;
+      const o=snap.data(); if(!o) return;
+      if(this.orderMode==='table' && this.tableNo!=null && o.tableNo!=null
+          && Number(o.tableNo)!==Number(this.tableNo)) return;
+      const prevPay=this.lastOrder && this.lastOrder.paymentStatus;
+      const prevSt=this.lastOrder && this.lastOrder.status;
+      this.lastOrder={id:snap.id,...o};
+      this._lastKnownStatus=o.status;
+      try{ this.renderTicket(this.lastOrder); }catch(e){}
+      try{ this.updFab(); }catch(e){}
+      if(prevPay!=='PAID' && o.paymentStatus==='PAID'){
+        toast('ชำระเงินสำเร็จ');
+        try{ this.writeReceipt({id:snap.id,...o}); }catch(e3){}
+      }
+      if(prevSt && prevSt!=='Ready' && prevSt!=='Completed' && o.status==='Ready'){
+        this.notifyOrderReady({id:snap.id,...o});
+      }
+    }, err=>console.warn('order watch', err));
+  },
+  watchOrder(id){ this.attachOrderWatcher(id); },
   setShopOpenState(isOpen){
     this.isOpen = isOpen!==false;
     const b=document.getElementById('shopClosedBanner');
@@ -1441,7 +1479,7 @@ const C={
       }
       if(t!=null && t!==''){
         const n=Math.floor(Number(t));
-        if(n>=1 && n<=100) return n;
+        if(n>=1 && n<=500) return n;
       }
     }catch(e){}
     return null;
@@ -1614,6 +1652,10 @@ const C={
     this.show('mMemberReg');
   },
   assertShopOpen(){
+    if(this.isOpen==null){
+      toast('กำลังโหลดสถานะร้าน… กรุณารอสักครู่');
+      return false;
+    }
     if(this.isOpen===false){
       toast('อยู่นอกเวลาทำการ · ขออภัยในความไม่สะดวก');
       return false;
@@ -1703,6 +1745,19 @@ const C={
     try{ this.updFab(); }catch(e){}
   },
   startNewOrder(){
+    const live=this.lastOrder && this.lastOrder.status!=='Cancelled' && this.lastOrder.status!=='Completed';
+    if(live){
+      const q=this.lastOrder.queue||'';
+      if(this.orderMode==='table'){
+        toast('โต๊ะนี้มีออเดอร์ '+q+' ค้างอยู่ · สั่งเพิ่มจากตะกร้าได้ หรือให้ร้านเคลียร์โต๊ะ');
+        try{ this.renderTicket(this.lastOrder); this.show('mTicket'); }catch(e){}
+        return;
+      }
+      if(!confirm('คิว '+q+' ยังอยู่ในครัว\nกดตกลงเพื่อเริ่มเลือกเมนูใหม่ (คิวเดิมยังอยู่ จำเลขคิวไว้)\nกดยกเลิกเพื่อกลับไปดูตั๋ว')){
+        try{ this.renderTicket(this.lastOrder); this.show('mTicket'); }catch(e){}
+        return;
+      }
+    }
     this.clearOrderState();
     this.hide('mTicket');
     this.hide('mPay');
@@ -1835,7 +1890,7 @@ const C={
         return
       }
       const md={phone, ...snap.data()};
-      if(md.status==='cancelled' || md.active===false){
+      if(md.status==='cancelled' || md.active===false || md.isActive===false || md.disabled===true){
         if(st) st.innerHTML='<span style="color:#E65100">เบอร์นี้ถูกยกเลิกสิทธิ์สมาชิก</span><div style="font-size:11px;color:#888">สั่งได้ปกติแต่ไม่มีแต้ม/คูปอง</div>';
         if(box) box.style.display='none';
         this.member=null;
@@ -1942,6 +1997,15 @@ const C={
   },
   async recalcPayTotal(){
     try{
+      if(this.memberSystemEnabled===false){
+        this.selectedPersonalCouponId='';
+        this.memDiscount={ pointsUsed:0, couponCode:'', couponDisc:0, pointsDisc:0, totalDisc:0, payable:this.cartSubtotal(), subtotal:this.cartSubtotal() };
+        const pt=document.getElementById('payTotal');
+        if(pt) pt.textContent=money(this.cartSubtotal());
+        const hint=document.getElementById('paySubHint'); if(hint) hint.textContent='';
+        const line=document.getElementById('memDiscountLine'); if(line) line.textContent='';
+        return this.cartSubtotal();
+      }
       const reqId=(this._recalcSeq=(this._recalcSeq||0)+1);
       const sub=Math.max(0, Number(this.cartSubtotal()||0));
       let pointsDisc=0, couponDisc=0, couponCode='', personalCouponId='';
@@ -1985,7 +2049,7 @@ const C={
             if(line) line.innerHTML='<span style="color:#C62828">ไม่พบคูปอง '+code+'</span>';
           } else {
             const c=snap.data()||{};
-            if(c.active===false){ if(line) line.innerHTML='<span style="color:#C62828">คูปองปิดใช้งาน</span>'; }
+            if(c.active===false || c.isActive===false || c.disabled===true){ if(line) line.innerHTML='<span style="color:#C62828">คูปองปิดใช้งาน</span>'; }
             else if(c.expiresAt && Number(c.expiresAt)<now){ if(line) line.innerHTML='<span style="color:#C62828">คูปองหมดอายุ</span>'; }
             else if(c.maxUses!=null && Number(c.usedCount||0)>=Number(c.maxUses)){ if(line) line.innerHTML='<span style="color:#C62828">คูปองใช้ครบแล้ว</span>'; }
             else if(c.minOrder!=null && sub<Number(c.minOrder)){ if(line) line.innerHTML='<span style="color:#C62828">ยอดขั้นต่ำ ฿'+c.minOrder+'</span>'; }
@@ -2175,7 +2239,7 @@ const C={
           return;
         }
         const md=ms.data()||{};
-        if(md.status==='cancelled' || md.active===false){
+        if(md.status==='cancelled' || md.active===false || md.isActive===false || md.disabled===true){
           tx.update(oref,{ pointsAwarded:true, pointsEarned:0, memberPhone: phone });
           return;
         }
@@ -2358,7 +2422,7 @@ const C={
           const snap=await shopRef.collection('members').doc(contactPhone).get();
           if(snap.exists){
             const md={phone:contactPhone, ...snap.data()};
-            if(md.status!=='cancelled' && md.active!==false){
+            if(md.status!=='cancelled' && md.active!==false && md.isActive!==false && md.disabled!==true){
               this.member=md;
             } else {
               this.member=null;
@@ -2409,7 +2473,7 @@ const C={
           const ms=await tx.get(mref);
           if(!ms.exists) throw new Error('ไม่พบสมาชิก');
           md0=ms.data()||{};
-          if(md0.status==='cancelled' || md0.active===false) throw new Error('สมาชิกถูกระงับสิทธิ์');
+          if(md0.status==='cancelled' || md0.active===false || md0.isActive===false || md0.disabled===true) throw new Error('สมาชิกถูกระงับสิทธิ์');
           pts=Number(md0.points||0);
           personalCoupons=Array.isArray(md0.personalCoupons)?md0.personalCoupons.slice():[];
         }
@@ -2435,7 +2499,7 @@ const C={
           const cs=await tx.get(cref);
           if(!cs.exists) throw new Error('ไม่พบคูปอง');
           const c=cs.data()||{};
-          if(c.active===false) throw new Error('คูปองปิดใช้งาน');
+          if(c.active===false || c.isActive===false || c.disabled===true) throw new Error('คูปองปิดใช้งาน');
           if(c.expiresAt && Number(c.expiresAt)<now) throw new Error('คูปองหมดอายุ');
           const used=Number(c.usedCount||0), max=c.maxUses!=null?Number(c.maxUses):null;
           if(max!=null && used>=max) throw new Error('คูปองใช้ครบแล้ว');
@@ -2888,12 +2952,9 @@ const C={
   startKitchenWatch(){
     if(this._kitchenUnsub){ try{this._kitchenUnsub()}catch(e){} this._kitchenUnsub=null; }
     if(!shopRef) return;
-    // ดึงออเดอร์ล่าสุด — กรองครัวฝั่ง client + อัปเดตหัวข้อ + แจ้งเมื่อคิวพร้อม
-    this._kitchenUnsub=shopRef.collection('orders').limit(120).onSnapshot(snap=>{
-      const all=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const apply=(all)=>{
       this.kitchenOrders=all.filter(o=>this.isKitchenStatus(o.status));
       this.updateKitchenHeaderBadge();
-      // ติดตามออเดอร์ของลูกค้า (ถ้ามี) เมื่อสถานะเปลี่ยนเป็น Ready
       if(this.orderId){
         const mine=all.find(o=>o.id===this.orderId);
         if(mine){
@@ -2907,10 +2968,20 @@ const C={
             this.renderTicket(this.lastOrder);
           }
         }
-      } else if(this.lastOrder){
-        this.renderTicket(this.lastOrder);
       }
-    }, err=>console.warn('kitchen watch', err));
+    };
+    const attach=(q, fallback)=>{
+      this._kitchenUnsub=q.onSnapshot(snap=>{
+        apply(snap.docs.map(d=>({id:d.id,...d.data()})));
+      }, err=>{
+        console.warn('kitchen watch', err);
+        if(fallback) fallback();
+      });
+    };
+    attach(shopRef.collection('orders').orderBy('createdAt','desc').limit(300), ()=>{
+      try{ if(this._kitchenUnsub) this._kitchenUnsub(); }catch(e){}
+      attach(shopRef.collection('orders').limit(300), null);
+    });
   },
   updateKitchenHeaderBadge(){
     const n=(this.kitchenOrders||[]).length;
@@ -2996,6 +3067,7 @@ const C={
     const waitPay=!paid && !cancelled;
     const map={
       Pending: paid ? ['bw','🟡 รอครัวรับออเดอร์'] : ['bw','🟡 รอชำระเงิน / รอรับออเดอร์'],
+      AwaitingPayment: paid ? ['bw','🟡 รอครัวรับออเดอร์'] : ['bw','🟡 รอชำระเงิน / รอรับออเดอร์'],
       Cooking:['bi','🔵 กำลังทำ'],
       Ready:['bg','🟢 พร้อมรับ'],
       Completed:['bg','⚫ เสร็จสิ้น'],
@@ -3269,12 +3341,8 @@ const C={
       this.lastOrder=picked;
       this.renderTicket(picked);
       this.show('mTicket');
-      this.trackUnsub=shopRef.collection('orders').doc(picked.id).onSnapshot(s=>{
-        if(!s.exists) return;
-        if(this.orderId!==s.id) return; // ห้ามสลับไปคิวอื่น
-        this.lastOrder={id:s.id,...s.data()};
-        this.renderTicket(this.lastOrder);
-      });
+      this.attachOrderWatcher(picked.id);
+      if(!this._kitchenUnsub) this.startKitchenWatch();
     }catch(e){ toast('ค้นหาไม่สำเร็จ: '+(e.message||e)); }
   }
 };
