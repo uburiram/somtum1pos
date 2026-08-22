@@ -1,5 +1,5 @@
 /* Somtum POS PWA Service Worker */
-const CACHE = 'somtum-pwa-v79';
+const CACHE = 'somtum-pwa-v80';
 const ASSETS = [
   './',
   './index.html',
@@ -64,8 +64,11 @@ self.addEventListener('fetch', (event) => {
           return res;
         })
         .catch(() => cached);
-      // network-first for HTML so updates apply; cache fallback offline
-      if (req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html')) {
+      // network-first for HTML/JS/CSS so ร้านได้แพตช์ทันที; cache fallback offline
+      const isShell = req.mode === 'navigate'
+        || (req.headers.get('accept') || '').includes('text/html')
+        || /\.(js|css|webmanifest)$/i.test(url.pathname);
+      if (isShell) {
         return network.then((r) => r || cached).catch(() => cached || caches.match('./index.html'));
       }
       return cached || network;

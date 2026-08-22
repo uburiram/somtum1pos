@@ -80,7 +80,7 @@ service cloud.firestore {
         && request.resource.data.status == resource.data.status
         && request.resource.data.status != 'Completed'
         && hasImageSlip(request.resource.data.slipData)
-        && request.resource.data.slipStatus in ['PENDING_REVIEW', 'NONE', 'REJECTED', 'AUTO_APPROVED'];
+        && request.resource.data.slipStatus in ['PENDING_REVIEW', 'NONE', 'REJECTED'];
     }
 
     // ครัวเปลี่ยนสถานะ: ห้ามแตะการเงิน
@@ -118,11 +118,19 @@ service cloud.firestore {
         && resource.data.status in ['Pending', 'Cooking', 'Ready', 'AwaitingPayment'];
     }
 
-    // อัปเดตทั่วไปที่การเงินไม่เปลี่ยน (ยกเลิก, โน้ต, ฯลฯ)
+    // อัปเดตทั่วไปที่การเงินและสถานะครัวไม่เปลี่ยน (โน้ต, สลิปสถานะร้าน, ฯลฯ)
     function canSoftUpdate() {
       return coreFieldsIntact()
         && request.resource.data.paymentStatus == resource.data.paymentStatus
+        && request.resource.data.status == resource.data.status
         && !(request.resource.data.status == 'Completed' && resource.data.paymentStatus != 'PAID');
+    }
+
+    function canCancel() {
+      return coreFieldsIntact()
+        && request.resource.data.status == 'Cancelled'
+        && resource.data.status in ['Pending', 'AwaitingPayment', 'Cooking', 'Ready']
+        && request.resource.data.paymentStatus == resource.data.paymentStatus;
     }
 
     function canUpdateOrder() {
@@ -131,6 +139,7 @@ service cloud.firestore {
         || canMarkPaid()
         || canComplete()
         || canKitchenStatus()
+        || canCancel()
         || canSoftUpdate();
     }
 
@@ -199,7 +208,9 @@ service cloud.firestore {
         && (!('type' in d) || d.type in ['fixed', 'percent'])
         && (!('value' in d) || numRange(d.value, 0, 100000))
         && (!('minSpend' in d) || numRange(d.minSpend, 0, 1000000))
-        && (!('usedCount' in d) || numRange(d.usedCount, 0, 1000000));
+        && (!('usedCount' in d) || numRange(d.usedCount, 0, 1000000))
+        && (!('active' in d) || d.active is bool)
+        && (!('isActive' in d) || d.isActive is bool);
     }
 
     function isValidTable() {
