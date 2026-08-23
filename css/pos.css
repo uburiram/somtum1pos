@@ -4,9 +4,10 @@ body{background:var(--bg);color:#333}
 button{border:none;background:none;cursor:pointer;font-family:inherit}
 input,select,textarea{font-family:inherit;font-size:16px;padding:10px;border:1px solid #ccc;border-radius:8px;width:100%}
 header{background:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08);position:sticky;top:0;z-index:30;flex-wrap:wrap;gap:8px}
-.logo{font-weight:700;color:var(--p);display:flex;align-items:center;gap:8px}
-.nav{display:flex;gap:6px;flex-wrap:wrap}
-.nav button,.nav a{padding:7px 12px;border-radius:16px;background:#eee;font-size:13px;font-weight:500;text-decoration:none;color:inherit}
+.logo{font-weight:700;color:var(--p);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.nav{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px}
+.nav::-webkit-scrollbar{display:none}
+.nav button,.nav a{padding:7px 12px;border-radius:16px;background:#eee;font-size:13px;font-weight:500;text-decoration:none;color:inherit;white-space:nowrap;flex-shrink:0}
 .nav button.on{background:var(--p);color:#fff}
 .badge-n{background:var(--d);color:#fff;font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px}
 .wrap{padding:12px;padding-bottom:48px}
@@ -66,3 +67,42 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
 
 .oc-blink{animation:ocBlink 1s ease-in-out infinite}
 @keyframes ocBlink{0%,100%{box-shadow:0 0 0 3px #F44336;background:#FFEBEE}50%{box-shadow:0 0 0 6px #FFCDD2;background:#fff}}
+
+/* ========== ข้อ 11: ปรับ UI POS สำหรับจอเล็ก ========== */
+@media (max-width: 480px) {
+  header { padding: 8px 10px; }
+  .logo { font-size: 15px; }
+  .nav { gap: 4px; }
+  .nav button, .nav a { padding: 6px 10px; font-size: 12px; }
+  .stats { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .st .n { font-size: 1.15rem; }
+  .og { grid-template-columns: 1fr; }
+  .wrap { padding: 10px; padding-bottom: 40px; }
+  .form-card { padding: 12px; }
+  .btn { padding: 9px 12px; font-size: 13px; }
+  .pinbox { margin: 30px 12px; padding: 22px; }
+  .md { max-height: 88vh; padding: 14px; }
+}
+
+/* ========== ข้อ 12: Loading skeleton ========== */
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: skeletonShine 1.4s ease-in-out infinite;
+  border-radius: 8px;
+}
+@keyframes skeletonShine {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.sk-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 14px;
+  border-left: 6px solid #eee;
+}
+.sk-line { height: 14px; margin-bottom: 8px; }
+.sk-line.short { width: 40%; }
+.sk-line.med { width: 70%; }
+.sk-line.long { width: 100%; }
+.sk-title { height: 22px; width: 55%; margin-bottom: 10px; }
