@@ -2681,23 +2681,46 @@ const M={
       if(!q) return true;
       const queue=(o.queue||'').toLowerCase();
       const names=(o.items||[]).map(i=>i.name||'').join(' ').toLowerCase();
-      return queue.includes(q)||names.includes(q)||String(o.id).includes(q);
+      const phone=String(o.memberPhone||o.contactPhone||'').toLowerCase();
+      const mname=String(o.memberName||'').toLowerCase();
+      return queue.includes(q)||names.includes(q)||String(o.id).includes(q)||phone.includes(q)||mname.includes(q);
     }).sort((a,b)=>(b.completedAt||b.createdAt||0)-(a.completedAt||a.createdAt||0));
     const el=document.getElementById('historyList');
     if(!el) return;
-    if(!list.length){ el.innerHTML='<div style="text-align:center;color:#888;padding:24px">ไม่พบประวัติ</div>'; return; }
+    if(!list.length){
+      el.innerHTML='<div class="empty-state">ไม่พบประวัติ</div>';
+      return;
+    }
     el.innerHTML=list.map(o=>{
-      const pay=o.paymentStatus==='PAID'?'<span style="color:#2E7D32">ชำระแล้ว</span>':'<span style="color:#C62828">ไม่ชำระ</span>';
+      const pay=o.paymentStatus==='PAID'
+        ? '<span class="tag tag-ok">ชำระแล้ว</span>'
+        : '<span class="tag tag-bad">ไม่ชำระ</span>';
       const st=({AwaitingPayment:'รอชำระ',Pending:'รอรับ',Cooking:'กำลังทำ',Ready:'พร้อมรับ',Completed:'เสร็จสิ้น',Cancelled:'ยกเลิก'})[o.status]||o.status;
       const when=o.createdAt?new Date(o.createdAt).toLocaleString('th-TH'):'';
       const prev=(o.items||[]).map(i=>i.name+'x'+i.qty).join(', ');
-      return `<div class="list-item" style="flex-direction:column;align-items:stretch">
-        <div style="display:flex;justify-content:space-between;width:100%"><strong>คิว ${esc(o.queue)}</strong><span>${money(o.total)}</span></div>
-        <div style="font-size:12px;color:#666;margin:4px 0">${esc(when)} · ${esc(st)} · ${pay}</div>
-        <div style="font-size:13px;color:#444">${esc(prev.slice(0,80))}${prev.length>80?'…':''}</div>
-        <div class="row-actions" style="margin-top:8px">
-          <button class="btn btn-o btn-sm" onclick="M.showReceipt('${esc(o.id)}')">ดูใบเสร็จ</button>
-          <button class="btn btn-d btn-sm" onclick="M.deleteOrder('${esc(o.id)}')">ลบ</button>
+      const ptsUsed=Math.max(0,Number(o.pointsUsed||o.pointsDisc||0));
+      const ptsEarn=Math.max(0,Number(o.pointsEarned||0));
+      const mem=o.memberName||o.memberPhone||o.contactPhone||'';
+      const memLine=mem
+        ? ('<div class="hist-mem">👤 '+esc(o.memberName?('คุณ '+o.memberName):String(o.memberPhone||o.contactPhone||''))
+          +(ptsUsed>0?(' · ใช้แต้ม '+ptsUsed):'')
+          +(ptsEarn>0?(' · ได้ +'+ptsEarn+' แต้ม'):'')
+          +'</div>')
+        : '';
+      const disc=Number(o.discountAmount||o.couponDisc||0);
+      const discLine=disc>0?('<div class="hist-disc">ส่วนลด ฿'+disc+(o.couponCode?(' · '+esc(o.couponCode)): '')+'</div>'):'';
+      return `<div class="list-item hist-item">
+        <div class="hist-top">
+          <strong>คิว ${esc(o.queue)}</strong>
+          <span class="hist-total">${money(o.total)}</span>
+        </div>
+        <div class="hist-meta">${esc(when)} · ${esc(st)} · ${pay}</div>
+        ${memLine}
+        ${discLine}
+        <div class="hist-items">${esc(prev.slice(0,90))}${prev.length>90?'…':''}</div>
+        <div class="row-actions hist-actions">
+          <button type="button" class="btn btn-o btn-sm" onclick="M.showReceipt('${esc(o.id)}')">ดูใบเสร็จ</button>
+          <button type="button" class="btn btn-d btn-sm" onclick="M.deleteOrder('${esc(o.id)}')">ลบ</button>
         </div>
       </div>`;
     }).join('');
