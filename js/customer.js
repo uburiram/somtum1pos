@@ -2384,6 +2384,12 @@ const C={
     if(this.isOpen===false){
       throw new Error('อยู่นอกเวลาทำการ · ขออภัยในความไม่สะดวก');
     }
+    // ข้อ 9: Rate limit ฝั่ง client (8 วินาที)
+    const rlKey = this.orderMode === 'table' && this.tableNo ? ('table-' + this.tableNo) : 'order';
+    const rl = (typeof checkOrderRateLimit === 'function') ? checkOrderRateLimit(rlKey, 8000) : { ok: true };
+    if (!rl.ok) {
+      throw new Error('กรุณารอ ' + (rl.waitSec || 8) + ' วินาทีก่อนสั่งอีกครั้ง');
+    }
     // กันกดซ้ำ / race สร้างออเดอร์คู่
     if(this._creatingOrder){
       throw new Error('กำลังสร้างออเดอร์ กรุณารอสักครู่');

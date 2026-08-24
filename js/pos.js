@@ -219,14 +219,27 @@ const M={
     location.reload();
   },
   enableAudio(){
-    this.audio=new (window.AudioContext||window.webkitAudioContext)();
-    this.audio.resume().then(()=>{
-      this.audioOn=true;
-      const bar=document.getElementById('audioBar');
-      if(bar) bar.classList.add('hide');
-      toast('เปิดเสียงแจ้งเตือนแล้ว');
-      this.beep();
-    });
+    try{
+      this.audio=new (window.AudioContext||window.webkitAudioContext)();
+      const resume=()=>{
+        this.audio.resume().then(()=>{
+          this.audioOn=true;
+          const bar=document.getElementById('audioBar');
+          if(bar) bar.classList.add('hide');
+          toast('เปิดเสียงแจ้งเตือนแล้ว');
+          this.beep();
+        }).catch(function(){ toast('เปิดเสียงไม่สำเร็จ — ลองกดอีกครั้ง'); });
+      };
+      resume();
+      if(!this._audioUnlockBound){
+        this._audioUnlockBound=true;
+        const unlock=()=>{ try{ if(this.audio && this.audio.state==='suspended') this.audio.resume(); }catch(e){} };
+        document.addEventListener('touchstart', unlock, {passive:true});
+        document.addEventListener('click', unlock, {passive:true});
+      }
+    }catch(e){
+      toast('เปิดเสียงไม่สำเร็จ: '+(e.message||e));
+    }
     this.requestNotifyPermission();
     try{ this.registerFCM(); }catch(e){ console.warn('FCM enableAudio', e); }
   },
@@ -258,8 +271,34 @@ const M={
   },
 
   beep(){
-    if(!this.audioOn||!this.audio)return;
-    try{const o=this.audio.createOscillator(),g=this.audio.createGain();o.connect(g);g.connect(this.audio.destination);o.frequency.value=880;g.gain.value=.12;o.start();o.stop(this.audio.currentTime+.2);if(navigator.vibrate)navigator.vibrate([200,60,200])}catch(e){}
+    try{
+      if(!this.audio){
+        this.audio=new (window.AudioContext||window.webkitAudioContext)();
+      }
+      if(this.audio.state==='suspended'){
+        this.audio.resume().catch(function(){});
+      }
+      this.audioOn=true;
+      const o=this.audio.createOscillator();
+      const g=this.audio.createGain();
+      o.connect(g); g.connect(this.audio.destination);
+      o.frequency.value=880;
+      g.gain.value=0.18;
+      o.start();
+      o.stop(this.audio.currentTime+0.25);
+      setTimeout(()=>{
+        try{
+          const o2=this.audio.createOscillator();
+          const g2=this.audio.createGain();
+          o2.connect(g2); g2.connect(this.audio.destination);
+          o2.frequency.value=988;
+          g2.gain.value=0.16;
+          o2.start();
+          o2.stop(this.audio.currentTime+0.22);
+        }catch(e){}
+      }, 280);
+      if(navigator.vibrate) navigator.vibrate([200,80,200,80,300]);
+    }catch(e){ console.warn('beep', e); }
   },
   /** ขอสิทธิ์แจ้งเตือนบนมือถือ (Web Notification) */
   requestNotifyPermission(){
@@ -2356,38 +2395,64 @@ const M={
   },
   async showReceipt(id){
     let r=(await shopRef.collection('receipts').doc(id).get()).data();
-    const o=this.orders.find(x=>x.id===id);
+    const o=this.orders.find(x=>x.id===id) || null;
     if(!r && o){ await this.writeReceipt({id, ...o}); r=(await shopRef.collection('receipts').doc(id).get()).data(); }
     if(!r && o){
-      r={ queue:o.queue, shopName:document.getElementById('shopTitle')?.textContent||'ร้าน', items:o.items||[], total:o.total,
-          paymentMethod:o.paymentMethod, paidAmount:o.paidAmount||o.total, changeAmount:o.changeAmount||0,
-          paidAt:o.paidAt||o.createdAt, createdAt:o.createdAt };
+      r={
+        queue:o.queue, shopName:document.getElementById('shopTitle')?.textContent||'ร้าน',
+        items:o.items||[], total:o.total, paymentMethod:o.paymentMethod,
+        paidAmount:o.paidAmount||o.total, changeAmount:o.changeAmount||0,
+        paidAt:o.paidAt||o.createdAt, createdAt:o.createdAt,
+        memberName:o.memberName||'', memberPhone:o.memberPhone||o.contactPhone||'',
+        orderCode:o.orderCode||o.id||''
+      };
     }
     if(!r){ toast('ยังไม่มีใบเสร็จ'); return; }
-    const lines=(r.items||[]).map(i=>{
+
+    const items = r.items || (o && o.items) || [];
+    const lines = items.map(i=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty}`).join(', ');
-      const spice=i.spiceName?`<div style="font-size:12px;color:#BF360C">🌶️ เผ็ด: ${esc(i.spiceName)}</div>`:'';
-      const plara=i.plara?`<div style="font-size:12px;color:#555">🐟 ${esc(i.plara)}</div>`:'';
-      const note=i.note?`<div style="font-size:12px;color:#E65100">📝 ${esc(i.note)}</div>`:'';
-      return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px dashed #eee"><span>${esc(i.name)} x${i.qty}${spice}${plara}${tops?`<div style="font-size:12px;color:#777">+ ${tops}</div>`:''}${note}</span><span>${money(i.total)}</span></div>`;
-    }).join('');
-    const receiptHtml=`<div id="receiptPrintContent" style="font-family:Prompt,sans-serif;padding:16px;color:#000;background:#fff;max-width:400px;margin:0 auto">
-        <h2 style="text-align:center;color:#FF5722;margin:0 0 6px">${esc(r.shopName||'ร้าน')}</h2>
-        <div style="text-align:center;font-size:13px">ใบเสร็จรับเงิน</div>
-        <div style="text-align:center;font-size:16px;font-weight:700;margin:4px 0">คิว ${esc(r.queue||'')}</div>
-        <div style="text-align:center;font-size:12px;color:#555;margin-bottom:10px">${new Date(r.paidAt||r.createdAt||Date.now()).toLocaleString('th-TH')}</div>
-        ${lines||'<div style="text-align:center;color:#999">ไม่มีรายการ</div>'}
-        <div style="border-top:2px solid #333;margin-top:10px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700;font-size:1.15rem">
-          <span>รวมทั้งสิ้น</span><span>${money(r.total)}</span>
-        </div>
-        <div style="margin-top:8px;font-size:13px">ชำระ: ${r.paymentMethod==='CASH'?'เงินสด':'QR / พร้อมเพย์'} (ชำระแล้ว)</div>
-        ${r.changeAmount?`<div style="font-size:13px">ทอน: ${money(r.changeAmount)}</div>`:''}
+      const spice=i.spiceName?`<div class="meta">🌶️ เผ็ด: ${esc(i.spiceName)}</div>`:'';
+      const plara=i.plara?`<div class="meta">🐟 ${esc(i.plara)}</div>`:'';
+      const note=i.note?`<div class="meta" style="color:#E65100">📝 ${esc(i.note)}</div>`:'';
+      const topLine=tops?`<div class="meta">+ ${esc(tops)}</div>`:'';
+      return `<div class="rc-line">
+        <div><strong>${esc(i.name)} × ${i.qty}</strong>${spice}${plara}${topLine}${note}</div>
+        <div style="font-weight:600;white-space:nowrap">${money(i.total)}</div>
       </div>`;
+    }).join('');
+
+    const shopName = r.shopName || document.getElementById('shopTitle')?.textContent || 'ร้าน';
+    const queue = r.queue || (o && o.queue) || '';
+    const orderCode = r.orderCode || (o && (o.orderCode||o.id)) || id;
+    const paidAt = r.paidAt || r.createdAt || Date.now();
+    const memberLine = (r.memberName || r.memberPhone)
+      ? `<div class="rc-meta">สมาชิก: ${esc(r.memberName||'')} ${r.memberPhone?'('+esc(r.memberPhone)+')':''}</div>`
+      : '';
+    const payMethod = (r.paymentMethod==='CASH') ? 'เงินสด (ที่ร้าน)' : 'พร้อมเพย์ / QR';
+    const changeLine = Number(r.changeAmount||0)>0
+      ? `<div class="rc-pay" style="color:#1565C0">เงินทอน: ${money(r.changeAmount)}</div>` : '';
+
+    const receiptHtml = `<div id="receiptPrintContent" class="receipt" style="max-width:400px;margin:0 auto">
+      <h3>${esc(shopName)}</h3>
+      <div class="rc-sub" style="color:#2E7D32">ใบเสร็จรับเงิน</div>
+      <div style="text-align:center;font-size:1.35rem;font-weight:700;margin:4px 0">คิว ${esc(queue)}</div>
+      <div class="rc-meta">รหัสการสั่งซื้อ: <strong>${esc(String(orderCode).slice(0,16))}</strong></div>
+      <div class="rc-meta">${new Date(paidAt).toLocaleString('th-TH')}</div>
+      ${memberLine}
+      ${lines || '<div style="text-align:center;color:#999;padding:12px">ไม่มีรายการ</div>'}
+      <div class="rc-total">
+        <span>รวมทั้งสิ้น</span><span style="color:#FF5722">${money(r.total)}</span>
+      </div>
+      <div class="rc-pay">ชำระ: ${payMethod} · ชำระแล้ว</div>
+      ${changeLine}
+    </div>`;
+
     this._lastReceiptHtml = receiptHtml;
-    try{document.getElementById('detailModal').classList.add('on');}catch(e){}
-    (document.getElementById('detailBody')||{}).innerHTML=`
+    try{ document.getElementById('detailModal').classList.add('on'); }catch(e){}
+    (document.getElementById('detailBody')||{}).innerHTML = `
       <button class="btn btn-o btn-sm" onclick="(function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})()">← ปิด</button>
-      <div style="border:1px dashed #ccc;border-radius:12px;margin-top:12px;overflow:hidden">${receiptHtml}</div>
+      <div style="margin-top:12px">${receiptHtml}</div>
       <button class="btn btn-g btn-block" style="margin-top:12px" onclick="M.printReceiptNow()">🖨️ พิมพ์ใบเสร็จ</button>`;
   },
   printReceiptNow(){
