@@ -9,8 +9,13 @@ service cloud.firestore {
       let d = request.resource.data;
       let payOk = d.paymentStatus == 'UNPAID'
         || (d.paymentStatus == 'PAID' && d.total == 0);
+      // กันสแปม: createdAt ต้องใกล้เวลาปัจจุบัน (±10 นาที / ไม่เกินอนาคต 1 นาที)
+      let timeOk = d.createdAt is number
+        && d.createdAt > request.time.toMillis() - 600000
+        && d.createdAt < request.time.toMillis() + 60000;
       return d.keys().hasAll(['id', 'queue', 'items', 'total', 'status', 'paymentStatus', 'createdAt'])
         && payOk
+        && timeOk
         && (d.status == 'Pending' || d.status == 'AwaitingPayment')
         && d.total is number
         && d.total >= 0
@@ -21,13 +26,16 @@ service cloud.firestore {
         && d.queue is string
         && d.queue.size() > 0
         && d.queue.size() < 32
-        && d.createdAt is number
-        && d.createdAt > 0
-        // บังคับให้รายการมีฟิลด์พื้นฐานครบและอยู่ในช่วงสมเหตุสมผล
+        // บังคับรายการแรกมีฟิลด์พื้นฐานครบ
         && d.items[0].keys().hasAll(['name', 'qty', 'unitPrice', 'total'])
         && d.items[0].qty is number && d.items[0].qty > 0 && d.items[0].qty <= 99
         && d.items[0].unitPrice is number && d.items[0].unitPrice >= 0 && d.items[0].unitPrice < 100000
-        && d.items[0].total is number && d.items[0].total >= 0 && d.items[0].total < 200000;
+        && d.items[0].total is number && d.items[0].total >= 0 && d.items[0].total < 200000
+        // ถ้ารายการมากกว่า 1 ชิ้น ตรวจชิ้นที่ 2 ด้วย
+        && (d.items.size() < 2
+            || (d.items[1].keys().hasAll(['name', 'qty', 'unitPrice', 'total'])
+                && d.items[1].qty is number && d.items[1].qty > 0 && d.items[1].qty <= 99
+                && d.items[1].unitPrice is number && d.items[1].unitPrice >= 0));
     }
 
     function coreFieldsIntact() {
@@ -293,15 +301,18 @@ service cloud.firestore {
 
       match /receipts/{id} {
         allow read: if true;
-        // create/update จำกัดขนาด — delete แยกเพราะ request.resource เป็น null ตอนลบ
-        allow create, update: if request.resource.data.keys().size() <= 40;
+        // create/update จำกัดจำนวนฟิลด์ (รองรับแต้ม/สมาชิก) — delete ใช้ตอนรีเซ็ตประวัติ
+        allow create, update: if request.resource.data.keys().size() <= 50
+          && (!('total' in request.resource.data) || (request.resource.data.total is number && request.resource.data.total >= 0 && request.resource.data.total < 200000));
         allow delete: if true;
       }
 
       match /fcmTokens/{tokenId} {
-        allow read: if true;
-        allow write: if strMax(tokenId, 512)
+        // ไม่เปิดอ่านรายการ token ทั้งร้านจาก client ทั่วไป
+        allow read: if false;
+        allow create, update: if strMax(tokenId, 512)
           && request.resource.data.keys().size() <= 20;
+        allow delete: if true;
       }
 
       match /members/{phone} {
