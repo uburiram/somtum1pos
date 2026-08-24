@@ -192,3 +192,17 @@ header{background:#fff;padding:10px 14px;display:flex;justify-content:space-betw
 .rc-coupon-list{margin:6px 0 0 18px;font-size:13px}
 .shop-pane-head{padding:10px}
 .link-p{color:var(--p)}
+
+/* History list */
+.empty-state{text-align:center;color:#777;padding:28px 16px;font-size:15px}
+.hist-item{flex-direction:column;align-items:stretch}
+.hist-top{display:flex;justify-content:space-between;width:100%;align-items:center}
+.hist-total{font-weight:700;color:var(--p);font-size:1.05rem}
+.hist-meta{font-size:13px;color:#555;margin:4px 0}
+.hist-mem{font-size:13px;color:#6A1B9A;margin-top:2px}
+.hist-disc{font-size:13px;color:#E65100;margin-top:2px}
+.hist-items{font-size:14px;color:#333;margin-top:4px;line-height:1.4}
+.hist-actions{margin-top:10px}
+.tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600}
+.tag-ok{background:#E8F5E9;color:#2E7D32}
+.tag-bad{background:#FFEBEE;color:#C62828}
