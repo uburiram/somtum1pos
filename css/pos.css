@@ -1,60 +1,99 @@
 :root{--p:#FF5722;--g:#4CAF50;--bg:#E8E8E8;--d:#F44336;--i:#2196F3}
 *{box-sizing:border-box;margin:0;padding:0;font-family:Prompt,sans-serif}
-body{background:var(--bg);color:#333}
+body{background:var(--bg);color:#222;font-size:16px;line-height:1.5}
 button{border:none;background:none;cursor:pointer;font-family:inherit}
-input,select,textarea{font-family:inherit;font-size:16px;padding:10px;border:1px solid #ccc;border-radius:8px;width:100%}
+/* ========== Input จาก CSS ทั้งหมด ========== */
+input,select,textarea{
+  font-family:inherit;
+  font-size:16px;
+  padding:12px 14px;
+  border:1px solid #ccc;
+  border-radius:10px;
+  width:100%;
+  color:#222;
+  background:#fff;
+  line-height:1.4;
+}
+input::placeholder,textarea::placeholder{color:#888}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--p);box-shadow:0 0 0 3px rgba(255,87,34,.15)}
+input[type="number"],input[type="tel"],input[type="search"],input[type="date"],input[type="password"]{font-size:16px}
+label.lbl{font-size:14px;color:#444;display:block;margin:10px 0 5px;font-weight:500}
+
 header{background:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 6px rgba(0,0,0,.08);position:sticky;top:0;z-index:30;flex-wrap:wrap;gap:8px}
-.logo{font-weight:700;color:var(--p);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.logo{font-weight:700;color:var(--p);display:flex;align-items:center;gap:8px;flex-shrink:0;font-size:17px}
 .nav{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px}
 .nav::-webkit-scrollbar{display:none}
-.nav button,.nav a{padding:7px 12px;border-radius:16px;background:#eee;font-size:13px;font-weight:500;text-decoration:none;color:inherit;white-space:nowrap;flex-shrink:0}
+.nav button,.nav a{padding:8px 13px;border-radius:16px;background:#eee;font-size:14px;font-weight:500;text-decoration:none;color:inherit;white-space:nowrap;flex-shrink:0}
 .nav button.on{background:var(--p);color:#fff}
-.badge-n{background:var(--d);color:#fff;font-size:11px;font-weight:700;min-width:18px;height:18px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;padding:0 5px}
+.badge-n{background:var(--d);color:#fff;font-size:12px;font-weight:700;min-width:20px;height:20px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px}
 .wrap{padding:12px;padding-bottom:48px}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
-.st{background:#fff;border-radius:10px;padding:10px 6px;text-align:center}
-.st .n{font-size:1.3rem;font-weight:700}.st .l{font-size:11px;color:#777}
+.st{background:#fff;border-radius:10px;padding:12px 6px;text-align:center}
+.st .n{font-size:1.4rem;font-weight:700}.st .l{font-size:13px;color:#555;margin-top:2px}
 .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
-.fc{padding:6px 12px;background:#fff;border-radius:16px;font-size:13px;border:1px solid #ddd}
+.fc{padding:8px 14px;background:#fff;border-radius:16px;font-size:14px;border:1px solid #ddd;font-weight:500}
 .fc.on{background:var(--p);color:#fff;border-color:var(--p)}
 .og{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
-.oc{background:#fff;border-radius:12px;padding:14px;border-left:6px solid var(--p);cursor:pointer}
+.oc{background:#fff;border-radius:12px;padding:14px;border-left:6px solid var(--p);cursor:pointer;font-size:15px}
 .oc.Cooking{border-left-color:var(--i)}.oc.Ready{border-left-color:var(--g)}
-.q{font-size:1.5rem;font-weight:700}
-.btn{padding:10px 14px;border-radius:8px;font-weight:600;font-size:14px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.q{font-size:1.6rem;font-weight:700}
+.btn{padding:11px 14px;border-radius:8px;font-weight:600;font-size:15px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
 .btn-p{background:var(--p);color:#fff}.btn-g{background:var(--g);color:#fff}.btn-i{background:var(--i);color:#fff}
 .btn-o{border:1px solid var(--p);color:var(--p);background:#fff}.btn-d{background:var(--d);color:#fff}
-.btn-block{width:100%}.btn-sm{padding:6px 10px;font-size:12px}
+.btn-block{width:100%}.btn-sm{padding:8px 12px;font-size:13px}
 .pinbox{max-width:360px;margin:50px auto;background:#fff;padding:28px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,.1);text-align:center}
+.pinbox h2{font-size:1.35rem}
+.pinbox p{font-size:14px;line-height:1.5}
 .ov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:80;display:none;align-items:center;justify-content:center;padding:12px}
-.ov.on{display:flex}.md{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;border-radius:14px;padding:18px}
-.toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(30,30,30,.95);color:#fff;padding:10px 18px;border-radius:20px;z-index:200;display:none;font-size:14px;max-width:90%}
-.list-item{display:flex;flex-direction:row;align-items:center;background:#fff;padding:10px 12px;border-radius:10px;margin-bottom:8px;gap:8px}
+.ov.on{display:flex}.md{background:#fff;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;border-radius:14px;padding:18px;font-size:15px}
+.toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(30,30,30,.95);color:#fff;padding:12px 20px;border-radius:20px;z-index:200;display:none;font-size:15px;max-width:90%;line-height:1.4}
+.list-item{display:flex;flex-direction:row;align-items:center;background:#fff;padding:12px;border-radius:10px;margin-bottom:8px;gap:8px;font-size:15px}
 .list-item .grip{cursor:grab;color:#999;flex:0 0 auto;font-size:16px;line-height:1;padding:4px 2px}
-.list-item .thumb{width:40px;height:40px;border-radius:8px;object-fit:cover;background:#f0f0f0;flex:0 0 auto}
+.list-item .thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;background:#f0f0f0;flex:0 0 auto}
 .list-item .meta{flex:1;min-width:0;overflow:hidden}
-.list-item .meta .name{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.list-item .meta .sub{font-size:12px;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list-item .meta .name{font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list-item .meta .sub{font-size:13px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .list-item .acts{display:flex;flex-wrap:nowrap;gap:4px;flex:0 0 auto;align-items:center}
-.list-item .acts .btn{padding:5px 8px;font-size:11px;white-space:nowrap}
+.list-item .acts .btn{padding:6px 10px;font-size:12px;white-space:nowrap}
 .list-item strong{word-break:break-word;line-height:1.35}
 .list-item .row-top{display:flex;align-items:flex-start;gap:8px;width:100%}
 .list-item .row-top .title{flex:1;min-width:0}
 .list-item .row-name{display:flex;align-items:flex-start;gap:8px;width:100%}
 .list-item .row-actions{display:flex;flex-wrap:wrap;gap:6px;width:100%}
 .list-item .row-actions .btn{flex:0 0 auto}
-.audio-bar{background:#FFF3E0;padding:8px;text-align:center;border-radius:8px;margin-bottom:10px;border:1px dashed var(--p);font-size:13px}
+.audio-bar{background:#FFF3E0;padding:10px;text-align:center;border-radius:8px;margin-bottom:10px;border:1px dashed var(--p);font-size:14px;line-height:1.45}
 .hide{display:none!important}
-.banner{background:#FFF3E0;color:#E65100;padding:8px 12px;font-size:13px;text-align:center;display:none}.banner.on{display:block}
+.banner{background:#FFF3E0;color:#E65100;padding:10px 14px;font-size:14px;text-align:center;display:none;line-height:1.45}.banner.on{display:block}
 .rpt{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.rc{background:#fff;padding:12px;border-radius:10px;text-align:center}
-.rc .v{font-size:1.25rem;font-weight:700;color:var(--p)}.rc .l{font-size:12px;color:#777}
-.form-card{background:#fff;padding:14px;border-radius:12px;margin-bottom:12px}
-label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
+.rc{background:#fff;padding:14px;border-radius:10px;text-align:center}
+.rc .v{font-size:1.35rem;font-weight:700;color:var(--p)}.rc .l{font-size:13px;color:#555;margin-top:2px}
+.form-card{background:#fff;padding:16px;border-radius:12px;margin-bottom:12px}
+.form-card h3{font-size:1.15rem;margin-bottom:6px}
 .subtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
-.subtabs button{padding:6px 12px;background:#eee;border-radius:14px;font-size:13px}
+.subtabs button{padding:8px 14px;background:#eee;border-radius:14px;font-size:14px;font-weight:500}
 .subtabs button.on{background:var(--p);color:#fff}
 .thumb{width:48px;height:48px;border-radius:8px;object-fit:cover;background:#f0f0f0}
+
+/* ใบเสร็จร้าน — ให้โครงสร้างใกล้เคียงฝั่งลูกค้า */
+.receipt{
+  background:#fff;
+  border:1px dashed #ccc;
+  border-radius:12px;
+  padding:16px;
+  text-align:left;
+  margin:12px 0;
+  font-size:15px;
+  line-height:1.45;
+  color:#222;
+}
+.receipt h3{text-align:center;color:var(--p);margin-bottom:6px;font-size:1.25rem}
+.receipt .rc-sub{text-align:center;font-size:14px;font-weight:600;margin-bottom:4px}
+.receipt .rc-meta{text-align:center;font-size:13px;color:#555;margin-bottom:10px}
+.receipt .rc-line{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eee;gap:8px}
+.receipt .rc-line .meta{font-size:13px;color:#555;margin-top:2px}
+.receipt .rc-total{border-top:2px solid #333;margin-top:10px;padding-top:10px;display:flex;justify-content:space-between;font-weight:700;font-size:1.15rem}
+.receipt .rc-pay{margin-top:8px;font-size:14px}
+
 @media print{
   body *{visibility:hidden!important}
   #printArea, #printArea *{visibility:visible!important}
@@ -64,27 +103,28 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
 }
 .status-hl{outline:3px solid #FF5722!important;box-shadow:0 0 0 3px rgba(255,87,34,.25);font-weight:700;transform:scale(1.02)}
 .order-card .st-hl{font-weight:700}
-
 .oc-blink{animation:ocBlink 1s ease-in-out infinite}
 @keyframes ocBlink{0%,100%{box-shadow:0 0 0 3px #F44336;background:#FFEBEE}50%{box-shadow:0 0 0 6px #FFCDD2;background:#fff}}
 
-/* ========== ข้อ 11: ปรับ UI POS สำหรับจอเล็ก ========== */
+/* จอเล็ก */
 @media (max-width: 480px) {
   header { padding: 8px 10px; }
-  .logo { font-size: 15px; }
+  .logo { font-size: 16px; }
   .nav { gap: 4px; }
-  .nav button, .nav a { padding: 6px 10px; font-size: 12px; }
+  .nav button, .nav a { padding: 7px 11px; font-size: 13px; }
   .stats { grid-template-columns: repeat(2, 1fr); gap: 6px; }
-  .st .n { font-size: 1.15rem; }
+  .st .n { font-size: 1.25rem; }
+  .st .l { font-size: 12px; }
   .og { grid-template-columns: 1fr; }
   .wrap { padding: 10px; padding-bottom: 40px; }
-  .form-card { padding: 12px; }
-  .btn { padding: 9px 12px; font-size: 13px; }
+  .form-card { padding: 14px; }
+  .btn { padding: 10px 12px; font-size: 14px; }
   .pinbox { margin: 30px 12px; padding: 22px; }
   .md { max-height: 88vh; padding: 14px; }
+  body { font-size: 15px; }
 }
 
-/* ========== ข้อ 12: Loading skeleton ========== */
+/* Loading skeleton */
 .skeleton {
   background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
   background-size: 200% 100%;
