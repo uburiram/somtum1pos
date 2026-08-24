@@ -2892,7 +2892,20 @@ const C={
       paidAmount: order.paidAmount||order.total,
       changeAmount: order.changeAmount||0,
       paidAt: order.paidAt||Date.now(),
-      createdAt: order.createdAt||Date.now()
+      createdAt: order.createdAt||Date.now(),
+      memberName: order.memberName||'',
+      memberPhone: order.memberPhone||order.contactPhone||'',
+      contactPhone: order.contactPhone||'',
+      pointsEarned: Number(order.pointsEarned||0),
+      pointsUsed: Number(order.pointsUsed||order.pointsDisc||0),
+      pointsDisc: Number(order.pointsDisc||order.pointsUsed||0),
+      couponCode: order.couponCode||'',
+      couponDisc: Number(order.couponDisc||0),
+      discountAmount: Number(order.discountAmount||0),
+      personalCouponId: order.personalCouponId||'',
+      orderCode: order.orderCode||order.id||'',
+      tableNo: order.tableNo||null,
+      orderMode: order.orderMode||''
     };
     try{ await shopRef.collection('receipts').doc(order.id).set(receipt,{merge:true}); }catch(e){}
     try{

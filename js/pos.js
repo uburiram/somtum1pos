@@ -2182,7 +2182,20 @@ const M={
       shopName:pub.shopName||'ร้าน', accountName:pub.accountName||'',
       items:order.items||[], total:order.total,
       paymentMethod:order.paymentMethod, paidAmount:order.paidAmount||order.total,
-      changeAmount:order.changeAmount||0, paidAt:order.paidAt||Date.now(), createdAt:order.createdAt||Date.now()
+      changeAmount:order.changeAmount||0, paidAt:order.paidAt||Date.now(), createdAt:order.createdAt||Date.now(),
+      memberName: order.memberName||'',
+      memberPhone: order.memberPhone||order.contactPhone||'',
+      contactPhone: order.contactPhone||'',
+      pointsEarned: Number(order.pointsEarned||0),
+      pointsUsed: Number(order.pointsUsed||order.pointsDisc||0),
+      pointsDisc: Number(order.pointsDisc||order.pointsUsed||0),
+      couponCode: order.couponCode||'',
+      couponDisc: Number(order.couponDisc||0),
+      discountAmount: Number(order.discountAmount||0),
+      personalCouponId: order.personalCouponId||'',
+      orderCode: order.orderCode||order.id||'',
+      tableNo: order.tableNo||null,
+      orderMode: order.orderMode||''
     };
     await shopRef.collection('receipts').doc(order.id).set(receipt,{merge:true});
   },
@@ -2395,7 +2408,13 @@ const M={
   },
   async showReceipt(id){
     let r=(await shopRef.collection('receipts').doc(id).get()).data();
-    const o=this.orders.find(x=>x.id===id) || null;
+    let o=this.orders.find(x=>x.id===id) || null;
+    if(!o){
+      try{
+        const snap=await shopRef.collection('orders').doc(id).get();
+        if(snap.exists) o={id, ...snap.data()};
+      }catch(e){}
+    }
     if(!r && o){ await this.writeReceipt({id, ...o}); r=(await shopRef.collection('receipts').doc(id).get()).data(); }
     if(!r && o){
       r={
@@ -2404,21 +2423,32 @@ const M={
         paidAmount:o.paidAmount||o.total, changeAmount:o.changeAmount||0,
         paidAt:o.paidAt||o.createdAt, createdAt:o.createdAt,
         memberName:o.memberName||'', memberPhone:o.memberPhone||o.contactPhone||'',
-        orderCode:o.orderCode||o.id||''
+        orderCode:o.orderCode||o.id||'',
+        pointsEarned:o.pointsEarned||0, pointsUsed:o.pointsUsed||o.pointsDisc||0,
+        couponCode:o.couponCode||'', couponDisc:o.couponDisc||0, discountAmount:o.discountAmount||0
       };
     }
     if(!r){ toast('ยังไม่มีใบเสร็จ'); return; }
+
+    // รวมข้อมูลสมาชิกจาก order ถ้า receipt เก่าไม่มี
+    const memberPhone = this.normPhone(r.memberPhone || (o&&(o.memberPhone||o.contactPhone)) || '');
+    let memberName = String(r.memberName || (o&&o.memberName) || '').trim();
+    const pointsUsed = Math.max(0, Number(r.pointsUsed||r.pointsDisc||(o&&(o.pointsUsed||o.pointsDisc))||0));
+    const pointsEarned = Math.max(0, Number(r.pointsEarned||(o&&o.pointsEarned)||0));
+    const couponCode = String(r.couponCode||(o&&o.couponCode)||'').trim();
+    const couponDisc = Math.max(0, Number(r.couponDisc||(o&&o.couponDisc)||0));
+    const discountAmount = Math.max(0, Number(r.discountAmount||(o&&o.discountAmount)||0));
 
     const items = r.items || (o && o.items) || [];
     const lines = items.map(i=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty}`).join(', ');
       const spice=i.spiceName?`<div class="meta">🌶️ เผ็ด: ${esc(i.spiceName)}</div>`:'';
       const plara=i.plara?`<div class="meta">🐟 ${esc(i.plara)}</div>`:'';
-      const note=i.note?`<div class="meta" style="color:#E65100">📝 ${esc(i.note)}</div>`:'';
+      const note=i.note?`<div class="meta note">📝 ${esc(i.note)}</div>`:'';
       const topLine=tops?`<div class="meta">+ ${esc(tops)}</div>`:'';
       return `<div class="rc-line">
         <div><strong>${esc(i.name)} × ${i.qty}</strong>${spice}${plara}${topLine}${note}</div>
-        <div style="font-weight:600;white-space:nowrap">${money(i.total)}</div>
+        <div class="rc-amt">${money(i.total)}</div>
       </div>`;
     }).join('');
 
@@ -2426,34 +2456,100 @@ const M={
     const queue = r.queue || (o && o.queue) || '';
     const orderCode = r.orderCode || (o && (o.orderCode||o.id)) || id;
     const paidAt = r.paidAt || r.createdAt || Date.now();
-    const memberLine = (r.memberName || r.memberPhone)
-      ? `<div class="rc-meta">สมาชิก: ${esc(r.memberName||'')} ${r.memberPhone?'('+esc(r.memberPhone)+')':''}</div>`
-      : '';
     const payMethod = (r.paymentMethod==='CASH') ? 'เงินสด (ที่ร้าน)' : 'พร้อมเพย์ / QR';
     const changeLine = Number(r.changeAmount||0)>0
-      ? `<div class="rc-pay" style="color:#1565C0">เงินทอน: ${money(r.changeAmount)}</div>` : '';
+      ? `<div class="rc-pay pay-change">เงินทอน: ${money(r.changeAmount)}</div>` : '';
 
-    const receiptHtml = `<div id="receiptPrintContent" class="receipt" style="max-width:400px;margin:0 auto">
+    // ส่วนลด / แต้มที่ใช้ในออเดอร์นี้
+    let discountLines = '';
+    if(pointsUsed>0 || couponDisc>0 || discountAmount>0 || couponCode){
+      const parts=[];
+      if(pointsUsed>0) parts.push('ใช้แต้ม '+pointsUsed+' บาท');
+      if(couponCode || couponDisc>0) parts.push('คูปอง '+(couponCode||'')+(couponDisc>0?(' -฿'+couponDisc):''));
+      if(discountAmount>0 && discountAmount!==(pointsUsed+couponDisc)) parts.push('ส่วนลดรวม ฿'+discountAmount);
+      discountLines = `<div class="rc-pay rc-discount">ส่วนลด: ${esc(parts.join(' · '))}</div>`;
+    }
+
+    // บล็อกสมาชิก (โหลดแต้มคงเหลือจาก members)
+    let memberBlock = '<div id="posReceiptMemberBenefits" class="rc-member-box">กำลังโหลดสิทธิ์สมาชิก…</div>';
+    if(!memberPhone){
+      memberBlock = '';
+    }
+
+    const memberLine = (memberName || memberPhone)
+      ? `<div class="rc-meta">สมาชิก: ${esc(memberName||'')} ${memberPhone?'('+esc(memberPhone)+')':''}</div>`
+      : '';
+
+    const receiptHtml = `<div id="receiptPrintContent" class="receipt receipt-print">
       <h3>${esc(shopName)}</h3>
-      <div class="rc-sub" style="color:#2E7D32">ใบเสร็จรับเงิน</div>
-      <div style="text-align:center;font-size:1.35rem;font-weight:700;margin:4px 0">คิว ${esc(queue)}</div>
+      <div class="rc-sub ok">ใบเสร็จรับเงิน</div>
+      <div class="rc-queue">คิว ${esc(queue)}</div>
       <div class="rc-meta">รหัสการสั่งซื้อ: <strong>${esc(String(orderCode).slice(0,16))}</strong></div>
       <div class="rc-meta">${new Date(paidAt).toLocaleString('th-TH')}</div>
       ${memberLine}
-      ${lines || '<div style="text-align:center;color:#999;padding:12px">ไม่มีรายการ</div>'}
+      ${lines || '<div class="rc-empty">ไม่มีรายการ</div>'}
       <div class="rc-total">
-        <span>รวมทั้งสิ้น</span><span style="color:#FF5722">${money(r.total)}</span>
+        <span>รวมทั้งสิ้น</span><span class="rc-total-amt">${money(r.total)}</span>
       </div>
       <div class="rc-pay">ชำระ: ${payMethod} · ชำระแล้ว</div>
       ${changeLine}
+      ${discountLines}
+      ${memberBlock}
     </div>`;
 
     this._lastReceiptHtml = receiptHtml;
+    this._lastReceiptOrderId = id;
+    this._lastReceiptPhone = memberPhone;
+    this._lastReceiptPoints = { used: pointsUsed, earned: pointsEarned, name: memberName };
     try{ document.getElementById('detailModal').classList.add('on'); }catch(e){}
     (document.getElementById('detailBody')||{}).innerHTML = `
-      <button class="btn btn-o btn-sm" onclick="(function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})()">← ปิด</button>
-      <div style="margin-top:12px">${receiptHtml}</div>
-      <button class="btn btn-g btn-block" style="margin-top:12px" onclick="M.printReceiptNow()">🖨️ พิมพ์ใบเสร็จ</button>`;
+      <button type="button" class="btn btn-o btn-sm" onclick="(function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})()">← ปิด</button>
+      <div class="receipt-wrap">${receiptHtml}</div>
+      <button type="button" class="btn btn-g btn-block btn-mt" onclick="M.printReceiptNow()">🖨️ พิมพ์ใบเสร็จ</button>`;
+
+    // โหลดแต้มคงเหลือ + คูปองส่วนตัวเหมือนฝั่งลูกค้า
+    if(memberPhone){
+      try{ await this.fillPosReceiptMemberBenefits(memberPhone, pointsUsed, pointsEarned, memberName); }catch(e){ console.warn(e); }
+    }
+  },
+  async fillPosReceiptMemberBenefits(phone, pointsUsed, pointsEarned, memberName){
+    const el=document.getElementById('posReceiptMemberBenefits');
+    if(!el) return;
+    phone=this.normPhone(phone);
+    if(!phone){ el.style.display='none'; return; }
+    try{
+      const snap=await shopRef.collection('members').doc(phone).get();
+      let pts=0, coupons=[], name=String(memberName||'').trim();
+      if(snap.exists){
+        const md=snap.data()||{};
+        pts=Math.max(0, Math.floor(Number(md.points||0)));
+        if(!name) name=(String(md.firstName||'')+' '+String(md.lastName||'')).trim();
+        const now=Date.now();
+        coupons=(Array.isArray(md.personalCoupons)?md.personalCoupons:[]).filter(c=>c&&!c.used&&(!c.expiresAt||Number(c.expiresAt)>now));
+      }
+      let html='<div class="rc-member-inner">';
+      html+='<div class="rc-member-title">👤 สมาชิก'+(name?(' · '+esc(name)):'')+'</div>';
+      html+='<div class="rc-member-row">แต้มคงเหลือ: <strong>'+pts+'</strong> แต้ม</div>';
+      if(Number(pointsUsed)>0) html+='<div class="rc-member-row">ใช้ในออเดอร์นี้: <strong>'+Number(pointsUsed)+'</strong> แต้ม</div>';
+      if(Number(pointsEarned)>0) html+='<div class="rc-member-row ok">ได้รับในออเดอร์นี้: <strong>+'+Number(pointsEarned)+'</strong> แต้ม</div>';
+      if(coupons.length){
+        html+='<div class="rc-member-row">คูปองส่วนตัวคงเหลือ: '+coupons.length+' ใบ</div>';
+        html+='<ul class="rc-coupon-list">'+coupons.slice(0,5).map(c=>'<li>'+esc(c.code||c.id||'คูปอง')+(c.value?(' · '+(c.type==='percent'?c.value+'%':('฿'+c.value))):'')+'</li>').join('')+'</ul>';
+      } else {
+        html+='<div class="rc-member-muted">ไม่มีคูปองส่วนตัวคงเหลือ</div>';
+      }
+      html+='</div>';
+      el.innerHTML=html;
+      el.style.display='block';
+      // อัปเดต HTML สำหรับพิมพ์
+      try{
+        const box=document.getElementById('receiptPrintContent');
+        if(box) this._lastReceiptHtml = box.outerHTML;
+      }catch(e){}
+    }catch(e){
+      console.warn('fillPosReceiptMemberBenefits', e);
+      el.innerHTML='<div class="rc-member-muted">โหลดข้อมูลสมาชิกไม่สำเร็จ</div>';
+    }
   },
   printReceiptNow(){
     const html=this._lastReceiptHtml || document.getElementById('receiptPrintContent')?.outerHTML || '';
