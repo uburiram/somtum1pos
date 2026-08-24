@@ -33,7 +33,7 @@
 <div id="loginView" class="pinbox">
   <h2 style="color:var(--p);margin-bottom:8px"><i class="fa-solid fa-lock"></i> POS ร้านค้า</h2>
   <p style="font-size:13px;color:#666;margin-bottom:10px">ใส่ PIN ร้านเพื่อเข้าใช้งาน</p>
-  <input type="password" id="pinIn" inputmode="numeric" maxlength="8" placeholder="PIN 4–8 หลัก" style="text-align:center;font-size:1.5rem;letter-spacing:6px;margin:12px 0">
+  <input type="password" id="pinIn" inputmode="numeric" maxlength="8" placeholder="PIN 4–8 หลัก" class="pin-input">
   <button class="btn btn-p btn-block" onclick="M.login()">เข้าสู่ระบบ</button>
   
   <p style="margin-top:16px"><a href="./" style="color:var(--p)">← หน้าลูกค้า</a></p>
@@ -53,19 +53,19 @@
     <button id="navMembers" onclick="M.tab('members')">👤 สมาชิก</button>
     <button id="navSet" onclick="M.tab('settings')">⚙️ ตั้งค่า</button>
     <a href="./">ลูกค้า</a>
-    <button onclick="M.logout()" style="background:#fee;color:var(--d)">ออก</button>
+    <button onclick="M.logout()" class="nav-logout">ออก</button>
   </div>
 </header>
 <div class="wrap">
   <div id="panelOrders">
     <div class="audio-bar" id="audioBar"><strong>🔔 เปิดเสียง + การแจ้งเตือน</strong>
-      <button class="btn btn-p btn-sm" style="margin-left:8px" onclick="M.enableAudio()">เปิด</button>
+      <button class="btn btn-p btn-sm btn-gap" onclick="M.enableAudio()">เปิด</button>
       <div style="font-size:11px;color:#666;margin-top:4px">Android: อนุญาตการแจ้งเตือน + อย่าปิดใน Recent Apps</div></div>
     <div class="stats">
-      <div class="st"><div class="n" style="color:var(--p)" id="sPending">0</div><div class="l">รอทำ</div></div>
-      <div class="st"><div class="n" style="color:var(--i)" id="sCooking">0</div><div class="l">กำลังทำ</div></div>
-      <div class="st"><div class="n" style="color:var(--g)" id="sReady">0</div><div class="l">รอรับ</div></div>
-      <div class="st"><div class="n" style="color:var(--d)" id="sUnpaid">0</div><div class="l">ไม่ชำระ</div></div>
+      <div class="st"><div class="n stat-p" id="sPending">0</div><div class="l">รอทำ</div></div>
+      <div class="st"><div class="n stat-i" id="sCooking">0</div><div class="l">กำลังทำ</div></div>
+      <div class="st"><div class="n stat-g" id="sReady">0</div><div class="l">รอรับ</div></div>
+      <div class="st"><div class="n stat-d" id="sUnpaid">0</div><div class="l">ไม่ชำระ</div></div>
     </div>
     <div class="filters">
       <button class="fc on" onclick="M.filter('kitchen',this)">ครัว (รอคิว+กำลังทำ)</button>
@@ -82,33 +82,33 @@
     <div class="form-card">
       <h3>🪑 จัดการโต๊ะ</h3>
       <p style="font-size:13px;color:#666;margin-bottom:10px">โหมดโต๊ะ: 1 โต๊ะ = 1 ออเดอร์ · ลูกค้าหลายเครื่องสั่งรวมออเดอร์เดียวกันจนกว่าจะเคลียร์โต๊ะ</p>
-      <div id="tableCallAlert" style="display:none;margin-bottom:12px;padding:12px;background:#FFEBEE;border:2px solid #C62828;border-radius:12px">
+      <div id="tableCallAlert" class="table-call-alert">
         <div style="font-weight:700;color:#C62828;font-size:16px">🔔 มีโต๊ะเรียกพนักงาน!</div>
         <div id="tableCallList" style="margin-top:6px;font-size:14px"></div>
       </div>
-      <div id="tablesBoard" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px"></div>
+      <div id="tablesBoard" class="tables-board"></div>
     </div>
   </div>
-  <div id="panelHistory"
- class="hide">
+  <div id="panelHistory" class="hide">
     <div class="form-card">
-      <h3 style="margin-bottom:8px">📚 ประวัติการสั่งซื้อ</h3><p style="font-size:12px;color:#777;margin-bottom:8px">แสดงเฉพาะออเดอร์ที่เสร็จสมบูรณ์ (ทำเสร็จแล้วและชำระเงินแล้ว)</p>
+      <h3 class="mb-8">📚 ประวัติการสั่งซื้อ</h3>
+      <p class="muted">แสดงเฉพาะออเดอร์ที่เสร็จสมบูรณ์ (ทำเสร็จแล้วและชำระเงินแล้ว)</p>
       <label class="lbl">ค้นหา (คิว / ชื่อเมนู)</label>
       <input id="histQ" placeholder="เช่น A001 หรือ ตำไทย" oninput="M.loadHistory()">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+      <div class="form-row">
         <div><label class="lbl">จากวันที่</label><input type="date" id="histFrom" onchange="M.loadHistory()"></div>
         <div><label class="lbl">ถึงวันที่</label><input type="date" id="histTo" onchange="M.loadHistory()"></div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-        <button class="btn btn-o btn-sm" onclick="M.histPreset('today')">วันนี้</button>
-        <button class="btn btn-o btn-sm" onclick="M.histPreset('7d')">7 วัน</button>
-        <button class="btn btn-o btn-sm" onclick="M.histPreset('30d')">30 วัน</button>
-        <button class="btn btn-o btn-sm" onclick="M.histPreset('all')">ทั้งหมด</button>
+      <div class="btn-row">
+        <button type="button" class="btn btn-o btn-sm" onclick="M.histPreset('today')">วันนี้</button>
+        <button type="button" class="btn btn-o btn-sm" onclick="M.histPreset('7d')">7 วัน</button>
+        <button type="button" class="btn btn-o btn-sm" onclick="M.histPreset('30d')">30 วัน</button>
+        <button type="button" class="btn btn-o btn-sm" onclick="M.histPreset('all')">ทั้งหมด</button>
       </div>
-      <div style="margin-top:14px;padding:12px;background:#FFEBEE;border-radius:12px;border:1px solid #FFCDD2">
-        <div style="font-weight:700;color:#C62828;margin-bottom:6px">รีเซ็ตประวัติ + รันคิวใหม่</div>
-        <p style="font-size:12px;color:#666;margin-bottom:8px">ลบออเดอร์และใบเสร็จทั้งหมด แล้วเริ่มเลขคิวที่ A001 ใหม่ (ต่างจากการลบทีละรายการ)</p>
-        <button class="btn btn-d btn-block" onclick="M.resetAllHistoryAndQueue()">รีเซ็ตประวัติทั้งหมด + เริ่มคิวใหม่</button>
+      <div class="danger-box">
+        <div class="danger-title">รีเซ็ตประวัติ + รันคิวใหม่</div>
+        <p>ลบออเดอร์และใบเสร็จทั้งหมด แล้วเริ่มเลขคิวที่ A001 ใหม่ (ต่างจากการลบทีละรายการ)</p>
+        <button type="button" class="btn btn-d btn-block" onclick="M.resetAllHistoryAndQueue()">รีเซ็ตประวัติทั้งหมด + เริ่มคิวใหม่</button>
       </div>
     </div>
     <div id="historyList"></div>
