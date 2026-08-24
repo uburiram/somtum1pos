@@ -599,12 +599,12 @@ const M={
     }
     if(!this.isKitchenStatus(order.status)) return '';
     const mins=this.calcOrderEtaMinutes(order);
-    if(mins<=0) return '<div class="eta-cd" style="margin-top:6px;font-size:12px;font-weight:700;color:#2E7D32">⏱ ถึงคิวแล้ว / ใกล้เสร็จ</div>';
+    if(mins<=0) return '<div class="eta-cd eta-ok">⏱ ถึงคิวแล้ว / ใกล้เสร็จ</div>';
     // นับถอยหลังจากจุดยึดเวลา (สั่งใหม่หรือสั่งเพิ่มล่าสุด) + นาทีจากเมนูที่เหลือ/คิวก่อนหน้า
     const anchor=Number(order.etaAnchorAt||order.lastAddAt||order.createdAt||Date.now());
     const endAt=anchor+mins*60000;
     const leftMs=endAt-Date.now();
-    if(leftMs<=0) return '<div class="eta-cd" style="margin-top:6px;font-size:12px;font-weight:700;color:#C62828">⏱ เลยกำหนดแล้ว · เร่งทำ</div>';
+    if(leftMs<=0) return '<div class="eta-cd eta-late">⏱ เลยกำหนดแล้ว · เร่งทำ</div>';
     const leftMin=Math.ceil(leftMs/60000);
     const mm=Math.floor(leftMs/60000);
     const ss=Math.floor((leftMs%60000)/1000);
@@ -703,31 +703,53 @@ const M={
     const navB=document.getElementById('navOrderBadge');
     if(navB){ if(n>0){navB.textContent=n;navB.classList.remove('hide')} else navB.classList.add('hide'); }
     const g=document.getElementById('orderGrid');
-    if(!list.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:40px;color:#888">ไม่มีออเดอร์</div>'; try{ this.renderTablesBoard(); }catch(e){} return}
+    if(!list.length){g.innerHTML='<div class="empty-state grid-span">ไม่มีออเดอร์</div>'; try{ this.renderTablesBoard(); }catch(e){} return}
     g.innerHTML=list.map(o=>{
       let prev=(o.items||[]).map(i=>i.name+' x'+i.qty).join(', '); if(prev.length>40) prev=prev.slice(0,40)+'…';
       const cov=calcPaymentCover(o);
       const alreadyPaid=cov.covered;
       const isPartial=o.paymentStatus!=='PAID' && (o.needsRepay || alreadyPaid>0 || cov.due>0);
       const due=isPartial?cov.due:0;
-      const pay=o.paymentStatus==='PAID'?'<span style="background:#E8F5E9;color:#2E7D32;padding:2px 8px;border-radius:4px;font-size:12px">ชำระแล้ว</span>':(isPartial?('<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:4px;font-size:12px">ค้างส่วนต่าง ฿'+due+'</span>'):'<span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px">ยังไม่ชำระ</span>');
+      const pay=o.paymentStatus==='PAID'
+        ? '<span class="tag tag-ok">ชำระแล้ว</span>'
+        : (isPartial
+          ? ('<span class="tag tag-warn">ค้างส่วนต่าง ฿'+due+'</span>')
+          : '<span class="tag tag-bad">ยังไม่ชำระ</span>');
       const method = (o.paymentMethod==='CASH')
-        ? '<span style="background:#E3F2FD;color:#1565C0;padding:2px 6px;border-radius:4px;font-size:11px">เงินสด</span>'
-        : '<span style="background:#E8EAF6;color:#3949AB;padding:2px 6px;border-radius:4px;font-size:11px">พร้อมเพย์</span>';
-      const slip=o.slipStatus==='PENDING_REVIEW'?' <span style="background:#FFF3E0;color:#E65100;padding:2px 6px;border-radius:4px;font-size:11px">รอตรวจสลิป</span>':(o.slipStatus==='APPROVED'||o.slipStatus==='AUTO_APPROVED'?' <span style="background:#E8F5E9;color:#2E7D32;padding:2px 6px;border-radius:4px;font-size:11px">สลิปผ่าน</span>':'');
-      // กระพริบเฉพาะที่อยู่ใน _blinkAdds = ออเดอร์ใหม่ หรือเพิ่งมีเมนูเพิ่ม (ไม่กระพริบทุกใบ)
+        ? '<span class="tag tag-cash">เงินสด</span>'
+        : '<span class="tag tag-qr">พร้อมเพย์</span>';
+      const slip=o.slipStatus==='PENDING_REVIEW'
+        ? ' <span class="tag tag-warn">รอตรวจสลิป</span>'
+        : (o.slipStatus==='APPROVED'||o.slipStatus==='AUTO_APPROVED'
+          ? ' <span class="tag tag-ok">สลิปผ่าน</span>' : '');
       const isAlert=!!(this._blinkAdds && this._blinkAdds.has(o.id));
-      const tableTag=o.tableNo?(`<span style="background:#F3E5F5;color:#6A1B9A;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">โต๊ะ ${o.tableNo}</span> `):'';
-      const addTag=(isAlert && o.hasNewItems)?(' <span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">สั่งเพิ่ม!</span>'):(isAlert?' <span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">ใหม่</span>':'');
-      return `<div class="oc ${esc(o.status||'')} ${isAlert?'oc-blink':''}" style="${isAlert?'box-shadow:0 0 0 3px #F44336;':''}" onclick="M.openDetail('${esc(o.id)}')">
-        <div style="margin-bottom:4px">${tableTag}${addTag}</div>
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px"><div class="q">${esc(o.queue)}</div>
-        <div style="text-align:right"><div style="color:#888;font-size:12px">${o.createdAt?new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}</div>
-        <div style="font-size:11px;font-weight:600;margin-top:2px;color:${o.status==='Cooking'?'#1565C0':o.status==='Ready'?'#2E7D32':'#E65100'}">${({Pending:'รอคิวทำ',AwaitingPayment:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:'ยกเลิก'})[o.status]||o.status}</div></div></div>
-        <div style="margin:8px 0;color:#444">${esc(prev)}</div>
-        ${o.memberPhone||o.memberName?`<div style="font-size:11px;color:#6A1B9A">👤 ${o.memberName?('สมาชิกคุณ '+esc(o.memberName)):esc(o.memberPhone||'')}${o.discountAmount?(' · ส่วนลด ฿'+o.discountAmount):''}</div>`: (o.contactPhone?`<div style="font-size:11px;color:#666">📞 ${esc(o.contactPhone)}</div>`:'')}
+      const tableTag=o.tableNo?(`<span class="tag tag-table">โต๊ะ ${o.tableNo}</span> `):'';
+      const addTag=(isAlert && o.hasNewItems)
+        ? ' <span class="tag tag-bad">สั่งเพิ่ม!</span>'
+        : (isAlert ? ' <span class="tag tag-bad">ใหม่</span>' : '');
+      const stClass = o.status==='Cooking' ? 'st-cooking' : (o.status==='Ready' ? 'st-ready' : 'st-pending');
+      const stLabel = ({Pending:'รอคิวทำ',AwaitingPayment:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:'ยกเลิก'})[o.status]||o.status;
+      const timeStr = o.createdAt?new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):'';
+      const memLine = o.memberPhone||o.memberName
+        ? `<div class="oc-mem">👤 ${o.memberName?('สมาชิกคุณ '+esc(o.memberName)):esc(o.memberPhone||'')}${o.discountAmount?(' · ส่วนลด ฿'+o.discountAmount):''}</div>`
+        : (o.contactPhone?`<div class="oc-phone">📞 ${esc(o.contactPhone)}</div>`:'');
+      return `<div class="oc ${esc(o.status||'')} ${isAlert?'oc-blink':''}" onclick="M.openDetail('${esc(o.id)}')">
+        <div class="oc-tags">${tableTag}${addTag}</div>
+        <div class="oc-head">
+          <div class="q">${esc(o.queue)}</div>
+          <div class="oc-timebox">
+            <div class="oc-time">${timeStr}</div>
+            <div class="oc-status ${stClass}">${stLabel}</div>
+          </div>
+        </div>
+        <div class="oc-items">${esc(prev)}</div>
+        ${memLine}
         ${this.formatEtaCountdown(o)}
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px"><strong style="color:var(--p);font-size:1.25rem">${money(o.total)}</strong><span style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${method}${pay}${slip}</span></div></div>`;
+        <div class="oc-foot">
+          <strong class="oc-total">${money(o.total)}</strong>
+          <span class="oc-badges">${method}${pay}${slip}</span>
+        </div>
+      </div>`;
     }).join('');
     // อัปเดตปุ่มเคลียร์โต๊ะเมื่อสถานะออเดอร์เปลี่ยน (เสร็จสมบูรณ์แล้วค่อยโชว์)
     try{ this.renderTablesBoard(); }catch(e){}
@@ -755,43 +777,41 @@ const M={
     const items=(o.items||[]).map(i=>{
       const tops=(i.toppings||[]).map(t=>`${esc(t.name)} x${t.qty} (${money(t.total||t.price*t.qty)})`).join(', ');
       const spice=i.spiceName?esc(i.spiceName):'';
-      const note=i.note?`<div style="font-size:12px;color:#E65100;margin-top:2px">📝 ${esc(i.note)}</div>`:'';
-      const plara=i.plara?`<div style="font-size:12px;color:#555">🐟 ${esc(i.plara)}</div>`:'';
+      const note=i.note?`<div class="od-note">📝 ${esc(i.note)}</div>`:'';
+      const plara=i.plara?`<div class="od-plara">🐟 ${esc(i.plara)}</div>`:'';
       const isAddLabel=(Number(i.addRound)>0);
-      // ไฮไลท์เฉพาะรอบล่าสุดที่ยังไม่ทำเสร็จ (hasNewItems)
       const isNewAdd=!!o.hasNewItems && isAddLabel && Number(i.addRound)===Number(o.lastAddRound||0);
-      const addL=isAddLabel?(`<div style="font-size:12px;font-weight:700;color:${isNewAdd?'#C62828':'#6A1B9A'};margin-top:2px">${isNewAdd?'🆕 ':''}${esc(i.addLabel||('สั่งเพิ่มครั้งที่ '+i.addRound))}</div>`):'';
+      const addL=isAddLabel?(`<div class="od-add ${isNewAdd?'is-new':''}">${isNewAdd?'🆕 ':''}${esc(i.addLabel||('สั่งเพิ่มครั้งที่ '+i.addRound))}</div>`):'';
       const meta=[spice,tops].filter(Boolean).join(' · ');
-      const rowBg=isNewAdd?'background:#FFF3E0;border-left:4px solid #FF9800;padding-left:8px;border-radius:6px;':'';
-      return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #eee;${rowBg}">
-        <div><strong>${esc(i.name)} × ${i.qty}</strong>${addL}${meta?`<div style="font-size:12px;color:#777">${meta}</div>`:''}${plara||''}${note}</div>
-        <div>${money(i.total)}</div></div>`;
+      return `<div class="od-line ${isNewAdd?'is-new-add':''}">
+        <div><strong>${esc(i.name)} × ${i.qty}</strong>${addL}${meta?`<div class="od-meta">${meta}</div>`:''}${plara||''}${note}</div>
+        <div class="od-amt">${money(i.total)}</div></div>`;
     }).join('');
     const needSlip = o.slipStatus==='PENDING_REVIEW' || (o.slipData && o.paymentStatus!=='PAID');
-    const slipBlock=o.slipData?`<div style="margin:12px 0;text-align:center">
-      <div style="font-weight:600;margin-bottom:6px">สลิป (${esc(o.slipStatus||'')})</div>
-      <img src="${o.slipData}" style="max-width:100%;border-radius:8px;border:1px solid #eee">
-      ${needSlip && !locked?`<div style="margin-top:8px;padding:8px;background:#E3F2FD;border-radius:8px;font-size:13px;color:#1565C0;text-align:center">มีสลิปแนบแล้ว — กด「ยืนยันรับโอนแล้ว」ด้านล่างเมื่อตรวจยอดถูกต้อง</div>`:''}
-    </div>`:(o.paymentStatus!=='PAID'&&!locked?`<div style="margin:10px 0;padding:10px;background:#FFF8E1;border-radius:8px;font-size:13px;text-align:center">ยังไม่มีสลิปจากลูกค้า</div>`:'');
+    const slipBlock=o.slipData?`<div class="od-slip">
+      <div class="od-slip-title">สลิป (${esc(o.slipStatus||'')})</div>
+      <img class="od-slip-img" src="${o.slipData}" alt="slip">
+      ${needSlip && !locked?`<div class="od-slip-hint">มีสลิปแนบแล้ว — กด「ยืนยันรับโอนแล้ว」ด้านล่างเมื่อตรวจยอดถูกต้อง</div>`:''}
+    </div>`:(o.paymentStatus!=='PAID'&&!locked?`<div class="od-no-slip">ยังไม่มีสลิปจากลูกค้า</div>`:'');
     let statusBtns='';
     if(!locked){
       const paid=o.paymentStatus==='PAID';
-      const canComplete=paid; // เสร็จสมบูรณ์ได้เฉพาะเมื่อจ่ายแล้ว
-      statusBtns=`<div style="margin-top:12px;padding:10px;background:#FFF8F5;border-radius:10px;font-size:13px;color:#555">
-        <strong style="color:var(--p)">ขั้นตอนครัว</strong>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px">
-          <button class="btn btn-o ${o.status==='Pending'||o.status==='AwaitingPayment'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Pending')">⏳ รอคิวทำ</button>
-          <button class="btn btn-i ${o.status==='Cooking'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Cooking')">🔵 กำลังทำ</button>
-          <button class="btn btn-g ${o.status==='Ready'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Ready')">🟢 ทำเสร็จแล้ว</button>
+      const canComplete=paid;
+      statusBtns=`<div class="od-kitchen">
+        <strong class="od-kitchen-title">ขั้นตอนครัว</strong>
+        <div class="od-status-grid">
+          <button type="button" class="btn btn-o ${o.status==='Pending'||o.status==='AwaitingPayment'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Pending')">⏳ รอคิวทำ</button>
+          <button type="button" class="btn btn-i ${o.status==='Cooking'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Cooking')">🔵 กำลังทำ</button>
+          <button type="button" class="btn btn-g ${o.status==='Ready'?'status-hl':''}" onclick="M.setStatus('${esc(o.id)}','Ready')">🟢 ทำเสร็จแล้ว</button>
         </div>
-        <div style="margin-top:10px;padding-top:8px;border-top:1px dashed #ddd">
-          <strong style="color:${paid?'#2E7D32':'#C62828'}">${paid?'✓ จ่ายเงินแล้ว':'ยังไม่จ่ายเงิน'}</strong>
-          ${o.status==='Ready'&&!paid?'<div style="color:#E65100;margin-top:4px">ทำครัวเสร็จแล้ว — รอรับเงิน/ตรวจสลิป ก่อนปิดงาน</div>':''}
-          ${canComplete?`<button class="btn btn-p btn-block" style="margin-top:8px" onclick="M.setStatus('${esc(o.id)}','Completed')">✅ เสร็จสมบูรณ์ (ทำเสร็จ+จ่ายแล้ว)</button>`:`<button class="btn btn-block" style="margin-top:8px;background:#eee;color:#999" disabled>✅ เสร็จสมบูรณ์ (ต้องจ่ายเงินก่อน)</button>`}
+        <div class="od-pay-box">
+          <strong class="${paid?'text-ok':'text-bad'}">${paid?'✓ จ่ายเงินแล้ว':'ยังไม่จ่ายเงิน'}</strong>
+          ${o.status==='Ready'&&!paid?'<div class="od-wait-pay">ทำครัวเสร็จแล้ว — รอรับเงิน/ตรวจสลิป ก่อนปิดงาน</div>':''}
+          ${canComplete?`<button type="button" class="btn btn-p btn-block btn-mt-sm" onclick="M.setStatus('${esc(o.id)}','Completed')">✅ เสร็จสมบูรณ์ (ทำเสร็จ+จ่ายแล้ว)</button>`:`<button type="button" class="btn btn-block btn-mt-sm btn-disabled" disabled>✅ เสร็จสมบูรณ์ (ต้องจ่ายเงินก่อน)</button>`}
         </div>
       </div>`;
     } else {
-      statusBtns=`<div style="margin-top:12px;padding:12px;background:#E8F5E9;border-radius:10px;text-align:center;font-weight:600;color:#2E7D32">ออเดอร์${o.status==='Completed'?'เสร็จสิ้น':'ถูกยกเลิก'}แล้ว — ไม่สามารถย้อนขั้นตอนได้</div>`;
+      statusBtns=`<div class="od-locked">ออเดอร์${o.status==='Completed'?'เสร็จสิ้น':'ถูกยกเลิก'}แล้ว — ไม่สามารถย้อนขั้นตอนได้</div>`;
     }
     const orderCode=String(o.id||'').slice(0,12);
     const changeAmt=Math.max(0, Number(o.changeAmount||0));
@@ -805,43 +825,49 @@ const M={
       }catch(e){}
     }
     const changeBox=(o.paymentStatus==='PAID' && o.paymentMethod==='CASH' && changeAmt>0)
-      ? `<div style="margin-top:12px;padding:14px;background:#E3F2FD;border:2px solid #1976D2;border-radius:12px;text-align:center">
-          <div style="font-size:13px;color:#1565C0;font-weight:600">เงินทอน</div>
-          <div style="font-size:2rem;font-weight:800;color:#0D47A1;letter-spacing:1px">${money(changeAmt)}</div>
-          <div style="font-size:12px;color:#555;margin-top:4px">รับมา ${money(Number(o.paidAmount||0)+changeAmt)} · ยอดบิล ${money(o.total)}</div>
+      ? `<div class="od-change">
+          <div class="od-change-label">เงินทอน</div>
+          <div class="od-change-amt">${money(changeAmt)}</div>
+          <div class="od-change-sub">รับมา ${money(Number(o.paidAmount||0)+changeAmt)} · ยอดบิล ${money(o.total)}</div>
         </div>` : '';
     const memberHeader=memberPhone
-      ? `<div style="margin:8px 0;padding:8px 10px;background:#F3E5F5;border-radius:8px;font-size:13px;text-align:center">
-          <div style="font-weight:700;color:#6A1B9A">${memberName?('สมาชิกคุณ '+esc(memberName)):('สมาชิก '+esc(memberPhone))}</div>
-          ${memberName?('<div style="font-size:12px;color:#888;margin-top:2px">'+esc(memberPhone)+'</div>'):''}
-          ${Number(o.pointsUsed||0)>0||Number(o.couponDisc||0)>0||o.couponCode?`<div style="margin-top:4px;color:#555">ใช้แล้ว: ${Number(o.pointsUsed||0)>0?('แต้ม '+Number(o.pointsUsed)+' บาท'):''}${Number(o.couponDisc||0)>0||o.couponCode?(Number(o.pointsUsed||0)>0?' · ':'')+('คูปอง '+(o.couponCode||'')+' -฿'+Number(o.couponDisc||0)):''}</div>`:''}
+      ? `<div class="od-member-header">
+          <div class="od-member-name">${memberName?('สมาชิกคุณ '+esc(memberName)):'สมาชิก'}</div>
+          ${memberName?('<div class="od-member-phone">'+esc(memberPhone)+'</div>'):('<div class="od-member-phone">'+esc(memberPhone)+'</div>')}
+          ${Number(o.pointsUsed||0)>0||Number(o.couponDisc||0)>0||o.couponCode?`<div class="od-member-used">ใช้แล้ว: ${Number(o.pointsUsed||0)>0?('แต้ม '+Number(o.pointsUsed)+' บาท'):''}${Number(o.couponDisc||0)>0||o.couponCode?(Number(o.pointsUsed||0)>0?' · ':'')+('คูปอง '+(o.couponCode||'')+' -฿'+Number(o.couponDisc||0)):''}</div>`:''}
         </div>` : '';
     (document.getElementById('detailBody')||{}).innerHTML=`
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <button class="btn btn-o btn-sm" onclick="(function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})()">← กลับ</button>
-        <h2 style="color:var(--p)">คิว ${esc(o.queue)}</h2><div style="width:50px"></div>
+      <div class="od-nav">
+        <button type="button" class="btn btn-o btn-sm" onclick="(function(){var m=document.getElementById('detailModal'); if(m) m.classList.remove('on');})()">← กลับ</button>
+        <h2 class="od-queue-title">คิว ${esc(o.queue)}</h2><div class="od-nav-spacer"></div>
       </div>
-      <div style="text-align:center;font-size:12px;color:#888;margin-bottom:6px">รหัสการสั่งซื้อ: <strong style="color:#333;letter-spacing:0.5px">${esc(orderCode)}</strong></div>
+      <div class="od-code">รหัสการสั่งซื้อ: <strong>${esc(orderCode)}</strong></div>
       ${memberHeader}
-      <div style="text-align:center;margin-bottom:12px"><div style="color:#777">ยอดรวม</div>
-        <div style="font-size:2rem;font-weight:700;color:var(--p)">${money(o.total)}</div>
-        <div style="margin-top:6px">${o.paymentMethod==='CASH'?'<span style="background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">เงินสด</span>':'<span style="background:#FFF3E0;color:#E65100;padding:2px 8px;border-radius:4px;font-size:12px;margin-right:6px">พร้อมเพย์</span>'}${o.paymentStatus==='PAID'?'<span style="color:var(--g);font-weight:700">✓ ชำระแล้ว</span>':(cov.due>0?'<span style="color:#E65100;font-weight:700">ค้างส่วนต่าง ฿'+cov.due+'</span>':'<span style="color:var(--d);font-weight:700">ยังไม่ชำระ</span>')} · <span style="font-weight:600">${o.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์ / QR'}</span></div>
+      <div class="od-total-box">
+        <div class="od-total-label">ยอดรวม</div>
+        <div class="od-total-amt">${money(o.total)}</div>
+        <div class="od-pay-row">
+          ${o.paymentMethod==='CASH'?'<span class="tag tag-cash">เงินสด</span>':'<span class="tag tag-warn">พร้อมเพย์</span>'}
+          ${o.paymentStatus==='PAID'?'<span class="text-ok fw">✓ ชำระแล้ว</span>':(cov.due>0?'<span class="text-warn fw">ค้างส่วนต่าง ฿'+cov.due+'</span>':'<span class="text-bad fw">ยังไม่ชำระ</span>')}
+          · <span class="fw">${o.paymentMethod==='CASH'?'เงินสด':'พร้อมเพย์ / QR'}</span>
+        </div>
         ${changeBox}
-        ${(o.paymentStatus!=='PAID' && cov.due>0)?`<div style="margin-top:10px;padding:12px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:10px;text-align:center">
-          <div style="font-size:13px;color:#E65100;font-weight:700">มีรายการเพิ่ม · เก็บส่วนต่าง <span style="font-size:1.25rem">฿${cov.due}</span></div>
-          <div style="font-size:13px;color:#555;margin-top:6px">จ่ายแล้ว <strong style="color:#2E7D32">฿${cov.covered}</strong> · รวมบิล <strong>฿${cov.billTotal}</strong></div>
+        ${(o.paymentStatus!=='PAID' && cov.due>0)?`<div class="od-due-box">
+          <div class="od-due-title">มีรายการเพิ่ม · เก็บส่วนต่าง <span class="od-due-amt">฿${cov.due}</span></div>
+          <div class="od-due-sub">จ่ายแล้ว <strong class="text-ok">฿${cov.covered}</strong> · รวมบิล <strong>฿${cov.billTotal}</strong></div>
         </div>`:''}
       </div>
       ${items}${slipBlock}
-      <div id="posMemberBox" style="display:none"></div>
+      <div id="posMemberBox" class="hide"></div>
       ${statusBtns}
-      <div style="font-size:12px;color:#666;margin-top:6px;text-align:center">ขั้นตอนปัจจุบัน: <strong>${({AwaitingPayment:'รอคิวทำ',Pending:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:(o.cancelledBy==='customer'?'ยกเลิกโดยลูกค้า':(o.cancelledBy==='shop'?'ยกเลิกโดยร้าน':'ยกเลิก'))})[o.status]||o.status}</strong></div>
-      ${!locked?`<button class="btn btn-d btn-block" style="margin-top:10px" onclick="M.cancelOrder('${esc(o.id)}')">ยกเลิกออเดอร์</button>`:''}
-      ${!locked && o.paymentStatus!=='PAID'?`<div style="margin-top:12px">
-        ${cov.due>0?`<div style="margin-bottom:8px;padding:10px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:8px;font-size:13px;color:#E65100;text-align:center">เก็บส่วนต่าง <strong style="font-size:1.15rem">฿${cov.due}</strong><div style="font-size:12px;color:#555;margin-top:4px">จ่ายแล้ว ฿${cov.covered} / รวมบิล ฿${cov.billTotal}</div></div>`:''}
-        <label class="lbl">รับเงินสด ${cov.due>0?'(ส่วนต่าง)':''}</label><input type="number" id="cashIn" placeholder="จำนวนที่รับ" inputmode="decimal" value="${cov.due>0?cov.due:''}">
-        <button class="btn btn-g btn-block" style="margin-top:8px" onclick="M.payCash('${esc(o.id)}')">ยืนยันรับเงินสด</button>
-        <button class="btn btn-i btn-block" style="margin-top:8px" onclick="M.payPP('${esc(o.id)}')">ยืนยันรับโอนแล้ว</button>
+      <div class="od-step">ขั้นตอนปัจจุบัน: <strong>${({AwaitingPayment:'รอคิวทำ',Pending:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:(o.cancelledBy==='customer'?'ยกเลิกโดยลูกค้า':(o.cancelledBy==='shop'?'ยกเลิกโดยร้าน':'ยกเลิก'))})[o.status]||o.status}</strong></div>
+      ${!locked?`<button type="button" class="btn btn-d btn-block btn-mt-sm" onclick="M.cancelOrder('${esc(o.id)}')">ยกเลิกออเดอร์</button>`:''}
+      ${!locked && o.paymentStatus!=='PAID'?`<div class="od-pay-actions">
+        ${cov.due>0?`<div class="od-due-mini">เก็บส่วนต่าง <strong class="od-due-amt">฿${cov.due}</strong><div class="od-due-sub">จ่ายแล้ว ฿${cov.covered} / รวมบิล ฿${cov.billTotal}</div></div>`:''}
+        <label class="lbl">รับเงินสด ${cov.due>0?'(ส่วนต่าง)':''}</label>
+        <input type="number" id="cashIn" placeholder="จำนวนที่รับ" inputmode="decimal" value="${cov.due>0?cov.due:''}">
+        <button type="button" class="btn btn-g btn-block btn-mt-sm" onclick="M.payCash('${esc(o.id)}')">ยืนยันรับเงินสด</button>
+        <button type="button" class="btn btn-i btn-block btn-mt-sm" onclick="M.payPP('${esc(o.id)}')">ยืนยันรับโอนแล้ว</button>
       </div>`:''}`;
     try{document.getElementById('detailModal').classList.add('on');}catch(e){}
     // ถ้ามีเบอร์แต่ยังไม่มีชื่อ — ดึงชื่อจาก members แล้วอัปเดตออเดอร์ + เปิด detail ใหม่ครั้งเดียว
@@ -2204,18 +2230,19 @@ const M={
     const box=document.getElementById('posMemberBox');
     if(!box) return;
     const phone=this.normPhone(order.memberPhone||order.contactPhone||'');
-    if(!phone){ box.style.display='none'; return; }
+    if(!phone){ box.classList.add('hide'); box.style.display='none'; return; }
+    box.classList.remove('hide');
     box.style.display='block';
-    box.innerHTML='<div style="padding:10px;background:#F3E5F5;border-radius:10px;margin:10px 0;font-size:13px;text-align:center;color:#666">กำลังโหลดข้อมูลสมาชิก…</div>';
+    box.innerHTML='<div class="od-mem-loading">กำลังโหลดข้อมูลสมาชิก…</div>';
     try{
       const snap=await shopRef.collection('members').doc(phone).get();
       if(!snap.exists){
-        box.innerHTML='<div style="padding:10px;background:#FFF8E1;border-radius:10px;margin:10px 0;font-size:13px;text-align:center">เบอร์ '+esc(phone)+' ยังไม่ใช่สมาชิก</div>';
+        box.innerHTML='<div class="od-mem-msg od-mem-warn">เบอร์ '+esc(phone)+' ยังไม่ใช่สมาชิก</div>';
         return;
       }
       const m={phone, ...snap.data()};
       if(m.status==='cancelled' || m.active===false || m.isActive===false || m.disabled===true){
-        box.innerHTML='<div style="padding:10px;background:#FFEBEE;border-radius:10px;margin:10px 0;font-size:13px;text-align:center">สมาชิกถูกยกเลิกสิทธิ์</div>';
+        box.innerHTML='<div class="od-mem-msg od-mem-bad">สมาชิกถูกยกเลิกสิทธิ์</div>';
         return;
       }
       const pts=Math.max(0, Math.floor(Number(m.points||0)));
@@ -2227,20 +2254,20 @@ const M={
         return '<option value="'+esc(c.id)+'">'+esc(lab)+'</option>';
       }).join('');
       box.innerHTML=`
-        <div style="padding:12px;background:#F3E5F5;border:1px solid #CE93D8;border-radius:12px;margin:10px 0">
-          <div style="font-weight:700;color:#6A1B9A;margin-bottom:6px">🎁 สิทธิ์สมาชิก (ร้านใช้แทนลูกค้า)</div>
-          <div style="font-size:13px;margin-bottom:8px">แต้มคงเหลือ: <strong style="font-size:1.15rem;color:#6A1B9A">${pts}</strong> แต้ม (1 แต้ม = 1 บาท)</div>
-          ${pcs.length?('<div style="font-size:12px;color:#555;margin-bottom:8px">คูปองส่วนตัวที่ยังใช้ได้: '+pcs.length+' ใบ</div>'):'<div style="font-size:12px;color:#888;margin-bottom:8px">ไม่มีคูปองส่วนตัว</div>'}
-          <div style="font-size:12px;color:#C62828;margin-bottom:8px">⚠ ใช้แต้มหรือคูปองอย่างใดอย่างหนึ่งเท่านั้น (ใช้พร้อมกันไม่ได้)</div>
+        <div class="od-mem-panel">
+          <div class="od-mem-panel-title">🎁 สิทธิ์สมาชิก (ร้านใช้แทนลูกค้า)</div>
+          <div class="od-mem-panel-pts">แต้มคงเหลือ: <strong>${pts}</strong> แต้ม (1 แต้ม = 1 บาท)</div>
+          ${pcs.length?('<div class="od-mem-panel-sub">คูปองส่วนตัวที่ยังใช้ได้: '+pcs.length+' ใบ</div>'):'<div class="od-mem-panel-muted">ไม่มีคูปองส่วนตัว</div>'}
+          <div class="od-mem-panel-warn">⚠ ใช้แต้มหรือคูปองอย่างใดอย่างหนึ่งเท่านั้น (ใช้พร้อมกันไม่ได้)</div>
           <label class="lbl">ใช้แต้มลด (บาท)</label>
-          <input type="number" id="posPtsUse" inputmode="numeric" min="0" max="${pts}" value="0" placeholder="0" style="margin-bottom:8px">
+          <input type="number" id="posPtsUse" inputmode="numeric" min="0" max="${pts}" value="0" placeholder="0" class="mb-8">
           <label class="lbl">หรือเลือกคูปองส่วนตัว</label>
-          <select id="posCouponSel" style="width:100%;padding:10px;border-radius:8px;border:1px solid #ccc;margin-bottom:8px">
+          <select id="posCouponSel" class="od-select">
             <option value="">— ไม่ใช้คูปอง —</option>
             ${cpOpts}
           </select>
           <button type="button" class="btn btn-p btn-block" onclick="M.applyPosMemberDiscount('${esc(order.id)}')">ใช้ส่วนลดสมาชิก</button>
-          ${alreadyPts||alreadyCp?('<div style="margin-top:8px;font-size:12px;color:#2E7D32">ออเดอร์นี้ใช้แล้ว: '+(alreadyPts?('แต้ม '+alreadyPts):'')+(alreadyCp?((alreadyPts?' · ':'')+'คูปอง '+alreadyCp):'')+'</div>'):''}
+          ${alreadyPts||alreadyCp?('<div class="od-mem-panel-ok">ออเดอร์นี้ใช้แล้ว: '+(alreadyPts?('แต้ม '+alreadyPts):'')+(alreadyCp?((alreadyPts?' · ':'')+'คูปอง '+alreadyCp):'')+'</div>'):''}
         </div>`;
       // mutual exclusive UI
       const ptsEl=document.getElementById('posPtsUse');
@@ -2255,7 +2282,7 @@ const M={
       }
     }catch(e){
       console.warn(e);
-      box.innerHTML='<div style="padding:10px;color:#C62828;font-size:13px">โหลดสมาชิกไม่สำเร็จ</div>';
+      box.innerHTML='<div class="od-mem-msg od-mem-bad">โหลดสมาชิกไม่สำเร็จ</div>';
     }
   },
 
