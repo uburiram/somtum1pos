@@ -1,4 +1,7 @@
-/* Somtum POS PWA Service Worker */
+/* Somtum POS PWA Service Worker — fixed 2026-08-26
+ * - CACHE v86 เพื่อบังคับอัปเดต
+ * - network-first สำหรับ HTML/JS/CSS/webmanifest
+ */
 const CACHE = 'somtum-pwa-v86';
 const ASSETS = [
   './',
@@ -7,7 +10,6 @@ const ASSETS = [
   './firebase-config.js',
   './css/customer.css',
   './css/pos.css',
-  './js/common.js',
   './js/customer.js',
   './js/customer-sw.js',
   './js/pos.js',
@@ -52,7 +54,7 @@ self.addEventListener('fetch', (event) => {
     url.hostname.includes('cdnjs') ||
     url.hostname.includes('fonts.')
   ) {
-    return; // network only for APIs/CDN
+    return;
   }
   event.respondWith(
     caches.match(req).then((cached) => {
@@ -65,7 +67,6 @@ self.addEventListener('fetch', (event) => {
           return res;
         })
         .catch(() => cached);
-      // network-first for HTML/JS/CSS so ร้านได้แพตช์ทันที; cache fallback offline
       const isShell = req.mode === 'navigate'
         || (req.headers.get('accept') || '').includes('text/html')
         || /\.(js|css|webmanifest)$/i.test(url.pathname);

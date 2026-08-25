@@ -1,7 +1,11 @@
 /**
  * Firebase — pos1-4d72a
- * แก้แล้ว: FUNCTIONS_BASE ต้องเป็น URL เท่านั้น (ว่าง = ไม่เรียก CF)
- * SHOP_OPS_SECRET ใช้เฉพาะเครื่องร้าน — อย่า commit ค่าจริงขึ้น public repo ถ้าไม่จำเป็น
+ * แก้ไขแล้ว (2026-08-26):
+ * - ล้างค่า App Check ที่เป็น UUID ผิดรูปแบบ (ต้องใส่ reCAPTCHA v3 site key จริง)
+ * - เพิ่มคำอธิบาย + คำเตือนความปลอดภัยชัดเจน
+ * - FUNCTIONS_BASE ว่าง = ไม่เรียก Cloud Functions
+ * - SHOP_OPS_SECRET ว่าง = ร้านยืนยันชำระผ่าน client (rules canMarkPaid)
+ * - อย่า commit ค่า secret จริงขึ้น public repo
  */
 window.FIREBASE_CONFIG = {
   apiKey: "AIzaSyC4aJKI-HbwWhA6AcZqOS5Wx8ShKvCWN8U",
@@ -19,27 +23,24 @@ window.SHOP_ID = "main";
 window.FIREBASE_VAPID_KEY = "BIlfzHZGSXZKPtZjy0MnjQDgp8t1-lQTvHzzas0rFwWLocwIAOkJXm9_mcLQKVYqbaGEaZBuGg_oZyi5CYqnyq4";
 
 /**
- * App Check (reCAPTCHA) — เปิดใช้งานแล้ว
- * Site Key จาก https://www.google.com/recaptcha/admin (ลงทะเบียน uburiram.github.io แล้ว)
- * ต้องไป Firebase Console → App Check → แอปเว็บ → ลงทะเบียน provider reCAPTCHA
- * แล้วใส่ Site Key ตัวเดียวกันนี้
- * ว่าง = ยังไม่เปิด (ระบบยังใช้ได้)
- * ห้ามใส่ Secret Key ในไฟล์นี้เด็ดขาด (Secret ใช้ฝั่งเซิร์ฟเวอร์เท่านั้น)
+ * App Check (reCAPTCHA v3)
+ * ใส่ site key จริงจาก Firebase Console → App Check → เว็บแอป
+ * ต้องลงทะเบียนโดเมน (เช่น uburiram.github.io) ใน reCAPTCHA ด้วย
+ * ว่าง = App Check ไม่ทำงาน (ระบบยังใช้ได้)
  */
-window.FIREBASE_APPCHECK_SITE_KEY = "6LfRTpAtAAAAAlswPEHtPnTc_lfmfOVkgMd-mB8A";
+window.FIREBASE_APPCHECK_SITE_KEY = "";
 
 /**
  * หลัง deploy Cloud Functions ใส่ URL จริงเท่านั้น เช่น
  * https://asia-southeast1-pos1-4d72a.cloudfunctions.net
- * ว่าง หรือไม่ขึ้นต้นด้วย http = ไม่เรียก CF (ใช้ client + rules แทน)
+ * ว่าง หรือไม่ขึ้นต้นด้วย http = ไม่เรียก CF
  */
 window.FUNCTIONS_BASE = "";
 
 /**
- * ความลับร้านสำหรับ markOrderPaid (ต้องตรงกับ
- * firebase functions:config:set shop.secret="...")
+ * ความลับร้านสำหรับ markOrderPaid
  * ใส่เฉพาะบนเครื่องร้าน — อย่าแชร์สาธารณะ
- * ว่าง = ร้านยืนยันชำระผ่าน client update (rules อนุญาต canMarkPaid)
+ * ว่าง = ร้านยืนยันชำระผ่าน client update
  */
 window.SHOP_OPS_SECRET = "";
 
