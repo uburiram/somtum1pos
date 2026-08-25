@@ -293,3 +293,9 @@ header{background:#fff;padding:10px 14px;display:flex;justify-content:space-betw
 .od-mem-panel-warn{font-size:13px;color:#C62828;margin-bottom:8px}
 .od-mem-panel-ok{margin-top:8px;font-size:13px;color:#2E7D32}
 .od-select{width:100%;padding:10px;border-radius:8px;border:1px solid #ccc;margin-bottom:8px;font-size:16px;background:#fff}
+
+/* readability-v86 */
+body{font-size:16px;line-height:1.45;color:#222;-webkit-text-size-adjust:100%}
+.btn{min-height:42px}
+input,select,textarea{font-size:16px!important;min-height:42px}
+.toast{font-size:15px}
