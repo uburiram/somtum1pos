@@ -2,6 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ตรวจสอบโครงสร้างออเดอร์ใหม่ — ลดความเสี่ยง payload แปลก ๆ
+    // หมายเหตุ: Rules ไม่สามารถ get() ราคาเมนูทุกชิ้นได้แบบถูกและถูกต้นทุน
+    // การป้องกันราคาจริง 100% ต้องใช้ Cloud Functions recalculate (แนะนำเมื่อ deploy CF)
     function isValidNewOrder() {
       let d = request.resource.data;
       let payOk = d.paymentStatus == 'UNPAID'
@@ -19,7 +22,12 @@ service cloud.firestore {
         && d.queue.size() > 0
         && d.queue.size() < 32
         && d.createdAt is number
-        && d.createdAt > 0;
+        && d.createdAt > 0
+        // บังคับให้รายการมีฟิลด์พื้นฐานครบและอยู่ในช่วงสมเหตุสมผล
+        && d.items[0].keys().hasAll(['name', 'qty', 'unitPrice', 'total'])
+        && d.items[0].qty is number && d.items[0].qty > 0 && d.items[0].qty <= 99
+        && d.items[0].unitPrice is number && d.items[0].unitPrice >= 0 && d.items[0].unitPrice < 100000
+        && d.items[0].total is number && d.items[0].total >= 0 && d.items[0].total < 200000;
     }
 
     function coreFieldsIntact() {
@@ -72,7 +80,7 @@ service cloud.firestore {
         && request.resource.data.status == resource.data.status
         && request.resource.data.status != 'Completed'
         && hasImageSlip(request.resource.data.slipData)
-        && request.resource.data.slipStatus in ['PENDING_REVIEW', 'NONE', 'REJECTED', 'AUTO_APPROVED'];
+        && request.resource.data.slipStatus in ['PENDING_REVIEW', 'NONE', 'REJECTED'];
     }
 
     // ครัวเปลี่ยนสถานะ: ห้ามแตะการเงิน
@@ -110,11 +118,19 @@ service cloud.firestore {
         && resource.data.status in ['Pending', 'Cooking', 'Ready', 'AwaitingPayment'];
     }
 
-    // อัปเดตทั่วไปที่การเงินไม่เปลี่ยน (ยกเลิก, โน้ต, ฯลฯ)
+    // อัปเดตทั่วไปที่การเงินและสถานะครัวไม่เปลี่ยน (โน้ต, สลิปสถานะร้าน, ฯลฯ)
     function canSoftUpdate() {
       return coreFieldsIntact()
         && request.resource.data.paymentStatus == resource.data.paymentStatus
+        && request.resource.data.status == resource.data.status
         && !(request.resource.data.status == 'Completed' && resource.data.paymentStatus != 'PAID');
+    }
+
+    function canCancel() {
+      return coreFieldsIntact()
+        && request.resource.data.status == 'Cancelled'
+        && resource.data.status in ['Pending', 'AwaitingPayment', 'Cooking', 'Ready']
+        && request.resource.data.paymentStatus == resource.data.paymentStatus;
     }
 
     function canUpdateOrder() {
@@ -123,6 +139,7 @@ service cloud.firestore {
         || canMarkPaid()
         || canComplete()
         || canKitchenStatus()
+        || canCancel()
         || canSoftUpdate();
     }
 
@@ -191,7 +208,9 @@ service cloud.firestore {
         && (!('type' in d) || d.type in ['fixed', 'percent'])
         && (!('value' in d) || numRange(d.value, 0, 100000))
         && (!('minSpend' in d) || numRange(d.minSpend, 0, 1000000))
-        && (!('usedCount' in d) || numRange(d.usedCount, 0, 1000000));
+        && (!('usedCount' in d) || numRange(d.usedCount, 0, 1000000))
+        && (!('active' in d) || d.active is bool)
+        && (!('isActive' in d) || d.isActive is bool);
     }
 
     function isValidTable() {
@@ -208,10 +227,16 @@ service cloud.firestore {
         && (!('promptpay' in d) || strMax(d.promptpay, 32))
         && (!('accountName' in d) || strMax(d.accountName, 120))
         && (!('kshopPayload' in d) || strMax(d.kshopPayload, 2000))
-        && (!('pinHash' in d) || strMax(d.pinHash, 128))
         && (!('queueCounter' in d) || numRange(d.queueCounter, 0, 100000))
         && (!('tableCount' in d) || numRange(d.tableCount, 0, 500))
         && (!('orderMode' in d) || d.orderMode in ['queue', 'table', 'auto']);
+    }
+
+    // pinHash อนุญาตเฉพาะเอกสาร secure เท่านั้น (ป้องกันเขียนทับ PIN จาก path อื่น)
+    function isValidSecureSettings() {
+      let d = request.resource.data;
+      return isValidSettingsDoc()
+        && (!('pinHash' in d) || strMax(d.pinHash, 128));
     }
 
     match /shops/{shopId} {
@@ -220,8 +245,15 @@ service cloud.firestore {
 
       match /settings/{docId} {
         allow read: if true;
-        allow write: if docId in ['public', 'secure', 'queue', 'config', 'fcm']
-          && isValidSettingsDoc();
+        // public / queue / config / fcm — ห้ามเขียน pinHash
+        allow write: if docId in ['public', 'queue', 'config', 'fcm']
+          && isValidSettingsDoc()
+          && !('pinHash' in request.resource.data);
+        // secure — อนุญาต pinHash (ร้านเปลี่ยน PIN หลังตรวจ PIN เดิมฝั่ง client)
+        // หมายเหตุ: ระบบนี้ไม่มี Firebase Auth จึงยังพึ่ง client PIN อยู่
+        // แนะนำระยะยาว: ใช้ Cloud Function + secret หรือ Firebase Auth
+        allow write: if docId == 'secure'
+          && isValidSecureSettings();
       }
 
       match /categories/{id} {
@@ -261,7 +293,9 @@ service cloud.firestore {
 
       match /receipts/{id} {
         allow read: if true;
-        allow write: if request.resource.data.keys().size() <= 40;
+        // create/update จำกัดขนาด — delete แยกเพราะ request.resource เป็น null ตอนลบ
+        allow create, update: if request.resource.data.keys().size() <= 40;
+        allow delete: if true;
       }
 
       match /fcmTokens/{tokenId} {

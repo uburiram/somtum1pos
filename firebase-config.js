@@ -19,12 +19,14 @@ window.SHOP_ID = "main";
 window.FIREBASE_VAPID_KEY = "BIlfzHZGSXZKPtZjy0MnjQDgp8t1-lQTvHzzas0rFwWLocwIAOkJXm9_mcLQKVYqbaGEaZBuGg_oZyi5CYqnyq4";
 
 /**
- * App Check (reCAPTCHA v3) — เปิดใช้งานแล้ว
- * Firebase Console → App Check → ลงทะเบียนเว็บแอป → คัดลอก site key
- * ต้องลงทะเบียนโดเมน (uburiram.github.io) ใน reCAPTCHA / App Check ด้วย
+ * App Check (reCAPTCHA) — เปิดใช้งานแล้ว
+ * Site Key จาก https://www.google.com/recaptcha/admin (ลงทะเบียน uburiram.github.io แล้ว)
+ * ต้องไป Firebase Console → App Check → แอปเว็บ → ลงทะเบียน provider reCAPTCHA
+ * แล้วใส่ Site Key ตัวเดียวกันนี้
  * ว่าง = ยังไม่เปิด (ระบบยังใช้ได้)
+ * ห้ามใส่ Secret Key ในไฟล์นี้เด็ดขาด (Secret ใช้ฝั่งเซิร์ฟเวอร์เท่านั้น)
  */
-window.FIREBASE_APPCHECK_SITE_KEY = "1348F340-D288-4E16-A8F0-957C828C3597";
+window.FIREBASE_APPCHECK_SITE_KEY = "6LfRTpAtAAAAAlswPEHtPnTc_lfmfOVkgMd-mB8A";
 
 /**
  * หลัง deploy Cloud Functions ใส่ URL จริงเท่านั้น เช่น
