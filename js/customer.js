@@ -2167,13 +2167,14 @@ const C={
           return;
         }
         const md=ms.data()||{};
+        const newPts = Number(md.points||0)+earn;
         tx.update(mref,{
-          points: Number(md.points||0)+earn,
+          points: newPts,
           totalSpent: Number(md.totalSpent||0)+sale,
           orderCount: Number(md.orderCount||0)+1,
           updatedAt: Date.now()
         });
-        tx.update(oref,{ pointsAwarded:true, pointsEarned:earn });
+        tx.update(oref,{ pointsAwarded:true, pointsEarned:earn, memberPointsAfter: newPts });
       });
     }catch(e){ console.warn('awardMemberPoints', e); }
   },
@@ -2462,6 +2463,9 @@ const C={
           if(memberPhone && !existing.memberPhone){
             patch.memberPhone=memberPhone;
             patch.memberName=this.member?this.escName(this.member):'';
+            if(this.member && patch.memberPointsBefore==null){
+              patch.memberPointsBefore=Math.max(0, Number(this.member.points||0));
+            }
           }
           tx.update(shopRef.collection('orders').doc(existing.id), patch);
           tx.set(tref,{
@@ -2483,6 +2487,8 @@ const C={
           couponDisc: Number(couponDisc||0), pointsDisc: Number(pointsDisc||0),
           memberPhone: memberPhone||'', contactPhone: contactPhone||memberPhone||'',
           memberName: this.member?this.escName(this.member):'',
+          memberPointsBefore: this.member ? Math.max(0, Number(this.member.points||0)) : null,
+          memberPointsAfter: null,
           pointsAwarded:0, pointsEarned:0,
           status: opts.status||'Pending',
           paymentMethod: fullyCovered ? (pointsUsed>=discountAmount?'POINTS':'COUPON') : 'PROMPTPAY',
@@ -2542,6 +2548,8 @@ const C={
       couponDisc: Number(couponDisc||0), pointsDisc: Number(pointsDisc||0),
       memberPhone: memberPhone||'', contactPhone: contactPhone||memberPhone||'',
       memberName: this.member?this.escName(this.member):'',
+      memberPointsBefore: this.member ? Math.max(0, Number(this.member.points||0)) : null,
+      memberPointsAfter: null,
       pointsAwarded:0, pointsEarned:0,
       status: opts.status||'Pending',
       paymentMethod: fullyCovered ? (pointsUsed>=discountAmount?'POINTS':'COUPON') : 'PROMPTPAY',
@@ -2687,8 +2695,11 @@ const C={
       pointsUsed: Number(order.pointsUsed||order.pointsDisc||0),
       pointsEarned: Number(order.pointsEarned||0),
       pointsAwarded: !!order.pointsAwarded,
+      memberPointsBefore: order.memberPointsBefore!=null?Number(order.memberPointsBefore):null,
+      memberPointsAfter: order.memberPointsAfter!=null?Number(order.memberPointsAfter):null,
       discountAmount: Number(order.discountAmount||0),
       couponCode: order.couponCode||'',
+      personalCouponId: order.personalCouponId||'',
       paymentStatus: order.paymentStatus||'PAID',
       status: order.status||'Completed'
     };
@@ -2881,6 +2892,14 @@ const C={
       <h2 style="color:${cancelled?'var(--d)':paid?'var(--g)':'var(--p)'};margin-bottom:8px">${cancelled?'<i class="fa-solid fa-xmark"></i> ยกเลิกแล้ว':paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> รอชำระเงิน / รอรับออเดอร์'}</h2>
       <div>คิวของคุณ</div>
       <div class="huge">${esc(o.queue)}</div>
+      ${(function(){
+        const name=(o.memberName||'').trim();
+        const phone=(o.memberPhone||'').trim();
+        if(!name && !phone) return '';
+        const label = name || phone;
+        return '<div style="font-size:15px;font-weight:600;color:#E65100;margin-top:4px">คุณ'+esc(label)+'</div>'
+          +(name && phone ? '<div style="font-size:12px;color:#888">'+esc(phone)+'</div>' : '');
+      })()}
       <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
       <div id="custCancelBox" style="margin:8px 0"></div>
       <div id="queueEtaBox" style="display:none;margin:10px 0;padding:12px;background:#FFF3E0;border-radius:12px;border:1px solid #FFE0B2;text-align:center"></div>
@@ -2896,25 +2915,50 @@ const C={
         ${(function(){
           const name=(o.memberName||'').trim();
           const phone=(o.memberPhone||o.contactPhone||'').trim();
-          if(!name && !phone) return '';
-          const who = name ? (esc(name)+(phone?' ('+esc(phone)+')':'')) : esc(phone);
-          return '<div style="margin-top:6px;font-size:13px;color:#555">สมาชิก: '+who+'</div>';
-        })()}
-        ${(function(){
           const used=Math.max(0, Number(o.pointsUsed!=null?o.pointsUsed:(o.pointsDisc||0)));
           const earned=Math.max(0, Number(o.pointsEarned||0));
+          const before=o.memberPointsBefore!=null ? Math.max(0, Number(o.memberPointsBefore)) : null;
+          const after=o.memberPointsAfter!=null ? Math.max(0, Number(o.memberPointsAfter)) : null;
           const disc=Math.max(0, Number(o.discountAmount||0));
           const coupon=(o.couponCode||'').trim();
-          const parts=[];
-          if(coupon) parts.push('คูปอง '+esc(coupon));
-          if(disc>0) parts.push('ส่วนลด -฿'+disc);
-          if(used>0) parts.push('ใช้แต้ม '+used);
-          if(paid && (o.memberPhone||o.memberName)){
-            if(earned>0) parts.push('ได้แต้ม +'+earned);
-            else if(o.pointsAwarded) parts.push('ได้แต้ม +0');
+          const hasPersonal = !!(o.personalCouponId);
+          if(!name && !phone && !used && !earned && !disc && !coupon && !hasPersonal) return '';
+          let html = '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #ddd;text-align:left;font-size:13px;line-height:1.55;color:#333">';
+          if(name || phone){
+            html += '<div><strong>สมาชิก:</strong> '+esc(name||phone)+(name&&phone?' ('+esc(phone)+')':'')+'</div>';
           }
-          if(!parts.length) return '';
-          return '<div style="margin-top:4px;font-size:13px;color:#555">'+parts.join(' · ')+'</div>';
+          if(coupon || hasPersonal){
+            html += '<div><strong>คูปอง:</strong> '+(coupon?esc(coupon):(hasPersonal?'คูปองส่วนตัว':'-'))+'</div>';
+          } else if(name || phone){
+            html += '<div><strong>คูปอง:</strong> ไม่ได้ใช้</div>';
+          }
+          if(disc>0){
+            html += '<div><strong>ส่วนลด:</strong> -฿'+disc+(used>0?' (รวมใช้แต้ม '+used+')':'')+'</div>';
+          }
+          if(name || phone || used>0 || earned>0 || before!=null){
+            html += '<div style="margin-top:6px;padding:8px;background:#FFF8F5;border-radius:8px;border:1px solid #FFE0D6">';
+            html += '<div style="font-weight:700;color:#E65100;margin-bottom:4px">สรุปแต้ม</div>';
+            if(before!=null) html += '<div>แต้มก่อนใช้: <strong>'+before+'</strong> แต้ม</div>';
+            html += '<div>ใช้ไป: <strong>'+used+'</strong> แต้ม</div>';
+            if(paid){
+              html += '<div>ได้รับครั้งนี้: <strong style="color:#2E7D32">+'+earned+'</strong> แต้ม</div>';
+              if(after!=null){
+                html += '<div>แต้มคงเหลือ: <strong style="color:var(--p);font-size:15px">'+after+'</strong> แต้ม</div>';
+              } else if(before!=null){
+                const remain = Math.max(0, before - used + earned);
+                html += '<div>แต้มคงเหลือ: <strong style="color:var(--p);font-size:15px">'+remain+'</strong> แต้ม</div>';
+              }
+            } else {
+              html += '<div style="color:#888">ได้รับแต้มหลังชำระเงินครบ</div>';
+              if(before!=null){
+                const remainNow = Math.max(0, before - used);
+                html += '<div>แต้มคงเหลือตอนนี้: <strong>'+remainNow+'</strong> แต้ม</div>';
+              }
+            }
+            html += '</div>';
+          }
+          html += '</div>';
+          return html;
         })()}
       </div>
       <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;
