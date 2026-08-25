@@ -107,6 +107,9 @@ service cloud.firestore {
         && d.paymentStatus == 'PAID'
         && d.paidAt is number
         && d.paidAt > 0
+        && d.paidAt <= request.time.toMillis() + 60000
+        && d.paidAt > request.time.toMillis() - 86400000 * 7
+        && (!('paidAmount' in d) || (d.paidAmount is number && d.paidAmount >= 0 && d.paidAmount < 200000))
         && (
           d.paymentMethod == 'CASH'
           || d.paymentMethod == 'POINTS'
@@ -317,7 +320,16 @@ service cloud.firestore {
 
       match /members/{phone} {
         allow read: if true;
-        allow create, update: if isValidMember(phone);
+        // สร้างสมาชิกใหม่
+        allow create: if isValidMember(phone)
+          && (!('points' in request.resource.data) || numRange(request.resource.data.points, 0, 5000));
+        // อัปเดต: แต้มเพิ่มได้ไม่เกิน +2000 ต่อครั้ง (กันปลอมแต้มก้อนใหญ่)
+        allow update: if isValidMember(phone)
+          && (
+            !('points' in request.resource.data)
+            || !('points' in resource.data)
+            || request.resource.data.points <= resource.data.points + 2000
+          );
         allow delete: if false;
       }
 
