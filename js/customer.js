@@ -1457,6 +1457,7 @@ const C={
     if(switched){
       // เปลี่ยนโต๊ะ → ตัด session ออเดอร์โต๊ะเก่าออกทั้งหมด
       try{ if(this.unsub){ this.unsub(); this.unsub=null; } }catch(e){}
+      try{ if(this._unsubTable){ this._unsubTable(); this._unsubTable=null; } }catch(e){}
       try{ this.hide('mTicket'); }catch(e){}
       try{ this.hide('mPay'); }catch(e){}
       this.orderId=null;
@@ -1465,6 +1466,13 @@ const C={
       this._pendingRestoreOrderId=null;
       // ไม่ล้างตะกร้า — ลูกค้าอาจพกเมนูไปโต๊ะอื่นได้ แต่ตั๋วต้องเป็นโต๊ะที่สแกน
       try{ sessionStorage.removeItem('somtum_orderId'); sessionStorage.removeItem('somtum_orderTable'); }catch(e){}
+      // กัน localStorage กู้ตั๋วโต๊ะเก่ากลับมา
+      try{
+        const saved=JSON.parse(localStorage.getItem('somtum_last_order')||'null');
+        if(saved && saved.tableNo!=null && Number(saved.tableNo)!==Number(n)){
+          localStorage.removeItem('somtum_last_order');
+        }
+      }catch(e){}
       toast('โต๊ะ '+n);
     }
     this.tableNo = n||null;
@@ -1536,8 +1544,32 @@ const C={
   },
   applyOrderModeCustomerUI(){
     const bar=document.getElementById('tableModeBar');
-    const tableNo=this.parseTableFromUrl() || this.tableNo;
-    this.bindTableSession(tableNo);
+    // แหล่งความจริงของโต๊ะ = URL เท่านั้น (?table=N)
+    // ห้าม fallback this.tableNo — ไม่งั้นสแกนคิว/โต๊ะอื่นแล้วยังค้างโต๊ะเก่า
+    const fromUrl=this.parseTableFromUrl();
+    const prevTable=this.tableNo!=null?Math.floor(Number(this.tableNo)):null;
+    this.bindTableSession(fromUrl);
+    // ถ้า URL ไม่มีโต๊ะ แต่เคยเป็นโต๊ะ → เคลียร์ state โต๊ะเก่า
+    if(fromUrl==null && prevTable!=null){
+      try{ if(this.unsub){ this.unsub(); this.unsub=null; } }catch(e){}
+      try{ if(this._unsubTable){ this._unsubTable(); this._unsubTable=null; } }catch(e){}
+      if(this.lastOrder && (this.lastOrder.orderMode==='table' || this.lastOrder.tableNo!=null)){
+        this.orderId=null;
+        this.lastOrder=null;
+        try{ this.hide('mTicket'); }catch(e){}
+      }
+      try{
+        sessionStorage.removeItem('somtum_orderId');
+        sessionStorage.removeItem('somtum_orderTable');
+        sessionStorage.removeItem('somtum_tableNo');
+      }catch(e){}
+      try{
+        const saved=JSON.parse(localStorage.getItem('somtum_last_order')||'null');
+        if(saved && (saved.orderMode==='table' || saved.tableNo!=null)){
+          localStorage.removeItem('somtum_last_order');
+        }
+      }catch(e){}
+    }
     const useTable = this.orderMode==='table' && this.tableNo;
     try{ this.restoreTableOrderIfAny(); }catch(e){}
     if(bar){
@@ -1635,6 +1667,14 @@ const C={
       }
       return;
     }
+    // โหมดคิว: ห้ามค้าง state โต๊ะ
+    if(this.orderMode==='queue'){
+      if(this.lastOrder && (this.lastOrder.orderMode==='table' || this.lastOrder.tableNo!=null)){
+        try{ if(this.unsub){ this.unsub(); this.unsub=null; } }catch(e){}
+        this.orderId=null;
+        this.lastOrder=null;
+      }
+    }
     let saved=null;
     try{ saved=JSON.parse(localStorage.getItem('somtum_last_order')||'null'); }catch(e){ saved=null; }
     if(!saved || !saved.id) return;
@@ -1647,6 +1687,11 @@ const C={
     if(saved.orderMode==='table' || saved.tableNo!=null){
       // โหมดคิวปัจจุบันแต่ saved เป็นโต๊ะ → ไม่กู้
       if(this.orderMode!=='table'){
+        try{ localStorage.removeItem('somtum_last_order'); }catch(e){}
+        return;
+      }
+      // โหมดโต๊ะแต่คนละโต๊ะ → ไม่กู้
+      if(this.tableNo && Number(saved.tableNo)!==Number(this.tableNo)){
         try{ localStorage.removeItem('somtum_last_order'); }catch(e){}
         return;
       }
@@ -2167,13 +2212,14 @@ const C={
           return;
         }
         const md=ms.data()||{};
+        const newPts=Number(md.points||0)+earn;
         tx.update(mref,{
-          points: Number(md.points||0)+earn,
+          points: newPts,
           totalSpent: Number(md.totalSpent||0)+sale,
           orderCount: Number(md.orderCount||0)+1,
           updatedAt: Date.now()
         });
-        tx.update(oref,{ pointsAwarded:true, pointsEarned:earn });
+        tx.update(oref,{ pointsAwarded:true, pointsEarned:earn, memberPointsAfter:newPts });
       });
     }catch(e){ console.warn('awardMemberPoints', e); }
   },
@@ -2181,6 +2227,14 @@ const C={
   async confirmOrder(){
     this.payM='PROMPTPAY';
     if(!this.assertShopOpen()) return;
+    try{
+      if(this.memberSystemEnabled!==false){
+        const ph=this.normPhone((document.getElementById('memPhone')||{}).value||'');
+        if(ph && (!this.member || this.normPhone(this.member.phone||'')!==ph)){
+          try{ await this.lookupMember(); }catch(e){}
+        }
+      }
+    }catch(e){}
     // มีออเดอร์แล้ว: โหมดคิว → เปิดตั๋ว / โหมดโต๊ะ+มีของในตะกร้า → เพิ่มเข้าออเดอร์เดิม
     if(this.orderId && this.lastOrder){
       const st=this.lastOrder.status;
@@ -2483,6 +2537,8 @@ const C={
           couponDisc: Number(couponDisc||0), pointsDisc: Number(pointsDisc||0),
           memberPhone: memberPhone||'', contactPhone: contactPhone||memberPhone||'',
           memberName: this.member?this.escName(this.member):'',
+          memberPointsBefore: this.member?Math.max(0,Number(this.member.points||0)):null,
+          memberPointsAfter: null,
           pointsAwarded:0, pointsEarned:0,
           status: opts.status||'Pending',
           paymentMethod: fullyCovered ? (pointsUsed>=discountAmount?'POINTS':'COUPON') : 'PROMPTPAY',
@@ -2542,6 +2598,8 @@ const C={
       couponDisc: Number(couponDisc||0), pointsDisc: Number(pointsDisc||0),
       memberPhone: memberPhone||'', contactPhone: contactPhone||memberPhone||'',
       memberName: this.member?this.escName(this.member):'',
+      memberPointsBefore: this.member?Math.max(0,Number(this.member.points||0)):null,
+      memberPointsAfter: null,
       pointsAwarded:0, pointsEarned:0,
       status: opts.status||'Pending',
       paymentMethod: fullyCovered ? (pointsUsed>=discountAmount?'POINTS':'COUPON') : 'PROMPTPAY',
@@ -2680,7 +2738,18 @@ const C={
       paidAmount: order.paidAmount||order.total,
       changeAmount: order.changeAmount||0,
       paidAt: order.paidAt||Date.now(),
-      createdAt: order.createdAt||Date.now()
+      createdAt: order.createdAt||Date.now(),
+      memberName: order.memberName||'',
+      memberPhone: order.memberPhone||'',
+      contactPhone: order.contactPhone||'',
+      pointsUsed: Number(order.pointsUsed||order.pointsDisc||0),
+      pointsEarned: Number(order.pointsEarned||0),
+      memberPointsBefore: order.memberPointsBefore!=null?Number(order.memberPointsBefore):null,
+      memberPointsAfter: order.memberPointsAfter!=null?Number(order.memberPointsAfter):null,
+      discountAmount: Number(order.discountAmount||0),
+      couponCode: order.couponCode||'',
+      paymentStatus: order.paymentStatus||'PAID',
+      status: order.status||'Completed'
     };
     try{ await shopRef.collection('receipts').doc(order.id).set(receipt,{merge:true}); }catch(e){}
     try{
@@ -2870,6 +2939,17 @@ const C={
     document.getElementById('ticketBody').innerHTML=`
       <h2 style="color:${cancelled?'var(--d)':paid?'var(--g)':'var(--p)'};margin-bottom:8px">${cancelled?'<i class="fa-solid fa-xmark"></i> ยกเลิกแล้ว':paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> รอชำระเงิน / รอรับออเดอร์'}</h2>
       <div>คิวของคุณ</div>
+      ${(function(){
+        const name=(o.memberName||'').trim();
+        const phone=(o.memberPhone||o.contactPhone||'').trim();
+        if(!name && !phone) return '';
+        // ชื่อ/เบอร์อยู่เหนือเลขคิว — แสดงทันทีหลังยืนยันออเดอร์
+        if(name){
+          return '<div style="font-size:15px;font-weight:600;color:#E65100;margin:4px 0 0">คุณ'+esc(name)+'</div>'
+            +(phone?'<div style="font-size:12px;color:#888;margin-bottom:2px">'+esc(phone)+'</div>':'');
+        }
+        return '<div style="font-size:13px;color:#666;margin:4px 0 2px">'+esc(phone)+'</div>';
+      })()}
       <div class="huge">${esc(o.queue)}</div>
       <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
       <div id="custCancelBox" style="margin:8px 0"></div>
@@ -2883,6 +2963,34 @@ const C={
         </div>
         <div style="margin-top:6px;font-size:13px">ชำระ: ${paid?(o.paymentMethod==='CASH'?'เงินสด (ที่ร้าน)':'พร้อมเพย์'):(function(){const cv=calcPaymentCover(o);return cv.due>0?('มีรายการเพิ่ม · รอชำระส่วนต่าง ฿'+cv.due):'รอชำระ (QR / เงินสดที่ร้าน)';})()} · ${paid?'ชำระแล้ว':'ยังไม่ชำระ'}</div>
         ${o.slipStatus&&o.slipStatus!=='NONE'?`<div style="font-size:12px;color:#555">สลิป: ${esc(o.slipStatus)}</div>`:''}
+        ${(function(){
+          const name=(o.memberName||'').trim();
+          const phone=(o.memberPhone||o.contactPhone||'').trim();
+          const used=Math.max(0,Number(o.pointsUsed!=null?o.pointsUsed:(o.pointsDisc||0)));
+          const earned=Math.max(0,Number(o.pointsEarned||0));
+          const before=o.memberPointsBefore!=null?Math.max(0,Number(o.memberPointsBefore)):null;
+          const after=o.memberPointsAfter!=null?Math.max(0,Number(o.memberPointsAfter)):null;
+          const disc=Math.max(0,Number(o.discountAmount||0));
+          const coupon=(o.couponCode||'').trim();
+          if(!name&&!phone&&!used&&!earned&&!disc&&!coupon) return '';
+          let t='';
+          if(name||phone) t+='<div style="margin-top:6px;font-size:13px;color:#555">สมาชิก: '+esc(name||phone)+(name&&phone?' ('+esc(phone)+')':'')+'</div>';
+          if(coupon) t+='<div style="font-size:13px;color:#555">คูปอง: '+esc(coupon)+'</div>';
+          else if(name||phone) t+='<div style="font-size:13px;color:#555">คูปอง: ไม่ได้ใช้</div>';
+          if(disc>0) t+='<div style="font-size:13px;color:#555">ส่วนลด: -฿'+disc+'</div>';
+          if(name||phone||used>0||earned>0||before!=null){
+            let p='ใช้แต้ม '+used;
+            if(paid){
+              p+=' · ได้ +'+earned;
+              const remain=after!=null?after:(before!=null?Math.max(0,before-used+earned):null);
+              if(remain!=null) p+=' · เหลือ '+remain+' แต้ม';
+            } else if(before!=null){
+              p+=' · เหลือ '+Math.max(0,before-used)+' แต้ม';
+            }
+            t+='<div style="font-size:13px;color:#555">'+p+'</div>';
+          }
+          return t;
+        })()}
       </div>
       <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;
     document.getElementById('btnPrintReceipt').style.display = paid ? 'inline-flex' : 'none';
