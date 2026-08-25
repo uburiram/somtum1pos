@@ -2167,14 +2167,13 @@ const C={
           return;
         }
         const md=ms.data()||{};
-        const newPts=Number(md.points||0)+earn;
         tx.update(mref,{
-          points: newPts,
+          points: Number(md.points||0)+earn,
           totalSpent: Number(md.totalSpent||0)+sale,
           orderCount: Number(md.orderCount||0)+1,
           updatedAt: Date.now()
         });
-        tx.update(oref,{ pointsAwarded:true, pointsEarned:earn, memberPointsAfter:newPts });
+        tx.update(oref,{ pointsAwarded:true, pointsEarned:earn });
       });
     }catch(e){ console.warn('awardMemberPoints', e); }
   },
@@ -2182,14 +2181,6 @@ const C={
   async confirmOrder(){
     this.payM='PROMPTPAY';
     if(!this.assertShopOpen()) return;
-    try{
-      if(this.memberSystemEnabled!==false){
-        const ph=this.normPhone((document.getElementById('memPhone')||{}).value||'');
-        if(ph && (!this.member || this.normPhone(this.member.phone||'')!==ph)){
-          try{ await this.lookupMember(); }catch(e){}
-        }
-      }
-    }catch(e){}
     // มีออเดอร์แล้ว: โหมดคิว → เปิดตั๋ว / โหมดโต๊ะ+มีของในตะกร้า → เพิ่มเข้าออเดอร์เดิม
     if(this.orderId && this.lastOrder){
       const st=this.lastOrder.status;
@@ -2492,8 +2483,6 @@ const C={
           couponDisc: Number(couponDisc||0), pointsDisc: Number(pointsDisc||0),
           memberPhone: memberPhone||'', contactPhone: contactPhone||memberPhone||'',
           memberName: this.member?this.escName(this.member):'',
-          memberPointsBefore: this.member?Math.max(0,Number(this.member.points||0)):null,
-          memberPointsAfter: null,
           pointsAwarded:0, pointsEarned:0,
           status: opts.status||'Pending',
           paymentMethod: fullyCovered ? (pointsUsed>=discountAmount?'POINTS':'COUPON') : 'PROMPTPAY',
@@ -2553,8 +2542,6 @@ const C={
       couponDisc: Number(couponDisc||0), pointsDisc: Number(pointsDisc||0),
       memberPhone: memberPhone||'', contactPhone: contactPhone||memberPhone||'',
       memberName: this.member?this.escName(this.member):'',
-      memberPointsBefore: this.member?Math.max(0,Number(this.member.points||0)):null,
-      memberPointsAfter: null,
       pointsAwarded:0, pointsEarned:0,
       status: opts.status||'Pending',
       paymentMethod: fullyCovered ? (pointsUsed>=discountAmount?'POINTS':'COUPON') : 'PROMPTPAY',
@@ -2884,14 +2871,6 @@ const C={
       <h2 style="color:${cancelled?'var(--d)':paid?'var(--g)':'var(--p)'};margin-bottom:8px">${cancelled?'<i class="fa-solid fa-xmark"></i> ยกเลิกแล้ว':paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> รอชำระเงิน / รอรับออเดอร์'}</h2>
       <div>คิวของคุณ</div>
       <div class="huge">${esc(o.queue)}</div>
-      ${(function(){
-        const name=(o.memberName||'').trim();
-        const phone=(o.memberPhone||o.contactPhone||'').trim();
-        if(!name && !phone) return '';
-        return name
-          ? ('<div style="font-size:15px;font-weight:600;color:#E65100;margin:4px 0 0">คุณ'+esc(name)+'</div>'+(phone?'<div style="font-size:12px;color:#888">'+esc(phone)+'</div>':''))
-          : ('<div style="font-size:13px;color:#666;margin-top:4px">'+esc(phone)+'</div>');
-      })()}
       <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
       <div id="custCancelBox" style="margin:8px 0"></div>
       <div id="queueEtaBox" style="display:none;margin:10px 0;padding:12px;background:#FFF3E0;border-radius:12px;border:1px solid #FFE0B2;text-align:center"></div>
@@ -2904,33 +2883,6 @@ const C={
         </div>
         <div style="margin-top:6px;font-size:13px">ชำระ: ${paid?(o.paymentMethod==='CASH'?'เงินสด (ที่ร้าน)':'พร้อมเพย์'):(function(){const cv=calcPaymentCover(o);return cv.due>0?('มีรายการเพิ่ม · รอชำระส่วนต่าง ฿'+cv.due):'รอชำระ (QR / เงินสดที่ร้าน)';})()} · ${paid?'ชำระแล้ว':'ยังไม่ชำระ'}</div>
         ${o.slipStatus&&o.slipStatus!=='NONE'?`<div style="font-size:12px;color:#555">สลิป: ${esc(o.slipStatus)}</div>`:''}
-        ${(function(){
-          const name=(o.memberName||'').trim();
-          const phone=(o.memberPhone||o.contactPhone||'').trim();
-          const used=Math.max(0,Number(o.pointsUsed!=null?o.pointsUsed:(o.pointsDisc||0)));
-          const earned=Math.max(0,Number(o.pointsEarned||0));
-          const before=o.memberPointsBefore!=null?Math.max(0,Number(o.memberPointsBefore)):null;
-          const after=o.memberPointsAfter!=null?Math.max(0,Number(o.memberPointsAfter)):null;
-          const disc=Math.max(0,Number(o.discountAmount||0));
-          const coupon=(o.couponCode||'').trim();
-          if(!name&&!phone&&!used&&!earned&&!disc&&!coupon) return '';
-          let t='';
-          if(name||phone) t+='<div style="margin-top:6px;font-size:13px;color:#555">สมาชิก: '+esc(name||phone)+(name&&phone?' ('+esc(phone)+')':'')+'</div>';
-          if(coupon) t+='<div style="font-size:13px;color:#555">คูปอง: '+esc(coupon)+'</div>';
-          if(disc>0) t+='<div style="font-size:13px;color:#555">ส่วนลด: -฿'+disc+'</div>';
-          if(name||phone||used||earned||before!=null){
-            let p='ใช้แต้ม '+used;
-            if(paid){
-              p+=' · ได้ +'+earned;
-              const remain=after!=null?after:(before!=null?Math.max(0,before-used+earned):null);
-              if(remain!=null) p+=' · เหลือ '+remain+' แต้ม';
-            } else if(before!=null){
-              p+=' · เหลือ '+Math.max(0,before-used)+' แต้ม';
-            }
-            t+='<div style="font-size:13px;color:#555">'+p+'</div>';
-          }
-          return t;
-        })()}
       </div>
       <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;
     document.getElementById('btnPrintReceipt').style.display = paid ? 'inline-flex' : 'none';
