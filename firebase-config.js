@@ -24,7 +24,7 @@ window.FIREBASE_VAPID_KEY = "BIlfzHZGSXZKPtZjy0MnjQDgp8t1-lQTvHzzas0rFwWLocwIAOk
  * ต้องลงทะเบียนโดเมน (uburiram.github.io) ใน reCAPTCHA / App Check ด้วย
  * ว่าง = ยังไม่เปิด (ระบบยังใช้ได้)
  */
-window.FIREBASE_APPCHECK_SITE_KEY = "";
+window.FIREBASE_APPCHECK_SITE_KEY = "1348F340-D288-4E16-A8F0-957C828C3597";
 
 /**
  * หลัง deploy Cloud Functions ใส่ URL จริงเท่านั้น เช่น

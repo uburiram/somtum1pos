@@ -19,8 +19,7 @@ service cloud.firestore {
         && d.queue.size() > 0
         && d.queue.size() < 32
         && d.createdAt is number
-        && d.createdAt > 0
-        && d.createdAt < request.time.toMillis() + 600000;
+        && d.createdAt > 0;
     }
 
     function coreFieldsIntact() {
