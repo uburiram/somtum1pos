@@ -2167,14 +2167,14 @@ const C={
           return;
         }
         const md=ms.data()||{};
-        const newPts = Number(md.points||0)+earn;
+        const newPts=Number(md.points||0)+earn;
         tx.update(mref,{
           points: newPts,
           totalSpent: Number(md.totalSpent||0)+sale,
           orderCount: Number(md.orderCount||0)+1,
           updatedAt: Date.now()
         });
-        tx.update(oref,{ pointsAwarded:true, pointsEarned:earn, memberPointsAfter: newPts });
+        tx.update(oref,{ pointsAwarded:true, pointsEarned:earn, memberPointsAfter:newPts });
       });
     }catch(e){ console.warn('awardMemberPoints', e); }
   },
@@ -2182,12 +2182,11 @@ const C={
   async confirmOrder(){
     this.payM='PROMPTPAY';
     if(!this.assertShopOpen()) return;
-    // ถ้าใส่เบอร์แล้วแต่ยังไม่กด "ตรวจ" — ดึงสมาชิกให้อัตโนมัติก่อนสร้างออเดอร์ เพื่อให้ชื่อขึ้นบนตั๋วทันที
     try{
       if(this.memberSystemEnabled!==false){
         const ph=this.normPhone((document.getElementById('memPhone')||{}).value||'');
         if(ph && (!this.member || this.normPhone(this.member.phone||'')!==ph)){
-          try{ await this.lookupMember(); }catch(e){ console.warn('auto lookup', e); }
+          try{ await this.lookupMember(); }catch(e){}
         }
       }
     }catch(e){}
@@ -2472,9 +2471,6 @@ const C={
           if(memberPhone && !existing.memberPhone){
             patch.memberPhone=memberPhone;
             patch.memberName=this.member?this.escName(this.member):'';
-            if(this.member && patch.memberPointsBefore==null){
-              patch.memberPointsBefore=Math.max(0, Number(this.member.points||0));
-            }
           }
           tx.update(shopRef.collection('orders').doc(existing.id), patch);
           tx.set(tref,{
@@ -2496,7 +2492,7 @@ const C={
           couponDisc: Number(couponDisc||0), pointsDisc: Number(pointsDisc||0),
           memberPhone: memberPhone||'', contactPhone: contactPhone||memberPhone||'',
           memberName: this.member?this.escName(this.member):'',
-          memberPointsBefore: this.member ? Math.max(0, Number(this.member.points||0)) : null,
+          memberPointsBefore: this.member?Math.max(0,Number(this.member.points||0)):null,
           memberPointsAfter: null,
           pointsAwarded:0, pointsEarned:0,
           status: opts.status||'Pending',
@@ -2557,7 +2553,7 @@ const C={
       couponDisc: Number(couponDisc||0), pointsDisc: Number(pointsDisc||0),
       memberPhone: memberPhone||'', contactPhone: contactPhone||memberPhone||'',
       memberName: this.member?this.escName(this.member):'',
-      memberPointsBefore: this.member ? Math.max(0, Number(this.member.points||0)) : null,
+      memberPointsBefore: this.member?Math.max(0,Number(this.member.points||0)):null,
       memberPointsAfter: null,
       pointsAwarded:0, pointsEarned:0,
       status: opts.status||'Pending',
@@ -2697,20 +2693,7 @@ const C={
       paidAmount: order.paidAmount||order.total,
       changeAmount: order.changeAmount||0,
       paidAt: order.paidAt||Date.now(),
-      createdAt: order.createdAt||Date.now(),
-      memberName: order.memberName||'',
-      memberPhone: order.memberPhone||'',
-      contactPhone: order.contactPhone||'',
-      pointsUsed: Number(order.pointsUsed||order.pointsDisc||0),
-      pointsEarned: Number(order.pointsEarned||0),
-      pointsAwarded: !!order.pointsAwarded,
-      memberPointsBefore: order.memberPointsBefore!=null?Number(order.memberPointsBefore):null,
-      memberPointsAfter: order.memberPointsAfter!=null?Number(order.memberPointsAfter):null,
-      discountAmount: Number(order.discountAmount||0),
-      couponCode: order.couponCode||'',
-      personalCouponId: order.personalCouponId||'',
-      paymentStatus: order.paymentStatus||'PAID',
-      status: order.status||'Completed'
+      createdAt: order.createdAt||Date.now()
     };
     try{ await shopRef.collection('receipts').doc(order.id).set(receipt,{merge:true}); }catch(e){}
     try{
@@ -2905,60 +2888,48 @@ const C={
         const name=(o.memberName||'').trim();
         const phone=(o.memberPhone||o.contactPhone||'').trim();
         if(!name && !phone) return '';
-        // แสดงทันทีหลังยืนยันออเดอร์ (ไม่ต้องรอชำระ)
-        if(name){
-          return '<div style="font-size:15px;font-weight:600;color:#E65100;margin-top:4px">คุณ'+esc(name)+'</div>'
-            +(phone?'<div style="font-size:12px;color:#888">'+esc(phone)+'</div>':'');
-        }
-        return '<div style="font-size:13px;color:#666;margin-top:4px">'+esc(phone)+'</div>';
+        return name
+          ? ('<div style="font-size:15px;font-weight:600;color:#E65100;margin:4px 0 0">คุณ'+esc(name)+'</div>'+(phone?'<div style="font-size:12px;color:#888">'+esc(phone)+'</div>':''))
+          : ('<div style="font-size:13px;color:#666;margin-top:4px">'+esc(phone)+'</div>');
       })()}
       <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
       <div id="custCancelBox" style="margin:8px 0"></div>
       <div id="queueEtaBox" style="display:none;margin:10px 0;padding:12px;background:#FFF3E0;border-radius:12px;border:1px solid #FFE0B2;text-align:center"></div>
       <div class="receipt" id="receiptBox">
-        <h3 style="text-align:center;color:#FF5722;margin:0 0 6px">${esc(this.shopName)}</h3>
-        <div style="text-align:center;font-size:13px;font-weight:600;color:${paid?'#2E7D32':'var(--p)'}">${paid?'ใบเสร็จรับเงิน':'ใบสั่งอาหาร (ยังไม่ชำระ)'}</div>
-        <div style="text-align:center;font-size:16px;font-weight:700;margin:4px 0">คิว ${esc(o.queue||'')}</div>
-        <div style="text-align:center;font-size:12px;color:#555;margin-bottom:10px">${new Date((paid?(o.paidAt||o.createdAt):o.createdAt)||Date.now()).toLocaleString('th-TH')}</div>
+        <h3>${esc(this.shopName)}</h3><div style="text-align:center;font-size:13px;font-weight:600;color:${paid?'var(--g)':'var(--p)'}">${paid?'ใบเสร็จรับเงิน':'ใบสั่งอาหาร (ยังไม่ชำระ)'}</div>
+        <div style="text-align:center;font-size:13px;color:#666;margin-bottom:8px">${new Date(o.createdAt||Date.now()).toLocaleString('th-TH')}</div>
         ${lines}
-        <div style="border-top:2px solid #333;margin-top:10px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700;font-size:1.15rem">
-          <span>รวมทั้งสิ้น</span><span>${money(o.total)}</span>
+        <div style="border-top:1px dashed #ccc;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700">
+          <span>รวม</span><span style="color:var(--p)">${money(o.total)}</span>
         </div>
-        <div style="margin-top:8px;font-size:13px">ชำระ: ${paid?(o.paymentMethod==='CASH'?'เงินสด':(o.paymentMethod==='POINTS'?'แต้ม':(o.paymentMethod==='COUPON'?'คูปอง':'QR / พร้อมเพย์')))+(o.changeAmount?(' · ทอน '+money(o.changeAmount)):'')+' (ชำระแล้ว)':(function(){const cv=calcPaymentCover(o);return cv.due>0?('มีรายการเพิ่ม · รอชำระส่วนต่าง ฿'+cv.due):'รอชำระ (QR / เงินสดที่ร้าน)';})()}</div>
+        <div style="margin-top:6px;font-size:13px">ชำระ: ${paid?(o.paymentMethod==='CASH'?'เงินสด (ที่ร้าน)':'พร้อมเพย์'):(function(){const cv=calcPaymentCover(o);return cv.due>0?('มีรายการเพิ่ม · รอชำระส่วนต่าง ฿'+cv.due):'รอชำระ (QR / เงินสดที่ร้าน)';})()} · ${paid?'ชำระแล้ว':'ยังไม่ชำระ'}</div>
         ${o.slipStatus&&o.slipStatus!=='NONE'?`<div style="font-size:12px;color:#555">สลิป: ${esc(o.slipStatus)}</div>`:''}
         ${(function(){
           const name=(o.memberName||'').trim();
           const phone=(o.memberPhone||o.contactPhone||'').trim();
-          const used=Math.max(0, Number(o.pointsUsed!=null?o.pointsUsed:(o.pointsDisc||0)));
-          const earned=Math.max(0, Number(o.pointsEarned||0));
+          const used=Math.max(0,Number(o.pointsUsed!=null?o.pointsUsed:(o.pointsDisc||0)));
+          const earned=Math.max(0,Number(o.pointsEarned||0));
           const before=o.memberPointsBefore!=null?Math.max(0,Number(o.memberPointsBefore)):null;
           const after=o.memberPointsAfter!=null?Math.max(0,Number(o.memberPointsAfter)):null;
-          const disc=Math.max(0, Number(o.discountAmount||0));
+          const disc=Math.max(0,Number(o.discountAmount||0));
           const coupon=(o.couponCode||'').trim();
-          const hasPersonal=!!(o.personalCouponId);
-          if(!name && !phone && !used && !earned && !disc && !coupon && !hasPersonal) return '';
-          let h='<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #ccc;text-align:left;font-size:13px;line-height:1.55">';
-          if(name||phone) h+='<div>👤 '+(name?esc(name)+(phone?' ('+esc(phone)+')':''):esc(phone))+'</div>';
-          if(coupon||hasPersonal) h+='<div>คูปอง: '+(coupon?esc(coupon):'คูปองส่วนตัว')+'</div>';
-          else if(name||phone) h+='<div>คูปอง: ไม่ได้ใช้</div>';
-          if(disc>0) h+='<div>ส่วนลด: -฿'+disc+'</div>';
-          if(name||phone||used>0||earned>0||before!=null){
-            h+='<div style="margin-top:6px">';
-            if(before!=null) h+='แต้มก่อนใช้ '+before+' · ';
-            h+='ใช้ '+used+' แต้ม';
+          if(!name&&!phone&&!used&&!earned&&!disc&&!coupon) return '';
+          let t='';
+          if(name||phone) t+='<div style="margin-top:6px;font-size:13px;color:#555">สมาชิก: '+esc(name||phone)+(name&&phone?' ('+esc(phone)+')':'')+'</div>';
+          if(coupon) t+='<div style="font-size:13px;color:#555">คูปอง: '+esc(coupon)+'</div>';
+          if(disc>0) t+='<div style="font-size:13px;color:#555">ส่วนลด: -฿'+disc+'</div>';
+          if(name||phone||used||earned||before!=null){
+            let p='ใช้แต้ม '+used;
             if(paid){
-              h+=' · ได้ +'+earned;
-              const remain = after!=null ? after : (before!=null ? Math.max(0, before-used+earned) : null);
-              if(remain!=null) h+=' · <strong>เหลือ '+remain+' แต้ม</strong>';
+              p+=' · ได้ +'+earned;
+              const remain=after!=null?after:(before!=null?Math.max(0,before-used+earned):null);
+              if(remain!=null) p+=' · เหลือ '+remain+' แต้ม';
             } else if(before!=null){
-              h+=' · เหลือตอนนี้ '+Math.max(0, before-used)+' แต้ม (ได้แต้มหลังชำระ)';
-            } else {
-              h+=' · ได้แต้มหลังชำระ';
+              p+=' · เหลือ '+Math.max(0,before-used)+' แต้ม';
             }
-            h+='</div>';
+            t+='<div style="font-size:13px;color:#555">'+p+'</div>';
           }
-          h+='</div>';
-          return h;
+          return t;
         })()}
       </div>
       <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;
