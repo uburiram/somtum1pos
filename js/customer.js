@@ -2701,7 +2701,17 @@ const C={
       paidAmount: order.paidAmount||order.total,
       changeAmount: order.changeAmount||0,
       paidAt: order.paidAt||Date.now(),
-      createdAt: order.createdAt||Date.now()
+      createdAt: order.createdAt||Date.now(),
+      memberName: order.memberName||'',
+      memberPhone: order.memberPhone||'',
+      contactPhone: order.contactPhone||'',
+      pointsUsed: Number(order.pointsUsed||order.pointsDisc||0),
+      pointsEarned: Number(order.pointsEarned||0),
+      pointsAwarded: !!order.pointsAwarded,
+      discountAmount: Number(order.discountAmount||0),
+      couponCode: order.couponCode||'',
+      paymentStatus: order.paymentStatus||'PAID',
+      status: order.status||'Completed'
     };
     try{ await shopRef.collection('receipts').doc(order.id).set(receipt,{merge:true}); }catch(e){}
     try{
@@ -2892,6 +2902,12 @@ const C={
       <h2 style="color:${cancelled?'var(--d)':paid?'var(--g)':'var(--p)'};margin-bottom:8px">${cancelled?'<i class="fa-solid fa-xmark"></i> ยกเลิกแล้ว':paid?'<i class="fa-solid fa-circle-check"></i> ชำระแล้ว':'<i class="fa-solid fa-clock"></i> รอชำระเงิน / รอรับออเดอร์'}</h2>
       <div>คิวของคุณ</div>
       <div class="huge">${esc(o.queue)}</div>
+      ${(function(){
+        const name=(o.memberName||'').trim();
+        const phone=(o.memberPhone||'').trim();
+        if(!name && !phone) return '';
+        return '<div style="font-size:13px;color:#555;margin-top:2px">สมาชิก: <strong style="color:#E65100">'+esc(name||phone)+'</strong>'+(name&&phone?' ('+esc(phone)+')':'')+'</div>';
+      })()}
       <div class="badge ${st[0]}" style="margin:8px 0">${st[1]}</div>
       <div id="custCancelBox" style="margin:8px 0"></div>
       <div id="queueEtaBox" style="display:none;margin:10px 0;padding:12px;background:#FFF3E0;border-radius:12px;border:1px solid #FFE0B2;text-align:center"></div>
@@ -2902,8 +2918,36 @@ const C={
         <div style="border-top:1px dashed #ccc;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700">
           <span>รวม</span><span style="color:var(--p)">${money(o.total)}</span>
         </div>
-        <div style="margin-top:6px;font-size:13px">ชำระ: ${paid?(o.paymentMethod==='CASH'?'เงินสด (ที่ร้าน)':'พร้อมเพย์'):(function(){const cv=calcPaymentCover(o);return cv.due>0?('มีรายการเพิ่ม · รอชำระส่วนต่าง ฿'+cv.due):'รอชำระ (QR / เงินสดที่ร้าน)';})()} · ${paid?'ชำระแล้ว':'ยังไม่ชำระ'}</div>
+        <div style="margin-top:6px;font-size:13px">ชำระ: ${paid?(o.paymentMethod==='CASH'?'เงินสด (ที่ร้าน)':(o.paymentMethod==='POINTS'?'แต้ม':(o.paymentMethod==='COUPON'?'คูปอง':'พร้อมเพย์'))):(function(){const cv=calcPaymentCover(o);return cv.due>0?('มีรายการเพิ่ม · รอชำระส่วนต่าง ฿'+cv.due):'รอชำระ (QR / เงินสดที่ร้าน)';})()} · ${paid?'ชำระแล้ว':'ยังไม่ชำระ'}</div>
         ${o.slipStatus&&o.slipStatus!=='NONE'?`<div style="font-size:12px;color:#555">สลิป: ${esc(o.slipStatus)}</div>`:''}
+        ${(function(){
+          const name = (o.memberName||'').trim();
+          const phone = (o.memberPhone||o.contactPhone||'').trim();
+          if(!name && !phone) return '';
+          const label = name ? esc(name) : esc(phone);
+          const sub = name && phone ? (' · '+esc(phone)) : '';
+          return '<div style="margin-top:8px;padding:8px 10px;background:#FFF8F5;border:1px solid #FFE0D6;border-radius:10px;font-size:13px;text-align:left">'+
+            '<div style="font-weight:700;color:#E65100;margin-bottom:2px">👤 สมาชิก</div>'+
+            '<div>'+label+sub+'</div></div>';
+        })()}
+        ${(function(){
+          const used = Math.max(0, Number(o.pointsUsed!=null?o.pointsUsed:(o.pointsDisc||0)));
+          const earned = Math.max(0, Number(o.pointsEarned||0));
+          const disc = Math.max(0, Number(o.discountAmount||0));
+          const coupon = (o.couponCode||'').trim();
+          if(!used && !earned && !disc && !coupon) return '';
+          let rows = [];
+          if(coupon) rows.push('คูปอง: '+esc(coupon));
+          if(disc>0) rows.push('ส่วนลดรวม: -฿'+disc);
+          if(used>0) rows.push('ใช้แต้ม: '+used+' แต้ม (−฿'+used+')');
+          if(paid && earned>0) rows.push('ได้รับแต้มครั้งนี้: +'+earned+' แต้ม');
+          else if(paid && (o.memberPhone||o.memberName) && earned===0 && o.pointsAwarded) rows.push('ได้รับแต้มครั้งนี้: 0 แต้ม');
+          if(!rows.length) return '';
+          return '<div style="margin-top:8px;padding:8px 10px;background:#E8F5E9;border:1px solid #C8E6C9;border-radius:10px;font-size:13px;text-align:left;line-height:1.55">'+
+            '<div style="font-weight:700;color:#2E7D32;margin-bottom:4px">⭐ แต้ม / ส่วนลด</div>'+
+            rows.map(r=>'<div>'+r+'</div>').join('')+
+            '</div>';
+        })()}
       </div>
       <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;
     document.getElementById('btnPrintReceipt').style.display = paid ? 'inline-flex' : 'none';
