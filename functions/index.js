@@ -153,20 +153,6 @@ exports.verifySlip = functions.region(REGION).https.onRequest(async (req, res) =
         if (cur.paymentStatus === 'PAID' || cur.slipHash === hash) return false;
         const latestTotal = Math.max(0, Number(cur.total || 0));
         if (cur.status === 'Cancelled' || cur.status === 'Completed') return false;
-        const alreadyPaid = Math.max(0, Number(cur.paidAmount || 0));
-        const expectNow = cur.needsRepay
-          ? Math.max(0, Number(cur.repayAmount != null ? cur.repayAmount : (latestTotal - alreadyPaid)))
-          : latestTotal;
-        const verifiedAmt = Number(result.paid || 0);
-        if (expectNow > 0 && verifiedAmt > 0 && Math.abs(verifiedAmt - expectNow) > 1) {
-          tx.update(ref, {
-            slipData: String(slipData).slice(0, 200000),
-            slipHash: hash,
-            slipStatus: 'PENDING_REVIEW',
-            slipAutoReason: 'ยอดออเดอร์เปลี่ยนระหว่างตรวจ (สลิป ฿' + verifiedAmt + ' / ต้องชำระ ฿' + expectNow + ')'
-          });
-          return 'mismatch';
-        }
         tx.update(ref, {
           slipData: String(slipData).slice(0, 200000),
           slipHash: hash,
@@ -182,9 +168,6 @@ exports.verifySlip = functions.region(REGION).https.onRequest(async (req, res) =
         });
         return true;
       });
-      if (committed === 'mismatch') {
-        return res.json({ ok: false, pendingManual: true, needManual: true, msg: 'ยอดออเดอร์เปลี่ยนระหว่างตรวจสลิป · รอร้านตรวจมือ' });
-      }
       if (!committed) {
         return res.json({ ok: true, alreadyPaid: true, msg: 'รายการถูกยืนยันไปแล้ว' });
       }
