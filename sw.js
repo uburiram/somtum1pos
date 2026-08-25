@@ -1,29 +1,14 @@
-/* Somtum POS PWA Service Worker — fixed 2026-08-26
- * - CACHE v86 เพื่อบังคับอัปเดต
- * - network-first สำหรับ HTML/JS/CSS/webmanifest
- */
-const CACHE = 'somtum-pwa-v86';
+/* Somtum POS PWA Service Worker — fixed 2026-08-26 */
+const CACHE = 'somtum-pwa-v87';
 const ASSETS = [
-  './',
-  './index.html',
-  './pos.html',
-  './firebase-config.js',
-  './css/customer.css',
-  './css/pos.css',
-  './js/customer.js',
-  './js/customer-sw.js',
-  './js/pos.js',
-  './js/pos-pwa.js',
+  './', './index.html', './pos.html', './firebase-config.js',
+  './css/customer.css', './css/pos.css',
+  './js/customer.js', './js/customer-sw.js', './js/pos.js', './js/pos-pwa.js',
   './manifest.webmanifest',
-  './icon/favicon-32.png',
-  './icon/icon-192.png',
-  './icon/icon-512.png',
-  './icon/icon-maskable-192.png',
-  './icon/icon-maskable-512.png',
-  './icon/icon_256x256.png',
-  './icon/apple-touch-icon-180.png'
+  './icon/favicon-32.png', './icon/icon-192.png', './icon/icon-512.png',
+  './icon/icon-maskable-192.png', './icon/icon-maskable-512.png',
+  './icon/icon_256x256.png', './icon/apple-touch-icon-180.png'
 ];
-
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE)
@@ -32,7 +17,6 @@ self.addEventListener('install', (event) => {
       .catch((err) => console.warn('cache install', err))
   );
 });
-
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
@@ -40,44 +24,33 @@ self.addEventListener('activate', (event) => {
     ).then(() => self.clients.claim())
   );
 });
-
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (
-    url.hostname.includes('googleapis.com') ||
-    url.hostname.includes('gstatic.com') ||
-    url.hostname.includes('firebaseio.com') ||
-    url.hostname.includes('firestore') ||
-    url.hostname.includes('google.com') ||
-    url.hostname.includes('cdnjs') ||
+    url.hostname.includes('googleapis.com') || url.hostname.includes('gstatic.com') ||
+    url.hostname.includes('firebaseio.com') || url.hostname.includes('firestore') ||
+    url.hostname.includes('google.com') || url.hostname.includes('cdnjs') ||
     url.hostname.includes('fonts.')
-  ) {
-    return;
-  }
+  ) return;
   event.respondWith(
     caches.match(req).then((cached) => {
-      const network = fetch(req)
-        .then((res) => {
-          if (res && res.ok && url.origin === self.location.origin) {
-            const clone = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, clone));
-          }
-          return res;
-        })
-        .catch(() => cached);
+      const network = fetch(req).then((res) => {
+        if (res && res.ok && url.origin === self.location.origin) {
+          const clone = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, clone));
+        }
+        return res;
+      }).catch(() => cached);
       const isShell = req.mode === 'navigate'
         || (req.headers.get('accept') || '').includes('text/html')
         || /\.(js|css|webmanifest)$/i.test(url.pathname);
-      if (isShell) {
-        return network.then((r) => r || cached).catch(() => cached || caches.match('./index.html'));
-      }
+      if (isShell) return network.then((r) => r || cached).catch(() => cached || caches.match('./index.html'));
       return cached || network;
     })
   );
 });
-
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   event.waitUntil(
