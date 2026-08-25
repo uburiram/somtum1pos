@@ -236,6 +236,19 @@ const M={
         const unlock=()=>{ try{ if(this.audio && this.audio.state==='suspended') this.audio.resume(); }catch(e){} };
         document.addEventListener('touchstart', unlock, {passive:true});
         document.addEventListener('click', unlock, {passive:true});
+        document.addEventListener('visibilitychange', ()=>{
+          if(document.visibilityState==='visible'){
+            try{ if(this.audio && this.audio.state==='suspended') this.audio.resume(); }catch(e){}
+            if(this.unviewed && this.unviewed.size>0){ try{ this.beep(); }catch(e){} }
+          }
+        });
+        if(!this._audioKeepAlive){
+          this._audioKeepAlive=setInterval(()=>{
+            try{
+              if(this.audioOn && this.audio && this.audio.state==='suspended') this.audio.resume();
+            }catch(e){}
+          }, 25000);
+        }
       }
     }catch(e){
       toast('เปิดเสียงไม่สำเร็จ: '+(e.message||e));
