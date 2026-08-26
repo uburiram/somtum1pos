@@ -2163,9 +2163,10 @@ const C={
       await ref.set({
         phone, firstName:String(first).trim(), lastName:String(last).trim(),
         points:10, totalSpent:0, orderCount:0,
+        status:'active', active:true, isActive:true, disabled:false,
         createdAt:Date.now(), updatedAt:Date.now()
       });
-      toast('สมัครสมาชิกสำเร็จ');
+      toast('สมัครสมาชิกสำเร็จ · รับ 10 แต้มต้อนรับ');
       this.hide('mMemberReg');
       try{ const rp=document.getElementById('regPhone'); if(rp) rp.readOnly=false; }catch(e){}
       const mp=document.getElementById('memPhone'); if(mp) mp.value=phone;
@@ -2266,23 +2267,20 @@ const C={
     }catch(e){ console.warn('awardMemberPoints', e); }
   },
 
-  /** ใบเสร็จหลังเสร็จสมบูรณ์: แสดงแต้มคงเหลือ + คูปองที่มี + ที่ใช้/ได้ในออเดอร์นี้ */
+  /** ใบเสร็จหลังเสร็จสมบูรณ์: ชื่อ-นามสกุล เบอร์ / ใช้แต้ม ได้แต้ม เหลือ / คูปองที่มี */
   async fillReceiptMemberBenefits(order){
     const el=document.getElementById('receiptMemberBenefits');
     if(!el || !order) return;
     const phone=this.normPhone(order.memberPhone||order.contactPhone||'');
     if(!phone){ el.style.display='none'; return; }
-    // กันจอกระพริบ: ถ้าโหลดออเดอร์นี้แล้วและ HTML ยังอยู่ ข้าม (ยกเว้น pointsEarned เพิ่งเปลี่ยน)
     const cacheKey=String(order.id||'')+'|'+(order.pointsEarned||0)+'|'+(order.pointsUsed||0);
     if(this._receiptBenefitsKey===cacheKey && el.dataset.filled==='1' && el.innerHTML.length>40){
       el.style.display='block';
       return;
     }
-    // ถ้ากำลังโหลดออเดอร์นี้อยู่แล้ว อย่าเริ่มซ้ำ
     if(this._receiptBenefitsLoading===cacheKey) return;
     this._receiptBenefitsLoading=cacheKey;
     el.style.display='block';
-    // แสดง placeholder เฉพาะครั้งแรกเท่านั้น (ไม่กระพริบทุก snapshot)
     if(el.dataset.filled!=='1'){
       el.innerHTML='<div style="margin-top:10px;padding:8px;background:#F3E5F5;border-radius:8px;font-size:12px;color:#6A1B9A;text-align:center">กำลังโหลดสิทธิ์สมาชิก…</div>';
     }
@@ -2297,24 +2295,19 @@ const C={
         const now=Date.now();
         coupons=(Array.isArray(md.personalCoupons)?md.personalCoupons:[]).filter(c=>c&&!c.used&&(!c.expiresAt||Number(c.expiresAt)>now));
       }
-      const usedPts=Math.max(0, Number(order.pointsUsed||0));
+      const usedPts=Math.max(0, Number(order.pointsUsed||order.pointsDisc||0));
       const earned=Math.max(0, Number(order.pointsEarned||0));
-      const cDisc=Math.max(0, Number(order.couponDisc||0));
-      const cCode=String(order.couponCode||'');
-      let html='<div style="margin-top:10px;padding:10px;background:#F3E5F5;border-radius:8px;font-size:12px;color:#6A1B9A;text-align:left">';
-      html+='<div style="font-weight:700;margin-bottom:6px;text-align:center">👤 สมาชิก'+(name?(' · '+esc(name)):'')+'</div>';
-      html+='<div>แต้มคงเหลือ: <strong style="font-size:1.1rem">'+pts+'</strong> แต้ม</div>';
-      if(earned>0) html+='<div style="color:#2E7D32">ได้รับแต้มครั้งนี้: +'+earned+' แต้ม</div>';
-      if(usedPts>0) html+='<div>ใช้แต้มในออเดอร์นี้: '+usedPts+' แต้ม (−฿'+usedPts+')</div>';
-      if(cDisc>0||cCode) html+='<div>ใช้คูปอง'+(cCode?(' '+esc(cCode)):'')+': −฿'+cDisc+'</div>';
+      let html='<div style="margin-top:10px;padding:10px;background:#F3E5F5;border-radius:8px;font-size:12px;color:#6A1B9A;text-align:left;line-height:1.55">';
+      html+='<div style="font-weight:700;margin-bottom:6px;text-align:center">👤 ข้อมูลสมาชิก</div>';
+      html+='<div>ชื่อ-นามสกุล: <strong>'+esc(name||'-')+'</strong></div>';
+      html+='<div>เบอร์โทร: <strong>'+esc(phone)+'</strong></div>';
+      html+='<div>ใช้แต้ม: <strong>'+usedPts+'</strong> แต้ม · ได้แต้ม: <strong>+'+earned+'</strong> แต้ม · เหลือ: <strong style="font-size:1.05rem">'+pts+'</strong> แต้ม</div>';
       if(coupons.length){
-        html+='<div style="margin-top:6px;border-top:1px dashed #CE93D8;padding-top:6px">คูปองส่วนตัวที่ยังใช้ได้:</div>';
+        html+='<div style="margin-top:6px;border-top:1px dashed #CE93D8;padding-top:6px">คูปองที่ลูกค้ามี:</div>';
         coupons.forEach(c=>{
           const lab=c.type==='percent'?(c.value+'%'):('฿'+c.value);
-          html+='<div style="margin-top:2px">• '+esc(c.note||lab)+' ('+lab+')</div>';
+          html+='<div style="margin-top:2px;margin-left:4px">• '+esc(c.note||lab)+' ('+lab+')</div>';
         });
-      } else {
-        html+='<div style="margin-top:4px;color:#888">ไม่มีคูปองส่วนตัวคงเหลือ</div>';
       }
       html+='</div>';
       el.innerHTML=html;
@@ -2324,7 +2317,6 @@ const C={
       this._receiptBenefitsOrderId=String(order.id||'');
     }catch(e){
       console.warn(e);
-      // ไม่ล้าง HTML ถ้าเคยมีของเก่า — กันกระพริบตอน error ชั่วคราว
       if(el.dataset.filled!=='1'){
         el.innerHTML='';
         el.style.display='none';
@@ -3121,9 +3113,30 @@ const C={
         <div style="text-align:center;font-size:12px;color:#888">รหัสการสั่งซื้อ: <strong>${esc(orderCode)}</strong></div>
         <div style="text-align:center;font-size:13px;color:#666;margin-bottom:8px">${new Date(o.createdAt||Date.now()).toLocaleString('th-TH')}</div>
         ${lines}
-        <div style="border-top:1px dashed #ccc;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700">
-          <span>รวม</span><span style="color:var(--p)">${money(o.total)}</span>
-        </div>
+        ${(function(){
+          const itemsSub = (Number(o.subtotal)!=null && !isNaN(Number(o.subtotal)) && Number(o.subtotal)>0)
+            ? Number(o.subtotal)
+            : (o.items||[]).reduce((s,i)=>s+Number(i.total||0),0);
+          const ptsU = Math.max(0, Number(o.pointsUsed||o.pointsDisc||0));
+          const cDisc = Math.max(0, Number(o.couponDisc||0));
+          const cCode = String(o.couponCode||'').trim();
+          const grand = Number(o.total!=null ? o.total : Math.max(0, itemsSub - ptsU - cDisc));
+          let h = '';
+          if(ptsU>0 || cDisc>0){
+            h += '<div style="border-top:1px dashed #ccc;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-size:14px"><span>รวม</span><span>'+money(itemsSub)+'</span></div>';
+            if(cDisc>0){
+              const lab = cCode && !cCode.startsWith('PERSONAL:') ? ('คูปอง '+esc(cCode)) : (cCode.startsWith('PERSONAL:')?'คูปองส่วนตัว':'คูปอง');
+              h += '<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:13px;color:#C62828"><span>- '+lab+'</span><span>-'+money(cDisc)+'</span></div>';
+            }
+            if(ptsU>0){
+              h += '<div style="display:flex;justify-content:space-between;padding:2px 0;font-size:13px;color:#C62828"><span>- แต้มลูกค้า '+ptsU+' แต้ม</span><span>-'+money(ptsU)+'</span></div>';
+            }
+            h += '<div style="display:flex;justify-content:space-between;font-weight:700;margin-top:4px;font-size:1.05rem"><span>รวมทั้งสิ้น</span><span style="color:var(--p)">'+money(grand)+'</span></div>';
+          } else {
+            h += '<div style="border-top:1px dashed #ccc;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700"><span>รวม</span><span style="color:var(--p)">'+money(grand)+'</span></div>';
+          }
+          return h;
+        })()}
         <div style="margin-top:6px;font-size:13px">ชำระ: ${paid?(o.paymentMethod==='CASH'?'เงินสด (ที่ร้าน)':'พร้อมเพย์'):(function(){const cv=calcPaymentCover(o);return cv.due>0?('มีรายการเพิ่ม · รอชำระส่วนต่าง ฿'+cv.due):'รอชำระ (QR / เงินสดที่ร้าน)';})()} · ${paid?'ชำระแล้ว':'ยังไม่ชำระ'}</div>
         ${paid && o.paymentMethod==='CASH' && Number(o.changeAmount||0)>0 ? `<div style="font-size:13px;color:#1565C0">เงินทอน: ${money(o.changeAmount)}</div>` : ''}
         ${o.slipStatus&&o.slipStatus!=='NONE'?`<div style="font-size:12px;color:#555">สลิป: ${esc(o.slipStatus)}</div>`:''}
@@ -3131,9 +3144,9 @@ const C={
       </div>
       <p style="font-size:13px;color:#777">บันทึกใบเสร็จในเครื่องอัตโนมัติเมื่อชำระแล้ว · ค้นจากเลขคิวได้</p>`;
     document.getElementById('btnPrintReceipt').style.display = paid ? 'inline-flex' : 'none';
-    // ใบเสร็จ: แสดงแต้ม/คูปองสมาชิกเฉพาะเมื่อเสร็จสมบูรณ์ทุกขั้นตอน
+    // ใบเสร็จ: แสดงข้อมูลสมาชิกเมื่อชำระแล้ว (และเมื่อ Completed)
     try{
-      if(o.status==='Completed' && paid && (o.memberPhone||o.contactPhone)){
+      if(paid && (o.memberPhone||o.contactPhone)){
         const el=document.getElementById('receiptMemberBenefits');
         // ถ้ามี cache HTML แล้ว ใส่ทันที (ไม่กระพริบ)
         if(el && this._receiptBenefitsHtml && this._receiptBenefitsOrderId===String(o.id||'')){
