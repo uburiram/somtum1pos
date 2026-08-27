@@ -1,5 +1,5 @@
 /* Somtum POS PWA Service Worker */
-const CACHE = 'somtum-pwa-v82';
+const CACHE = 'somtum-pwa-v83';
 const ASSETS = [
   './',
   './index.html',
@@ -7,9 +7,22 @@ const ASSETS = [
   './firebase-config.js',
   './css/customer.css',
   './css/pos.css',
-  './js/customer.js',
+  './js/common.js',
+  './js/customer-shared.js',
+  './js/customer-core.js',
+  './js/customer-pay.js',
+  './js/customer-table.js',
+  './js/customer-member.js',
+  './js/customer-order.js',
+  './js/customer-boot.js',
   './js/customer-sw.js',
-  './js/pos.js',
+  './js/pos-shared.js',
+  './js/pos-core.js',
+  './js/pos-ops.js',
+  './js/pos-member.js',
+  './js/pos-pay.js',
+  './js/pos-settings.js',
+  './js/pos-boot.js',
   './js/pos-pwa.js',
   './manifest.webmanifest',
   './icon/favicon-32.png',
