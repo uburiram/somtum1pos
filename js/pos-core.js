@@ -679,7 +679,7 @@
       <div style="font-weight:600;margin-bottom:6px">สลิป (${esc(o.slipStatus||'')})</div>
       <img src="${o.slipData}" style="max-width:100%;border-radius:8px;border:1px solid #eee">
       ${needSlip && !locked?`<div style="margin-top:8px;padding:8px;background:#E3F2FD;border-radius:8px;font-size:13px;color:#1565C0;text-align:center">มีสลิปแนบแล้ว — กด「ยืนยันรับโอนแล้ว」ด้านล่างเมื่อตรวจยอดถูกต้อง</div>`:''}
-    </div>`:(o.paymentStatus!=='PAID'&&!locked?`<div style="margin:10px 0;padding:10px;background:#FFF8E1;border-radius:8px;font-size:13px;text-align:center">ยังไม่มีสลิปจากลูกค้า</div>`:'');
+    </div>`:(o.paymentStatus!=='PAID'&&!locked?`<div style="margin:10px 0;padding:10px;background:#E8F5E9;border-radius:8px;font-size:13px;text-align:center;color:#2E7D32">ลูกค้ายังไม่แนบสลิป — ตรวจยอดโอนเข้าบัญชีแล้วกด「ยืนยันรับโอนแล้ว」ได้เลย (ไม่บังคับสลิป)</div>`:'');
     let statusBtns='';
     if(!locked){
       const paid=o.paymentStatus==='PAID';
@@ -693,7 +693,7 @@
         </div>
         <div style="margin-top:10px;padding-top:8px;border-top:1px dashed #ddd">
           <strong style="color:${paid?'#2E7D32':'#C62828'}">${paid?'✓ จ่ายเงินแล้ว':'ยังไม่จ่ายเงิน'}</strong>
-          ${o.status==='Ready'&&!paid?'<div style="color:#E65100;margin-top:4px">ทำครัวเสร็จแล้ว — รอรับเงิน/ตรวจสลิป ก่อนปิดงาน</div>':''}
+          ${o.status==='Ready'&&!paid?'<div style="color:#E65100;margin-top:4px">ทำครัวเสร็จแล้ว — รอรับเงิน (ตรวจยอดโอนแล้วกดยืนยันได้ ไม่บังคับสลิป)</div>':''}
           ${canComplete?`<button class="btn btn-p btn-block" style="margin-top:8px" onclick="M.setStatus('${esc(o.id)}','Completed')">✅ เสร็จสมบูรณ์ (ทำเสร็จ+จ่ายแล้ว)</button>`:`<button class="btn btn-block" style="margin-top:8px;background:#eee;color:#999" disabled>✅ เสร็จสมบูรณ์ (ต้องจ่ายเงินก่อน)</button>`}
         </div>
       </div>`;

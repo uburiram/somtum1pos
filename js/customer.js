@@ -3238,10 +3238,10 @@ const C={
         '<div style="font-size:13px;font-weight:700;color:var(--p);margin-top:4px">สแกน QR เพื่อโอน ฿'+amount+'</div>'+
         '<div style="font-size:12px;color:#E65100;margin-top:6px">'+(this.isLineBrowser()?'ใน LINE: กดค้างที่รูป → บันทึกรูป':'กดค้างที่รูปเพื่อบันทึก')+'</div>'+
         '<div style="font-size:12px;color:#555;margin-top:4px">ไม่บังคับโอนทันที · จ่ายเงินสดที่ร้านก็ได้</div>'+
-        (hasSlip?'<div style="font-size:12px;color:#E65100;margin-top:4px">ส่งสลิปแล้ว · รอร้านตรวจ — QR ยังใช้ได้จนกว่าร้านยืนยันรับเงิน</div>':'')+
+        (hasSlip?'<div style="font-size:12px;color:#E65100;margin-top:4px">ส่งสลิปแล้ว · รอร้านตรวจ (ไม่บังคับแนบสลิป — ร้านตรวจยอดโอนแล้วยืนยันได้)</div>':'')+
         '<button type="button" class="btn btn-o btn-sm" style="margin-top:8px;width:auto" onclick="C.openPayQRFull()">เปิดรูป QR เต็มจอ</button>'+
         '<button type="button" class="btn btn-o btn-sm" style="margin-top:8px;width:auto" onclick="C.savePayQR()">บันทึก / แชร์ QR</button>'+
-        '<div style="margin-top:10px"><button type="button" class="btn btn-p btn-sm" style="width:auto" onclick="document.getElementById(\'slipFile\').click()">📎 อัปโหลดสลิปโอนเงิน</button></div>'+
+        '<div style="margin-top:10px"><button type="button" class="btn btn-p btn-sm" style="width:auto" onclick="document.getElementById(\'slipFile\').click()">📎 แนบสลิป (ไม่บังคับ)</button></div>'+
         '<div id="ticketSlipMsg" style="font-size:12px;margin-top:6px;color:#666"></div>';
       const box=document.getElementById('ticketPayQrBox');
       const draw=()=>{
