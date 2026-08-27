@@ -42,6 +42,8 @@ window.FUNCTIONS_BASE = "";
  * ว่าง = ร้านยืนยันชำระผ่าน client update (rules อนุญาต canMarkPaid)
  */
 window.SHOP_OPS_SECRET = "";
+// HARDEN: อย่าใส่ secret จริงใน repo สาธารณะ — ใส่เฉพาะบนเครื่องร้านหลัง clone
+// หรือใช้ firebase functions:config:set shop.secret="..."
 
 /** เลิกใช้ EasySlip ฝั่ง client — ใส่ key ใน Functions config แทน */
 window.EASYSLIP_API_KEY = "";

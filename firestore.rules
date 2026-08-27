@@ -3,8 +3,8 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ตรวจสอบโครงสร้างออเดอร์ใหม่ — ลดความเสี่ยง payload แปลก ๆ
-    // หมายเหตุ: Rules ไม่สามารถ get() ราคาเมนูทุกชิ้นได้แบบถูกและถูกต้นทุน
-    // การป้องกันราคาจริง 100% ต้องใช้ Cloud Functions recalculate (แนะนำเมื่อ deploy CF)
+    // หมายเหตุ: Rules ไม่ recalculate ราคาเมนูทุกชิ้น (ต้นทุน get สูง)
+    // ป้องกันราคา 100% ต้องใช้ Cloud Functions (deploy แล้วเปิด FUNCTIONS_BASE)
     function isValidNewOrder() {
       let d = request.resource.data;
       let payOk = d.paymentStatus == 'UNPAID'
@@ -23,11 +23,14 @@ service cloud.firestore {
         && d.queue.size() < 32
         && d.createdAt is number
         && d.createdAt > 0
-        // บังคับให้รายการมีฟิลด์พื้นฐานครบและอยู่ในช่วงสมเหตุสมผล
         && d.items[0].keys().hasAll(['name', 'qty', 'unitPrice', 'total'])
         && d.items[0].qty is number && d.items[0].qty > 0 && d.items[0].qty <= 99
         && d.items[0].unitPrice is number && d.items[0].unitPrice >= 0 && d.items[0].unitPrice < 100000
-        && d.items[0].total is number && d.items[0].total >= 0 && d.items[0].total < 200000;
+        && d.items[0].total is number && d.items[0].total >= 0 && d.items[0].total < 200000
+        // ส่วนลด/แต้มที่ client ส่งมาต้องอยู่ในช่วงสมเหตุสมผล
+        && (!('pointsUsed' in d) || (d.pointsUsed is number && d.pointsUsed >= 0 && d.pointsUsed <= d.total + 50000))
+        && (!('couponDisc' in d) || (d.couponDisc is number && d.couponDisc >= 0 && d.couponDisc < 200000))
+        && (!('discountAmount' in d) || (d.discountAmount is number && d.discountAmount >= 0 && d.discountAmount < 200000));
     }
 
     function coreFieldsIntact() {
@@ -42,7 +45,6 @@ service cloud.firestore {
       let statusOk = request.resource.data.status == resource.data.status
         || (request.resource.data.status == 'Pending'
             && resource.data.status in ['Pending', 'Cooking', 'Ready', 'AwaitingPayment']);
-      // อนุญาต PAID → UNPAID เมื่อสั่งเพิ่ม (ยอดเพิ่มต้องชำระส่วนต่าง)
       let payOk = request.resource.data.paymentStatus == resource.data.paymentStatus
         || (resource.data.paymentStatus == 'PAID'
             && request.resource.data.paymentStatus == 'UNPAID'
@@ -91,9 +93,15 @@ service cloud.firestore {
         && resource.data.status in ['Pending', 'AwaitingPayment', 'Cooking', 'Ready', 'Cancelled'];
     }
 
-    // ตั้ง PAID: ต้องมี paidAt + (เงินสด หรือมีสลิปภาพ หรือโอนที่เคยมีสลิป)
+    // HARDEN: ตั้ง PAID จาก client ได้เฉพาะ
+    // - เงินสด (ร้านกดที่เครื่อง)
+    // - ยอด 0 (แต้ม/คูปองครบ)
+    // - มีสลิปภาพแนบอยู่แล้ว (ร้านตรวจสลิปแล้วกดยืนยัน)
+    // ห้าม mark PAID แบบโอนเปล่าโดยไม่มีสลิป (กันปลอมชำระจากเบราว์เซอร์ภายนอก)
     function canMarkPaid() {
       let d = request.resource.data;
+      let zeroBill = resource.data.total is number && resource.data.total == 0;
+      let hasSlip = hasImageSlip(d.slipData) || hasImageSlip(resource.data.slipData);
       return coreFieldsIntact()
         && resource.data.paymentStatus == 'UNPAID'
         && d.paymentStatus == 'PAID'
@@ -101,11 +109,8 @@ service cloud.firestore {
         && d.paidAt > 0
         && (
           d.paymentMethod == 'CASH'
-          || d.paymentMethod == 'POINTS'
-          || d.paymentMethod == 'COUPON'
-          || d.paymentMethod in ['PROMPTPAY', 'QR', 'KSHOP']
-          || hasImageSlip(d.slipData)
-          || hasImageSlip(resource.data.slipData)
+          || (zeroBill && d.paymentMethod in ['POINTS', 'COUPON', 'CASH'])
+          || hasSlip
         );
     }
 
@@ -118,7 +123,7 @@ service cloud.firestore {
         && resource.data.status in ['Pending', 'Cooking', 'Ready', 'AwaitingPayment'];
     }
 
-    // อัปเดตทั่วไปที่การเงินและสถานะครัวไม่เปลี่ยน (โน้ต, สลิปสถานะร้าน, ฯลฯ)
+    // อัปเดตทั่วไปที่การเงินและสถานะครัวไม่เปลี่ยน
     function canSoftUpdate() {
       return coreFieldsIntact()
         && request.resource.data.paymentStatus == resource.data.paymentStatus
@@ -152,51 +157,70 @@ service cloud.firestore {
 
     function isValidCategory() {
       let d = request.resource.data;
-      return d.keys().hasAll(['id', 'name'])
-        && strMax(d.id, 64)
-        && strMax(d.name, 80)
-        && (!('order' in d) || numRange(d.order, 0, 9999))
+      return strMax(d.id, 64)
+        && strMax(d.name, 120)
+        && (!('order' in d) || numRange(d.order, 0, 10000))
         && (!('isActive' in d) || d.isActive is bool);
     }
 
     function isValidMenu() {
       let d = request.resource.data;
-      return d.keys().hasAll(['id', 'name', 'price'])
-        && strMax(d.id, 64)
+      return strMax(d.id, 64)
         && strMax(d.name, 120)
-        && numRange(d.price, 0, 100000)
         && (!('catId' in d) || strMax(d.catId, 64))
-        && (!('imageUrl' in d) || strMax(d.imageUrl, 500))
-        && (!('imageData' in d) || (d.imageData is string && d.imageData.size() <= 160000))
+        && d.price is number && d.price >= 0 && d.price < 100000
         && (!('isActive' in d) || d.isActive is bool)
         && (!('isOut' in d) || d.isOut is bool)
-        && (!('order' in d) || numRange(d.order, 0, 9999));
+        && (!('imageUrl' in d) || strMax(d.imageUrl, 2000))
+        && (!('imageData' in d) || (d.imageData is string && d.imageData.size() <= 200000));
     }
 
     function isValidSpice() {
       let d = request.resource.data;
-      return d.keys().hasAll(['id', 'name'])
-        && strMax(d.id, 64) && strMax(d.name, 40)
-        && (!('order' in d) || numRange(d.order, 0, 9999))
+      return strMax(d.id, 64)
+        && strMax(d.name, 80)
+        && (!('order' in d) || numRange(d.order, 0, 10000))
         && (!('isActive' in d) || d.isActive is bool);
     }
 
     function isValidTopping() {
       let d = request.resource.data;
-      return d.keys().hasAll(['id', 'name', 'price'])
-        && strMax(d.id, 64) && strMax(d.name, 80)
-        && numRange(d.price, 0, 10000)
-        && (!('order' in d) || numRange(d.order, 0, 9999))
-        && (!('isActive' in d) || d.isActive is bool);
+      return strMax(d.id, 64)
+        && strMax(d.name, 80)
+        && d.price is number && d.price >= 0 && d.price < 100000
+        && (!('isActive' in d) || d.isActive is bool)
+        && (!('order' in d) || numRange(d.order, 0, 10000));
     }
 
-    function isValidMember(phone) {
+    // HARDEN สมาชิก:
+    // - สมัครใหม่: points ต้องเป็น 10 เท่านั้น (แต้มต้อนรับ)
+    // - อัปเดต: แต้มลดได้ไม่จำกัด (ใช้แต้ม) แต่เพิ่มได้ไม่เกิน +5000 ต่อครั้ง (ร้านแจกแต้ม/award ได้) (กันปั๊มแต้ม)
+    // - award หลังชำระปกติได้สูงสุด ~ยอด/100 ต่อออเดอร์ — เพดาน +5000 ครอบคลุมแจกแต้มร้าน + award ปกติ
+    function isValidMemberCreate(phone) {
       let d = request.resource.data;
       return strMax(phone, 16)
         && (!('phone' in d) || strMax(d.phone, 16))
         && (!('firstName' in d) || strMax(d.firstName, 80))
         && (!('lastName' in d) || strMax(d.lastName, 80))
-        && (!('points' in d) || numRange(d.points, 0, 10000000))
+        && d.points is number
+        && d.points == 10
+        && (!('totalSpent' in d) || numRange(d.totalSpent, 0, 0))
+        && (!('orderCount' in d) || numRange(d.orderCount, 0, 0));
+    }
+
+    function isValidMemberUpdate(phone) {
+      let d = request.resource.data;
+      let prev = resource.data;
+      let newPts = ('points' in d) ? d.points : prev.points;
+      let oldPts = ('points' in prev) ? prev.points : 0;
+      return strMax(phone, 16)
+        && (!('phone' in d) || strMax(d.phone, 16))
+        && (!('firstName' in d) || strMax(d.firstName, 80))
+        && (!('lastName' in d) || strMax(d.lastName, 80))
+        && newPts is number
+        && newPts >= 0
+        && newPts <= 10000000
+        && newPts <= oldPts + 5000
         && (!('totalSpent' in d) || numRange(d.totalSpent, 0, 100000000))
         && (!('orderCount' in d) || numRange(d.orderCount, 0, 1000000));
     }
@@ -232,11 +256,11 @@ service cloud.firestore {
         && (!('orderMode' in d) || d.orderMode in ['queue', 'table', 'auto']);
     }
 
-    // pinHash อนุญาตเฉพาะเอกสาร secure เท่านั้น (ป้องกันเขียนทับ PIN จาก path อื่น)
     function isValidSecureSettings() {
       let d = request.resource.data;
       return isValidSettingsDoc()
-        && (!('pinHash' in d) || strMax(d.pinHash, 128));
+        && (!('pinHash' in d) || strMax(d.pinHash, 128))
+        && (!('mustChangePin' in d) || d.mustChangePin is bool);
     }
 
     match /shops/{shopId} {
@@ -244,14 +268,12 @@ service cloud.firestore {
       allow create, update, delete: if false;
 
       match /settings/{docId} {
+        // public docs อ่านได้ — secure อ่านได้เพื่อตรวจ PIN ฝั่ง client (ยังไม่มี Auth)
+        // ระยะยาว: ย้ายตรวจ PIN ไป Cloud Function แล้วปิด read secure
         allow read: if true;
-        // public / queue / config / fcm — ห้ามเขียน pinHash
         allow write: if docId in ['public', 'queue', 'config', 'fcm']
           && isValidSettingsDoc()
           && !('pinHash' in request.resource.data);
-        // secure — อนุญาต pinHash (ร้านเปลี่ยน PIN หลังตรวจ PIN เดิมฝั่ง client)
-        // หมายเหตุ: ระบบนี้ไม่มี Firebase Auth จึงยังพึ่ง client PIN อยู่
-        // แนะนำระยะยาว: ใช้ Cloud Function + secret หรือ Firebase Auth
         allow write: if docId == 'secure'
           && isValidSecureSettings();
       }
@@ -259,7 +281,6 @@ service cloud.firestore {
       match /categories/{id} {
         allow read: if true;
         allow create, update: if isValidCategory();
-        // ห้ามลบถาวร — ใช้ isActive:false แทน
         allow delete: if false;
       }
       match /menus/{id} {
@@ -293,9 +314,9 @@ service cloud.firestore {
 
       match /receipts/{id} {
         allow read: if true;
-        // create/update จำกัดขนาด — delete แยกเพราะ request.resource เป็น null ตอนลบ
         allow create, update: if request.resource.data.keys().size() <= 40;
-        allow delete: if true;
+        // HARDEN: ห้ามลบใบเสร็จจาก client ภายนอก
+        allow delete: if false;
       }
 
       match /fcmTokens/{tokenId} {
@@ -306,7 +327,8 @@ service cloud.firestore {
 
       match /members/{phone} {
         allow read: if true;
-        allow create, update: if isValidMember(phone);
+        allow create: if isValidMemberCreate(phone);
+        allow update: if isValidMemberUpdate(phone);
         allow delete: if false;
       }
 
