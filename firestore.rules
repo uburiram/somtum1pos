@@ -93,11 +93,11 @@ service cloud.firestore {
         && resource.data.status in ['Pending', 'AwaitingPayment', 'Cooking', 'Ready', 'Cancelled'];
     }
 
-    // HARDEN: ตั้ง PAID จาก client ได้เฉพาะ
+    // ตั้ง PAID จาก client:
     // - เงินสด (ร้านกดที่เครื่อง)
+    // - โอน QR/พร้อมเพย์/K Shop (ร้านยืนยันหลังตรวจยอดเข้าบัญชี — ไม่บังคับสลิป)
     // - ยอด 0 (แต้ม/คูปองครบ)
-    // - มีสลิปภาพแนบอยู่แล้ว (ร้านตรวจสลิปแล้วกดยืนยัน)
-    // ห้าม mark PAID แบบโอนเปล่าโดยไม่มีสลิป (กันปลอมชำระจากเบราว์เซอร์ภายนอก)
+    // - หรือมีสลิปภาพแนบ (ทางเลือกลูกค้า)
     function canMarkPaid() {
       let d = request.resource.data;
       let zeroBill = resource.data.total is number && resource.data.total == 0;
@@ -109,6 +109,7 @@ service cloud.firestore {
         && d.paidAt > 0
         && (
           d.paymentMethod == 'CASH'
+          || d.paymentMethod in ['PROMPTPAY', 'QR', 'KSHOP']
           || (zeroBill && d.paymentMethod in ['POINTS', 'COUPON', 'CASH'])
           || hasSlip
         );
