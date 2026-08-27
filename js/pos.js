@@ -148,8 +148,17 @@ const M={
       if(!sec.exists){
         await shopRef.collection('settings').doc('secure').set({
           pinHash: await sha256('1234'),
-          queueCounter:1
+          queueCounter:1,
+          mustChangePin: true
         },{merge:true});
+      } else {
+        // ถ้ายังเป็น PIN เริ่มต้น 1234 → บังคับเปลี่ยน
+        try{
+          const h = (sec.data()||{}).pinHash || '';
+          if(h && h === await sha256('1234') && (sec.data()||{}).mustChangePin !== false){
+            await shopRef.collection('settings').doc('secure').set({ mustChangePin: true }, {merge:true});
+          }
+        }catch(e){}
       }
       // seed เมนูถ้ายังว่าง
       const catSnap=await shopRef.collection('categories').limit(1).get();
@@ -175,8 +184,19 @@ const M={
       const inputHash=await sha256(input);
       if(hash && inputHash===hash){
         sessionStorage.setItem('pinUntil', String(Date.now()+8*60*60*1000)); // 8 ชม.
+        const must = !!(s.exists && (s.data()||{}).mustChangePin);
+        const isDefault = (inputHash === await sha256('1234'));
         this.enter();
-        toast('เข้าสู่ระบบแล้ว');
+        if(must || isDefault){
+          toast('กรุณาเปลี่ยน PIN เริ่มต้นทันที เพื่อความปลอดภัย');
+          try{
+            this.tab('settings');
+            const el=document.getElementById('setPinOld');
+            if(el){ el.value=input; el.scrollIntoView({behavior:'smooth',block:'center'}); }
+          }catch(e){}
+        } else {
+          toast('เข้าสู่ระบบแล้ว');
+        }
       } else {
         toast('PIN ไม่ถูกต้อง');
       }
@@ -3034,10 +3054,15 @@ const M={
     const p2=document.getElementById('setPin2').value.trim();
     if(!/^\d{4,8}$/.test(p1)){toast('PIN ใหม่ต้อง 4–8 ตัวเลข');return}
     if(p1!==p2){toast('PIN ใหม่ไม่ตรงกัน');return}
+    if(p1==='1234'){toast('ห้ามใช้ PIN เริ่มต้น 1234 — ตั้งเลขอื่น');return}
     const sec=await shopRef.collection('settings').doc('secure').get();
     const hash=sec.exists?sec.data().pinHash:'';
     if(hash && await sha256(old)!==hash){toast('PIN ปัจจุบันไม่ถูกต้อง');return}
-    await shopRef.collection('settings').doc('secure').set({pinHash:await sha256(p1)},{merge:true});
+    await shopRef.collection('settings').doc('secure').set({
+      pinHash: await sha256(p1),
+      mustChangePin: false,
+      pinChangedAt: Date.now()
+    },{merge:true});
     document.getElementById('setPinOld').value=''; document.getElementById('setPin1').value=''; document.getElementById('setPin2').value='';
     toast('เปลี่ยน PIN แล้ว');
   },
