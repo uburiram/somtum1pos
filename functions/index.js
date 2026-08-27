@@ -313,9 +313,80 @@ exports.markOrderPaid = functions.region(REGION).https.onRequest(async (req, res
     if (patch.status) update.status = patch.status;
 
     await ref.update(update);
+    try {
+      await awardPointsForPaidOrder(shopId, orderId);
+    } catch (e) {
+      console.warn('awardPoints after markOrderPaid', e);
+    }
     return res.json({ ok: true, orderId, paymentStatus: 'PAID' });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ ok: false, error: e.message || String(e) });
   }
 });
+
+/**
+ * ให้แต้มสมาชิกฝั่งเซิร์ฟเวอร์เมื่อออเดอร์เป็น PAID
+ * (Admin SDK ข้าม rules — กัน client ลืมเรียก awardMemberPoints)
+ * กฎ: ครบ 100 บาทของยอดหลังส่วนลด = 1 แต้ม
+ */
+async function awardPointsForPaidOrder(shopId, orderId) {
+  const oref = db.collection('shops').doc(shopId).collection('orders').doc(orderId);
+  await db.runTransaction(async (tx) => {
+    const os = await tx.get(oref);
+    if (!os.exists) return;
+    const od = os.data() || {};
+    if (od.paymentStatus !== 'PAID') return;
+    if (od.pointsAwarded) return;
+    const phone = String(od.memberPhone || od.contactPhone || '').replace(/\D/g, '');
+    if (!phone || phone.length < 9) {
+      tx.update(oref, { pointsAwarded: true, pointsEarned: 0 });
+      return;
+    }
+    const mref = db.collection('shops').doc(shopId).collection('members').doc(phone);
+    const ms = await tx.get(mref);
+    if (!ms.exists) {
+      tx.update(oref, { pointsAwarded: true, pointsEarned: 0 });
+      return;
+    }
+    const md = ms.data() || {};
+    if (md.status === 'cancelled' || md.active === false || md.isActive === false || md.disabled === true) {
+      tx.update(oref, { pointsAwarded: true, pointsEarned: 0, memberPhone: phone });
+      return;
+    }
+    const sale = Math.max(0, Number(od.total != null ? od.total : 0));
+    const earn = Math.floor(sale / 100);
+    tx.update(mref, {
+      points: Number(md.points || 0) + earn,
+      totalSpent: Number(md.totalSpent || 0) + sale,
+      orderCount: Number(md.orderCount || 0) + 1,
+      updatedAt: Date.now()
+    });
+    tx.update(oref, {
+      pointsAwarded: true,
+      pointsEarned: earn,
+      memberPhone: od.memberPhone || phone,
+      memberName: od.memberName || (String(md.firstName || '') + ' ' + String(md.lastName || '')).trim() || phone
+    });
+  });
+}
+
+/**
+ * Trigger: เมื่อออเดอร์เปลี่ยนเป็น PAID จาก client → ให้แต้มอัตโนมัติ
+ * ต้อง deploy Functions (Blaze) จึงทำงาน — ถ้ายังไม่ deploy client awardMemberPoints ยังเป็น fallback
+ */
+exports.onOrderPaid = functions.region(REGION).firestore
+  .document('shops/{shopId}/orders/{orderId}')
+  .onUpdate(async (change, context) => {
+    const before = change.before.data() || {};
+    const after = change.after.data() || {};
+    if (before.paymentStatus === 'PAID') return null;
+    if (after.paymentStatus !== 'PAID') return null;
+    if (after.pointsAwarded) return null;
+    try {
+      await awardPointsForPaidOrder(context.params.shopId, context.params.orderId);
+    } catch (e) {
+      console.error('onOrderPaid award', e);
+    }
+    return null;
+  });
