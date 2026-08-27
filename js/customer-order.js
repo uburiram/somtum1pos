@@ -368,6 +368,7 @@
       order=result.order;
       this.orderId=id;
       this.lastOrder={id, ...order};
+      try{ this.saveReorderSnapshot((this.lastOrder&&this.lastOrder.items)||(order.items)||[]); }catch(e){}
       try{ this.rememberTableOrder(this.lastOrder); }catch(e){}
       this.cart=[];
       try{ this.updFab(); }catch(e){}
@@ -435,6 +436,7 @@
     }
     this.orderId=id;
     this.lastOrder={id,...order};
+    try{ this.saveReorderSnapshot((this.lastOrder&&this.lastOrder.items)||(order.items)||[]); }catch(e){}
     // เติมชื่อสมาชิกทันทีถ้ายังว่าง (กันตั๋วไม่โชว์ชื่อ)
     try{
       if(this.lastOrder && this.member){

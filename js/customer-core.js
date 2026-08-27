@@ -11,6 +11,80 @@
   cat:'all',q:'',cart:[],modal:null,orderId:null,unsub:null,payM:'PROMPTPAY',slipData:'',lastOrder:null,kitchenOrders:[],bestSellerIds:[],bestSellerRank:{},
   isOpen:null,
 
+
+  saveReorderSnapshot(items){
+    try{
+      const snap=(items||[]).map(i=>({
+        menuId:i.menuId||i.id||'',
+        name:i.name||'',
+        qty:Number(i.qty||1),
+        unitPrice:Number(i.unitPrice||i.price||0),
+        spiceId:i.spiceId||'',
+        spiceName:i.spiceName||'',
+        toppings:i.toppings||[],
+        note:i.note||'',
+        plara:i.plara||null,
+        total:Number(i.total||0)
+      })).filter(x=>x.name);
+      if(!snap.length) return;
+      localStorage.setItem('somtum_last_order', JSON.stringify({ at:Date.now(), items:snap }));
+    }catch(e){}
+  },
+  loadReorderSnapshot(){
+    try{
+      const raw=localStorage.getItem('somtum_last_order');
+      if(!raw) return null;
+      const d=JSON.parse(raw);
+      if(!d||!Array.isArray(d.items)||!d.items.length) return null;
+      // หมดอายุ 14 วัน
+      if(d.at && Date.now()-d.at > 14*864e5) return null;
+      return d;
+    }catch(e){ return null; }
+  },
+  renderReorderBar(){
+    const bar=document.getElementById('reorderBar');
+    if(!bar) return;
+    if(this.isOpen===false){ bar.style.display='none'; return; }
+    const d=this.loadReorderSnapshot();
+    if(!d){ bar.style.display='none'; return; }
+    const names=d.items.slice(0,3).map(i=>i.name+(i.qty>1?(' x'+i.qty):'')).join(', ');
+    const more=d.items.length>3?(' +'+(d.items.length-3)):'';
+    bar.style.display='block';
+    bar.innerHTML='<button type="button" class="reorder-btn" onclick="C.reorderLast()"><span class="rb-icon">🔁</span><span class="rb-text"><strong>สั่งซ้ำออเดอร์ล่าสุด</strong><small>'+names+more+'</small></span></button>';
+  },
+  reorderLast(){
+    if(this.isOpen===false){ toast('อยู่นอกเวลาทำการ'); return; }
+    const d=this.loadReorderSnapshot();
+    if(!d||!d.items||!d.items.length){ toast('ยังไม่มีออเดอร์ล่าสุด'); return; }
+    // ใส่ตะกร้าเฉพาะเมนูที่ยังขายอยู่
+    let added=0, skipped=0;
+    d.items.forEach(it=>{
+      const menu=(this.menus||[]).find(m=>m.id===it.menuId || m.name===it.name);
+      if(!menu || menu.isOut || menu.isActive===false){ skipped++; return; }
+      const unit=Number(menu.price!=null?menu.price:it.unitPrice||0);
+      const qty=Math.min(99, Math.max(1, Number(it.qty||1)));
+      // recalc simple total (ไม่รวมท็อปปิ้งซับซ้อนถ้าเมนูเปลี่ยนราคา)
+      let topExtra=0;
+      const tops=(it.toppings||[]).map(t=>{
+        const tp=(this.tops||[]).find(x=>x.id===t.id || x.name===t.name);
+        const p=tp?Number(tp.price||0):Number(t.price||0);
+        const q=Math.max(1, Number(t.qty||1));
+        topExtra+=p*q;
+        return { id:tp?tp.id:(t.id||''), name:tp?tp.name:(t.name||''), qty:q, price:p, total:p*q };
+      });
+      const lineTotal=(unit+topExtra)*qty;
+      this.cart.push({
+        menuId:menu.id, name:menu.name, qty, unitPrice:unit,
+        spiceId:it.spiceId||'', spiceName:it.spiceName||'',
+        toppings:tops, note:it.note||'', plara:it.plara||null, total:lineTotal
+      });
+      added++;
+    });
+    this.updFab();
+    if(added){ toast('ใส่ตะกร้าแล้ว '+added+' รายการ'+(skipped?(' · ข้าม '+skipped+' (หมด/ไม่มี)'):'')); this.openCart(); }
+    else toast('เมนูในออเดอร์ล่าสุดหมดหรือไม่มีแล้ว');
+  },
+
   async init(){
     const setConn=(t)=>{ try{ document.getElementById('conn').textContent=t; }catch(e){} };
     if(!checkConfig()){ setConn('ยังไม่ตั้งค่า'); return; }

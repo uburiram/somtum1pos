@@ -615,6 +615,20 @@ const M={
       }catch(e){}
     }, 1000);
   },
+  /** นาทีที่รอนับจาก createdAt / kitchenSortAt */
+  orderWaitMinutes(o){
+    const t=Number(o.kitchenSortAt||o.createdAt||0);
+    if(!t) return 0;
+    return Math.max(0, Math.floor((Date.now()-t)/60000));
+  },
+  /** จัดลำดับครัว: รอนานก่อน + badge เตือน */
+  smartKitchenSort(list){
+    return (list||[]).slice().sort((a,b)=>{
+      const wa=this.orderWaitMinutes(a), wb=this.orderWaitMinutes(b);
+      if(wb!==wa) return wb-wa;
+      return Number(a.kitchenSortAt||a.createdAt||0)-Number(b.kitchenSortAt||b.createdAt||0);
+    });
+  },
   renderOrders(){
     const today=new Date(); today.setHours(0,0,0,0); const t0=today.getTime();
     // กรองออเดอร์ผีที่ไม่มีรายการเมนู (กันการ์ดค้างว่าง)
@@ -700,8 +714,12 @@ const M={
       const isAlert=!!(this._blinkAdds && this._blinkAdds.has(o.id));
       const tableTag=o.tableNo?(`<span style="background:#F3E5F5;color:#6A1B9A;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">โต๊ะ ${o.tableNo}</span> `):'';
       const addTag=(isAlert && o.hasNewItems)?(' <span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">สั่งเพิ่ม!</span>'):(isAlert?' <span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">ใหม่</span>':'');
-      return `<div class="oc ${esc(o.status||'')} ${isAlert?'oc-blink':''}" style="${isAlert?'box-shadow:0 0 0 3px #F44336;':''}" onclick="M.openDetail('${esc(o.id)}')">
-        <div style="margin-bottom:4px">${tableTag}${addTag}</div>
+      const waitM=this.orderWaitMinutes(o);
+      const waitTag=(['Pending','Cooking','AwaitingPayment','Ready'].includes(o.status) && waitM>=15)
+        ? (' <span class="wait-badge '+(waitM>=30?'wait-hot':'wait-warm')+'">⏱ '+waitM+' นาที</span>')
+        : (waitM>=5 && ['Pending','Cooking','AwaitingPayment'].includes(o.status) ? (' <span class="wait-badge wait-mild">⏱ '+waitM+' น.</span>') : '');
+      return `<div class="oc ${esc(o.status||'')} ${isAlert?'oc-blink':''} ${waitM>=30?'oc-wait-hot':''}" style="${isAlert?'box-shadow:0 0 0 3px #F44336;':''}" onclick="M.openDetail('${esc(o.id)}')">
+        <div style="margin-bottom:4px">${tableTag}${addTag}${waitTag}</div>
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px"><div class="q">${esc(o.queue)}</div>
         <div style="text-align:right"><div style="color:#888;font-size:12px">${o.createdAt?new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}</div>
         <div style="font-size:11px;font-weight:600;margin-top:2px;color:${o.status==='Cooking'?'#1565C0':o.status==='Ready'?'#2E7D32':'#E65100'}">${({Pending:'รอคิวทำ',AwaitingPayment:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:'ยกเลิก'})[o.status]||o.status}</div></div></div>
@@ -2665,30 +2683,54 @@ const M={
   },
 
   loadReport(){
-    const range=document.getElementById('reportRange').value;
+    const rangeEl=document.getElementById('reportRange');
+    const range=rangeEl?rangeEl.value:'today';
     const now=Date.now(); let from=0;
     if(range==='today'){const t=new Date();t.setHours(0,0,0,0);from=t.getTime()}
     else if(range==='7d') from=now-7*864e5;
     else if(range==='30d') from=now-30*864e5;
-    // ออเดอร์ในช่วงเวลา
-    const list=this.orders.filter(o=>(o.createdAt||0)>=from);
-    // ยอดขายจริง = ชำระเงินแล้วเท่านั้น (PAID) — ไม่นับออเดอร์ค้าง/ยกเลิก
+    const list=(this.orders||[]).filter(o=>(o.createdAt||0)>=from);
     const paid=list.filter(o=>o.paymentStatus==='PAID');
-    // เสร็จสมบูรณ์ = Completed + PAID (สำหรับสถิติปิดงาน)
     const completed=list.filter(o=>o.status==='Completed' && o.paymentStatus==='PAID');
+    const unpaid=list.filter(o=>o.paymentStatus!=='PAID' && o.status!=='Cancelled');
+    const cancelled=list.filter(o=>o.status==='Cancelled');
     const cash=paid.filter(o=>o.paymentMethod==='CASH').reduce((s,o)=>s+Number(o.paidAmount!=null?o.paidAmount:o.total||0),0);
     const pp=paid.filter(o=>o.paymentMethod==='PROMPTPAY'||o.paymentMethod==='QR'||o.paymentMethod==='KSHOP').reduce((s,o)=>s+Number(o.paidAmount!=null?o.paidAmount:o.total||0),0);
     const pointsUsedTotal=paid.reduce((s,o)=>s+Number(o.pointsUsed||o.pointsDisc||0),0);
     const couponDiscTotal=paid.reduce((s,o)=>s+Number(o.couponDisc||0),0);
     const discountTotal=paid.reduce((s,o)=>s+Number(o.discountAmount||0),0);
     const salesPaid=paid.reduce((s,o)=>s+Number(o.paidAmount!=null?o.paidAmount:o.total||0),0);
-    document.getElementById('reportBox').innerHTML=`
+    const unpaidVal=unpaid.reduce((s,o)=>s+Number(o.total||0),0);
+    const avgTicket=paid.length?Math.round(salesPaid/paid.length):0;
+    // ชั่วโมงพีค (จากออเดอร์ที่ชำระแล้ว)
+    const hourCnt={};
+    paid.forEach(o=>{
+      const h=new Date(o.paidAt||o.createdAt||0).getHours();
+      if(!isNaN(h)) hourCnt[h]=(hourCnt[h]||0)+1;
+    });
+    let peakHour=null, peakN=0;
+    Object.keys(hourCnt).forEach(h=>{ if(hourCnt[h]>peakN){ peakN=hourCnt[h]; peakHour=Number(h);} });
+    const peakLabel=peakHour==null?'-':(String(peakHour).padStart(2,'0')+':00–'+String((peakHour+1)%24).padStart(2,'0')+':00');
+    // insight สั้น ๆ
+    const insights=[];
+    if(unpaid.length) insights.push('ค้างชำระ '+unpaid.length+' บิล · ฿'+unpaidVal.toLocaleString('en-US'));
+    if(paid.length) insights.push('บิลเฉลี่ย ฿'+avgTicket.toLocaleString('en-US'));
+    if(peakHour!=null) insights.push('ชั่วโมงขายดี '+peakLabel+' ('+peakN+' บิล)');
+    if(cancelled.length) insights.push('ยกเลิก '+cancelled.length+' รายการ');
+    if(!insights.length) insights.push('ยังไม่มีข้อมูลในช่วงนี้');
+    const box=document.getElementById('reportBox');
+    if(!box) return;
+    box.innerHTML=`
+      <div class="smart-insight">${insights.map(t=>'<div class="si-line">💡 '+t+'</div>').join('')}</div>
       <div class="rc"><div class="v">${money(salesPaid)}</div><div class="l">ยอดรับเงินจริง (ชำระแล้ว)</div></div>
       <div class="rc"><div class="v">${paid.length}</div><div class="l">ออเดอร์ชำระแล้ว</div></div>
+      <div class="rc"><div class="v">${money(avgTicket)}</div><div class="l">ยอดเฉลี่ย/บิล</div></div>
+      <div class="rc"><div class="v">${unpaid.length}</div><div class="l">ค้างชำระ (฿${unpaidVal.toLocaleString('en-US')})</div></div>
       <div class="rc"><div class="v">${completed.length}</div><div class="l">เสร็จสมบูรณ์</div></div>
       <div class="rc"><div class="v">${list.length}</div><div class="l">ออเดอร์ทั้งหมด (รวมค้าง)</div></div>
       <div class="rc"><div class="v">${money(cash)}</div><div class="l">เงินสด</div></div>
       <div class="rc"><div class="v">${money(pp)}</div><div class="l">พร้อมเพย์ / QR</div></div>
+      <div class="rc"><div class="v">${peakLabel}</div><div class="l">ชั่วโมงพีค</div></div>
       <div class="rc"><div class="v">${money(pointsUsedTotal)}</div><div class="l">ใช้แต้ม (฿)</div></div>
       <div class="rc"><div class="v">${money(couponDiscTotal)}</div><div class="l">ส่วนลดคูปอง</div></div>
       <div class="rc"><div class="v">${money(discountTotal)}</div><div class="l">ส่วนลดรวม (แต้ม+คูปอง)</div></div>`;

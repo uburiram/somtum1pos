@@ -541,6 +541,18 @@
       }catch(e){}
     }, 1000);
   },
+  orderWaitMinutes(o){
+    const t=Number(o.kitchenSortAt||o.createdAt||0);
+    if(!t) return 0;
+    return Math.max(0, Math.floor((Date.now()-t)/60000));
+  },
+  smartKitchenSort(list){
+    return (list||[]).slice().sort((a,b)=>{
+      const wa=this.orderWaitMinutes(a), wb=this.orderWaitMinutes(b);
+      if(wb!==wa) return wb-wa;
+      return Number(a.kitchenSortAt||a.createdAt||0)-Number(b.kitchenSortAt||b.createdAt||0);
+    });
+  },
   renderOrders(){
     const today=new Date(); today.setHours(0,0,0,0); const t0=today.getTime();
     // กรองออเดอร์ผีที่ไม่มีรายการเมนู (กันการ์ดค้างว่าง)
@@ -577,6 +589,7 @@
     // พร้อมรับ = Ready + จ่ายแล้ว
     // เสร็จสมบูรณ์ = Completed
     if(this.filterKey==='kitchen' || this.filterKey==='queue') list=list.filter(o=>['Pending','Cooking','AwaitingPayment'].includes(o.status) && (o.items||[]).length>0);
+    if(this.filterKey==='kitchen' || this.filterKey==='queue') list=this.smartKitchenSort(list);
     else if(this.filterKey==='waitingPay') list=list.filter(o=>o.status==='Ready' && o.paymentStatus!=='PAID');
     else if(this.filterKey==='ready') list=list.filter(o=>o.status==='Ready' && o.paymentStatus==='PAID');
     else if(this.filterKey==='slip') list=list.filter(o=>o.status!=='Completed' && o.status!=='Cancelled' && (o.paymentMethod==='PROMPTPAY'||o.paymentMethod==='QR') && (o.slipStatus==='PENDING_REVIEW'||o.slipStatus==='AUTO_APPROVED'));
@@ -626,8 +639,12 @@
       const isAlert=!!(this._blinkAdds && this._blinkAdds.has(o.id));
       const tableTag=o.tableNo?(`<span style="background:#F3E5F5;color:#6A1B9A;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">โต๊ะ ${o.tableNo}</span> `):'';
       const addTag=(isAlert && o.hasNewItems)?(' <span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">สั่งเพิ่ม!</span>'):(isAlert?' <span style="background:#FFEBEE;color:#C62828;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:700">ใหม่</span>':'');
-      return `<div class="oc ${esc(o.status||'')} ${isAlert?'oc-blink':''}" style="${isAlert?'box-shadow:0 0 0 3px #F44336;':''}" onclick="M.openDetail('${esc(o.id)}')">
-        <div style="margin-bottom:4px">${tableTag}${addTag}</div>
+      const waitM=this.orderWaitMinutes(o);
+      const waitTag=(['Pending','Cooking','AwaitingPayment','Ready'].includes(o.status) && waitM>=15)
+        ? (' <span class="wait-badge '+(waitM>=30?'wait-hot':'wait-warm')+'">⏱ '+waitM+' นาที</span>')
+        : (waitM>=5 && ['Pending','Cooking','AwaitingPayment'].includes(o.status) ? (' <span class="wait-badge wait-mild">⏱ '+waitM+' น.</span>') : '');
+      return `<div class="oc ${esc(o.status||'')} ${isAlert?'oc-blink':''} ${waitM>=30?'oc-wait-hot':''}" style="${isAlert?'box-shadow:0 0 0 3px #F44336;':''}" onclick="M.openDetail('${esc(o.id)}')">
+        <div style="margin-bottom:4px">${tableTag}${addTag}${waitTag}</div>
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px"><div class="q">${esc(o.queue)}</div>
         <div style="text-align:right"><div style="color:#888;font-size:12px">${o.createdAt?new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}):''}</div>
         <div style="font-size:11px;font-weight:600;margin-top:2px;color:${o.status==='Cooking'?'#1565C0':o.status==='Ready'?'#2E7D32':'#E65100'}">${({Pending:'รอคิวทำ',AwaitingPayment:'รอคิวทำ',Cooking:'กำลังทำ',Ready:'ทำเสร็จแล้ว',Completed:'เสร็จสมบูรณ์',Cancelled:'ยกเลิก'})[o.status]||o.status}</div></div></div>
