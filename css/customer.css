@@ -51,3 +51,12 @@ header{background:#fff;padding:12px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);po
   .ov{display:block!important;position:static;background:#fff}
   .md{box-shadow:none;max-height:none}
 }
+
+
+/* Smart: reorder last order */
+.reorder-bar{padding:8px 16px 0}
+.reorder-btn{width:100%;display:flex;align-items:center;gap:12px;padding:12px 14px;border:none;border-radius:12px;background:linear-gradient(135deg,#FFF3E0,#FCE4EC);box-shadow:0 2px 8px rgba(255,87,34,.15);text-align:left;cursor:pointer}
+.reorder-btn .rb-icon{font-size:1.4rem}
+.reorder-btn .rb-text{display:flex;flex-direction:column;gap:2px}
+.reorder-btn .rb-text strong{font-size:14px;color:#E65100}
+.reorder-btn .rb-text small{font-size:12px;color:#666;font-weight:500}

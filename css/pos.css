@@ -66,3 +66,13 @@ label.lbl{font-size:13px;color:#555;display:block;margin:8px 0 4px}
 
 .oc-blink{animation:ocBlink 1s ease-in-out infinite}
 @keyframes ocBlink{0%,100%{box-shadow:0 0 0 3px #F44336;background:#FFEBEE}50%{box-shadow:0 0 0 6px #FFCDD2;background:#fff}}
+
+/* Smart Pack */
+.smart-insight{grid-column:1/-1;background:linear-gradient(135deg,#FFF8E1,#F3E5F5);border-radius:12px;padding:12px 14px;margin-bottom:4px;border:1px solid #FFE0B2}
+.si-line{font-size:13px;color:#5D4037;line-height:1.55;font-weight:600}
+.wait-badge{padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700}
+.wait-mild{background:#E3F2FD;color:#1565C0}
+.wait-warm{background:#FFF3E0;color:#E65100}
+.wait-hot{background:#FFEBEE;color:#C62828}
+.oc-wait-hot{outline:2px solid #FFCDD2}
+.rpt .rc .v{word-break:break-word}
